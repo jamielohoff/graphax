@@ -1,0 +1,17 @@
+import jax
+import jax.numpy as jnp
+
+from graphax.jax.game import VertexGame
+from graphax.jax.examples.simple import construct_simple
+
+gs, nedges = construct_simple()
+
+env = VertexGame(gs, nedges)
+
+gs, rew2, done = env.step(gs, 1)
+gs, rew1, done = env.step(gs, 0)
+
+print(rew1 + rew2)
+print(gs.edges)
+print(gs.state)
+
