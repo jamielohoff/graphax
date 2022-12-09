@@ -12,17 +12,6 @@ from jaxtyping import Array
 from .graph import GraphState
 
 
-def scan(f, init, xs, length=None):
-  if xs is None:
-    xs = [None] * length
-  carry = init
-  ys = []
-  for x in xs:
-    carry, y = f(carry, x)
-    ys.append(y)
-  return carry, jnp.stack(ys)
-
-
 def front_eliminate(gs: GraphState, 
                     edge: Tuple[int, int],
                     info: Array) -> Tuple[GraphState, int]:
@@ -52,9 +41,9 @@ def front_eliminate(gs: GraphState,
         carry = (edges, nops)
         return carry, edges
     nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
-                                    size=nedges, 
+                                    size=nedges,
                                     fill_value=-nedges)).transpose(1, 0)
-    output, _ = scan(front_update_edge, (gs.edges, 0), nonzeros)
+    output, _ = lax.scan(front_update_edge, (gs.edges, 0), nonzeros)
     gs.edges = output[0]
     return gs, output[1]
  
@@ -129,7 +118,7 @@ def eliminate(gs: GraphState,
     nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
                                     size=nedges, 
                                     fill_value=-nedges)).transpose(1, 0)
-    output, _ = scan(update_edges, (gs, 0), nonzeros)
+    output, _ = lax.scan(update_edges, (gs, 0), nonzeros)
     gs = output[0]
     num_steps = gs.info[4]
     gs.info = gs.info.at[4].add(1)

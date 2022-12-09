@@ -11,6 +11,13 @@ class GraphState:
     """The state of the graph is the connectivity of the edges represented
     as a sparse matrix plus the already eliminated vertices
 
+    The `info` field contains meta information about the computational graph in
+    the following order:
+        1.) number of input variables
+        2.) number of intermediate variables
+        3.) number of output variables
+        4.) number of edges
+        5.) number of vertices that have been eliminated
     Args:
         NamedTuple (_type_): _description_
     """
@@ -22,7 +29,7 @@ class GraphState:
                 info: Array,
                 edges: Array,
                 state: Array) -> None:
-        self.info = info # array with 5 entries that contain relevant information
+        self.info = info
         self.edges = edges
         self.state = state
         
@@ -44,7 +51,7 @@ register_pytree_node(GraphState,
                     graphstate_flatten,
                     graphstate_unflatten)
 
-
+# IS jitable
 def add_edge(gs: GraphState, 
             pos: Tuple[int, int], 
             val: float, 
@@ -53,17 +60,17 @@ def add_edge(gs: GraphState,
     TODO add docstring
     """
     ninputs, nintermediates, noutputs, nedges, nsteps = info
-    gs.edges = gs.edges.at[pos[0]+ninputs-1, pos[1]-ninputs+1].set(val)
+    gs.edges = gs.edges.at[pos[0]+ninputs-1, pos[1]-1].set(val)
     gs.info = gs.info.at[3].add(1)
     return gs
 
-
-def is_bipartite(gs: GraphState, nintermediates: int) -> bool:
+# IS jitable
+def is_bipartite(gs: GraphState) -> bool:
     """
     TODO docstring
 
     Returns:
         _type_: _description_
     """
-    return jnp.count_nonzero(gs.state) == nintermediates
+    return jnp.count_nonzero(gs.state) == gs.info.at[1].get()#nintermediates
 
