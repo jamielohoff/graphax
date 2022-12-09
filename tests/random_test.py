@@ -4,8 +4,8 @@ import jax.random as jrand
 
 from scipy.sparse import lil_matrix
 
-from graphax.jax.elimination import front_eliminate, back_eliminate, eliminate, forward, reverse
-from graphax.jax.examples.random import construct_random_graph
+from graphax.elimination import front_eliminate, back_eliminate, eliminate, forward, reverse
+from graphax.examples.random import construct_random_graph
 
 key = jrand.PRNGKey(42)
 gs = construct_random_graph(4, 11, 4, key)

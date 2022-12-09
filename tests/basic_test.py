@@ -1,8 +1,8 @@
 import jax
 
-from graphax.jax.elimination import front_eliminate, back_eliminate, eliminate, forward, reverse
-from graphax.jax.examples.simple import construct_simple
-from graphax.jax.examples.helmholtz import construct_Helmholtz
+from graphax.elimination import front_eliminate, back_eliminate, eliminate, forward, reverse
+from graphax.examples.simple import construct_simple
+from graphax.examples.helmholtz import construct_Helmholtz
 
 
 gs = construct_simple()

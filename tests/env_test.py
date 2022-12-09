@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
 
-from graphax.jax.game import VertexGame
-from graphax.jax.examples.simple import construct_simple
+from graphax.game import VertexGame
+from graphax.examples.simple import construct_simple
 
 gs = construct_simple()
 
