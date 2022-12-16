@@ -40,17 +40,18 @@ class VertexGame:
     @partial(jax.jit, static_argnums=(0,))
     def step(self,
             gs: GraphState,
-            action: int) -> Tuple[GraphState, float, bool]:
+            action: int) -> Tuple[GraphState, float, bool]:        
         vertex = action + 1
         
         gs, nops = self.vertex_eliminate(gs, vertex)
 
         reward = -nops
-    
+        
         gs, terminated = lax.cond(is_bipartite(gs),
-                            lambda g: (self.reset(), True),
-                            lambda g: (g, False),
-                            gs)
+                    lambda g: (self.reset(), True),
+                    lambda g: (g, False),
+                    gs)
+    
         return gs, reward, terminated
     
     @partial(jax.jit, static_argnums=(0,))
