@@ -1,6 +1,6 @@
+import copy
 from typing import Callable, Tuple
 from functools import partial
-import copy
 
 import jax
 import jax.lax as lax
