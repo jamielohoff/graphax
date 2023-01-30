@@ -20,9 +20,9 @@ def front_eliminate(gs: GraphState,
     Args:
         edge (Tuple[int]): _description_
     """
-    ninputs, nintermediates, noutputs, nedges, nsteps = info
+    num_inputs, _, _, num_edges, _ = info
     
-    e0 = edge[0] + ninputs - 1
+    e0 = edge[0] + num_inputs - 1
     e1 = edge[1] - 1
     
     edge_val = gs.edges[e0, e1]
@@ -30,19 +30,19 @@ def front_eliminate(gs: GraphState,
 
     def front_update_edge(carry, nonzeros):
         edges, nops = carry
-        i = nonzeros[0] - ninputs + 1
+        i = nonzeros[0] - num_inputs + 1
         j = nonzeros[1] + 1
         val = gs.edges.at[nonzeros[0], nonzeros[1]].get()
         edges, ops = lax.cond(i == edge[1], 
-                            lambda x, m, n, val: (x.at[m, n].add(val), 1), 
+                            lambda x, m, n, val: (x.at[m, n].set(val), 1), 
                             lambda x, m, n, val: (x, 0), 
                             edges, e0, nonzeros[1], val*edge_val)
         nops += ops
         carry = (edges, nops)
         return carry, edges
     nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
-                                    size=nedges,
-                                    fill_value=-nedges)).transpose(1, 0)
+                                    size=num_edges,
+                                    fill_value=-num_edges)).transpose(1, 0)
     output, _ = lax.scan(front_update_edge, (gs.edges, 0), nonzeros)
     gs.edges = output[0]
     return gs, output[1]
@@ -56,9 +56,9 @@ def back_eliminate(gs: GraphState,
     Args:
         edge (Tuple[int]): _description_
     """
-    ninputs, nintermediates, noutputs, nedges, nsteps = info
+    num_inputs, _, _, num_edges, _ = info
     
-    e0 = edge[0] + ninputs - 1
+    e0 = edge[0] + num_inputs - 1
     e1 = edge[1] - 1
     
     edge_val = gs.edges[e0, e1]
@@ -66,11 +66,11 @@ def back_eliminate(gs: GraphState,
 
     def back_update_edge(carry, nonzeros):
         edges, nops = carry
-        i = nonzeros[0] - ninputs + 1
+        i = nonzeros[0] - num_inputs + 1
         j = nonzeros[1] + 1
         val = gs.edges.at[nonzeros[0], nonzeros[1]].get()
         edges, ops = lax.cond(j == edge[0], 
-                            lambda x, m, n, val: (x.at[m, n].add(val), 1), 
+                            lambda x, m, n, val: (x.at[m, n].set(val), 1), 
                             lambda x, m, n, val: (x, 0), 
                             edges, nonzeros[0], e1, val*edge_val)
         nops += ops
@@ -78,8 +78,8 @@ def back_eliminate(gs: GraphState,
         return carry, edges
     
     nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
-                                    size=nedges, 
-                                    fill_value=-nedges)).transpose(1, 0)
+                                    size=num_edges, 
+                                    fill_value=-num_edges)).transpose(1, 0)
     output, _ = lax.scan(back_update_edge, (gs.edges, 0), nonzeros)
     gs.edges = output[0]
     return gs, output[1]
@@ -93,21 +93,21 @@ def eliminate(gs: GraphState,
     Args:
         vertex (int): _description_
     """
-    ninputs, nintermediates, noutputs, nedges, nsteps = info
+    num_inputs, _, _, num_edges, _ = info
     
     def update_edges(carry, nonzeros):
         gs, nops = carry
-        i = nonzeros[0] - ninputs + 1
+        i = nonzeros[0] - num_inputs + 1
         j = nonzeros[1] + 1
                         
         gs, fops = lax.cond(j == vertex,
-                            lambda x, i, j: front_eliminate(x, (i,j), info), 
-                            lambda x, i, j: (x, 0), 
+                            lambda x, m, n: front_eliminate(x, (m,n), info), 
+                            lambda x, m, n: (x, 0), 
                             gs, i, j)
 
         gs, bops = lax.cond(i == vertex, 
-                            lambda x, i, j: back_eliminate(x, (i,j), info), 
-                            lambda x, i, j: (x, 0), 
+                            lambda x, m, n: back_eliminate(x, (m,n), info), 
+                            lambda x, m, n: (x, 0), 
                             gs, i, j)
         
         
@@ -116,8 +116,8 @@ def eliminate(gs: GraphState,
         return carry, gs
         
     nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
-                                    size=nedges, 
-                                    fill_value=-nedges)).transpose(1, 0)
+                                    size=num_edges, 
+                                    fill_value=-num_edges)).transpose(1, 0)
     output, _ = lax.scan(update_edges, (gs, 0), nonzeros)
     gs = output[0]
     num_steps = gs.info[4]
@@ -132,7 +132,7 @@ def forward(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
     Returns:
         _type_: _description_
     """
-    ninputs, nintermediates, noutputs, nedges, nsteps = info
+    _, num_intermediates, _, _, _ = info
     
     def fwd(carry, edge):
         gs, nops = carry
@@ -140,7 +140,7 @@ def forward(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
         nops += ops
         carry = (gs, nops)
         return carry, edge
-    vertex_list = jnp.arange(1, nintermediates+1)
+    vertex_list = jnp.arange(1, num_intermediates+1)
     output, _ = lax.scan(fwd, (gs, 0), vertex_list)
     gs = output[0]
     return gs, output[1]
@@ -152,7 +152,7 @@ def reverse(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
     Returns:
         _type_: _description_
     """
-    ninputs, nintermediates, noutputs, nedges, nsteps = info
+    _, num_intermediates, _, _, _ = info
     
     def rev(carry, edge):
         gs, nops = carry
@@ -160,7 +160,7 @@ def reverse(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
         nops += ops
         carry = (gs, nops)
         return carry, edge
-    vertex_list = jnp.arange(1, nintermediates+1)[::-1]
+    vertex_list = jnp.arange(1, num_intermediates+1)[::-1]
     output, _ = lax.scan(rev, (gs, 0), vertex_list)
     gs = output[0]
     return gs, output[1]

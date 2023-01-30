@@ -4,7 +4,8 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node
-from jaxtyping import Array
+
+import chex
 
 
 class GraphState:
@@ -13,22 +14,22 @@ class GraphState:
 
     The `info` field contains meta information about the computational graph in
     the following order:
-        1.) number of input variables
-        2.) number of intermediate variables
-        3.) number of output variables
-        4.) number of edges
-        5.) number of vertices that have been eliminated
+        1.) num_inputs
+        2.) num_intermediates
+        3.) num_outputs
+        4.) num_edges
+        5.) num_steps = number of vertices that have been eliminated
     Args:
         NamedTuple (_type_): _description_
     """
-    info: Array
-    edges: Array
-    state: Array
+    info: chex.Array
+    edges: chex.Array
+    state: chex.Array
     
     def __init__(self, 
-                info: Array,
-                edges: Array,
-                state: Array) -> None:
+                info: chex.Array,
+                edges: chex.Array,
+                state: chex.Array) -> None:
         self.info = info
         self.edges = edges
         self.state = state
@@ -51,20 +52,20 @@ register_pytree_node(GraphState,
                     graphstate_flatten,
                     graphstate_unflatten)
 
-# IS jitable
+
 def add_edge(gs: GraphState, 
             pos: Tuple[int, int], 
             val: float, 
-            info: Array) -> GraphState:
+            info: chex.Array) -> GraphState:
     """
     TODO add docstring
     """
-    ninputs, nintermediates, noutputs, nedges, nsteps = info
-    gs.edges = gs.edges.at[pos[0]+ninputs-1, pos[1]-1].set(val)
+    num_inputs, _, _, _, _ = info
+    gs.edges = gs.edges.at[pos[0]+num_inputs-1, pos[1]-1].set(val)
     gs.info = gs.info.at[3].add(1)
     return gs
 
-# IS jitable
+
 def is_bipartite(gs: GraphState) -> bool:
     """
     TODO docstring
@@ -72,5 +73,5 @@ def is_bipartite(gs: GraphState) -> bool:
     Returns:
         _type_: _description_
     """
-    return jnp.count_nonzero(gs.state) == gs.info.at[1].get()#nintermediates
+    return jnp.count_nonzero(gs.state) == gs.info.at[1].get() # num_intermediates
 
