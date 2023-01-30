@@ -1,5 +1,9 @@
 """ 
-Edge elimination functions that are totally jit-compilable.
+Edge and vertex elimination functions for Cross-Country elimination 
+that are totally jit-compilable. For an in-depth discussion of Cross-Country 
+Elimination and the methods described here see the book 
+`Evaluating Derivatives` by Griewank et al., 2008,
+https://doi.org/10.1137/1.9780898717761
 """
 from typing import Tuple
 
@@ -15,10 +19,21 @@ from .graph import GraphState
 def front_eliminate(gs: GraphState, 
                     edge: Tuple[int, int],
                     info: Array) -> Tuple[GraphState, int]:
-    """TODO add docstring
+    """
+    Fully jit-compilable function that implements the front-elimination procedure
+    on a GraphState object.
 
-    Args:
-        edge (Tuple[int]): _description_
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to front-eliminate the given edge.
+        - edge (Tuple[int, int]): Tuple of integers describing the edge we want
+                                to eliminate.
+        - info (Array): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
     """
     num_inputs, _, _, num_edges, _ = info
     
@@ -51,10 +66,21 @@ def front_eliminate(gs: GraphState,
 def back_eliminate(gs: GraphState, 
                    edge: Tuple[int, int],
                    info: Array) -> Tuple[GraphState, int]:
-    """TODO add docstring
+    """
+    Fully jit-compilable function that implements the back-elimination procedure
+    on a GraphState object.
 
-    Args:
-        edge (Tuple[int]): _description_
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to back-eliminate the given edge.
+        - edge (Tuple[int, int]): Tuple of integers describing the edge we want
+                                to eliminate.
+        - info (Array): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
     """
     num_inputs, _, _, num_edges, _ = info
     
@@ -88,10 +114,21 @@ def back_eliminate(gs: GraphState,
 def eliminate(gs: GraphState, 
             vertex: int, 
             info: Array) -> Tuple[GraphState, int]:
-    """TODO add docstring
+    """
+    Fully jit-compilable function that implements the vertex-elimination procedure
+    on a GraphState object. Vertex elimination means that we front-eliminate
+    all incoming edges and back-eliminate all outgoing edges of a given vertex.
 
-    Args:
-        vertex (int): _description_
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to front-eliminate the given edge.
+        - vertex (int): Vertex we want to eliminate.
+        - info (Array): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
     """
     num_inputs, _, _, num_edges, _ = info
     
@@ -127,10 +164,19 @@ def eliminate(gs: GraphState,
 
 
 def forward(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
-    """TODO docstring
+    """
+    Fully jit-compilable function that implements forward-mode AD by 
+    eliminating the vertices in sequential order 1,2,3,...,n-1,n.
+
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to differntiate.
+        - info (Array): Meta-information about the computational graph.
 
     Returns:
-        _type_: _description_
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
     """
     _, num_intermediates, _, _, _ = info
     
@@ -147,10 +193,19 @@ def forward(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
 
 
 def reverse(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
-    """TODO docstring
+    """
+    Fully jit-compilable function that implements reverse-mode AD by 
+    eliminating the vertices in sequential order n,n-1,...,2,1.
+
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to differntiate.
+        - info (Array): Meta-information about the computational graph.
 
     Returns:
-        _type_: _description_
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
     """
     _, num_intermediates, _, _, _ = info
     
