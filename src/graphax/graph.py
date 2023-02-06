@@ -16,15 +16,6 @@ class GraphState:
 
     The `info` field contains meta information about the computational graph in
     the following order:
-<<<<<<< HEAD
-        1.) num_inputs
-        2.) num_intermediates
-        3.) num_outputs
-        4.) num_edges
-        5.) num_steps = number of vertices that have been eliminated
-    Args:
-        NamedTuple (_type_): _description_
-=======
         [0] = number of input variables
         [1] = number of intermediate variables
         [2] = number of output variables
@@ -54,7 +45,6 @@ class GraphState:
                         vertices
         - state (Array): An array containing the edges which have already been 
                         eliminated.
->>>>>>> 9cf7b4408581b74936ac0e26ce669956fb398546
     """
     info: chex.Array
     edges: chex.Array

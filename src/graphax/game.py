@@ -50,14 +50,15 @@ class VertexGame:
     
     def __init__(self, gs: GraphState) -> None:
         super().__init__()
-        self.gs = copy.deepcopy(gs) # copy of the computational graph for reset
+        self.gs = copy.deepcopy(gs)
         self.vertex_eliminate = partial(vert_elim, gs.get_info())
     
     @partial(jax.jit, static_argnums=(0,))
     def step(self,
             gs: GraphState,
             action: int) -> Tuple[GraphState, float, bool]:  
-        # Actions go from 0 to nintermediates-1 and vertices go from 1 to nintermediates      
+        # Actions go from 0 to num_intermediates-1 
+        # and vertices go from 1 to num_intermediates      
         vertex = action + 1
         
         new_gs, nops = self.vertex_eliminate(gs, vertex)
@@ -84,7 +85,7 @@ class EdgeGame:
     The game always has finite termination range!
     """
     gs: GraphState
-    ninputs: int
+    num_inputs: int
     front_eliminate: Callable
     back_eliminate: Callable
     
@@ -92,6 +93,8 @@ class EdgeGame:
         super().__init__()
         self.gs = copy.deepcopy(gs)
         self.num_inputs = gs.get_info()[0]
+        self.num_intermediates = gs.get_info()[1]
+        self.num_outputs = gs.get_info()[2]
         self.front_eliminate = partial(front_elim, gs.get_info())
         self.back_eliminate = partial(back_elim, gs.get_info())
     
