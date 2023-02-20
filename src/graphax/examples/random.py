@@ -30,7 +30,7 @@ def construct_random_graph(num_inputs: int,
     edges = edges.at[:num_inputs, :num_intermediates].set(in_conns)
     edges = edges.at[num_inputs:, :num_intermediates].set(var_conns)
     edges = edges.at[num_inputs:, num_intermediates:].set(out_conns)
-    
+        
     num_edges = jnp.sum(edges).astype(jnp.int32)
     info = jnp.array([num_inputs, num_intermediates, num_outputs, num_edges, 0])
     state = jnp.zeros(num_intermediates)

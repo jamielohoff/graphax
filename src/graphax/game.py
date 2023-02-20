@@ -60,7 +60,6 @@ class VertexGame:
         # Actions go from 0 to num_intermediates-1 
         # and vertices go from 1 to num_intermediates      
         vertex = action + 1
-        
         new_gs, nops = self.vertex_eliminate(gs, vertex)
 
         # Reward is the negative of the multiplication count
