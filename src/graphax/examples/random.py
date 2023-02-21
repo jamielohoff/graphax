@@ -8,9 +8,9 @@ import chex
 
 from ..core import GraphInfo, update_num_edges
 
-def construct_random_graph(key: chex.PRNGKey,
-                            info: GraphInfo, *, 
-                            fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
+def construct_random(key: chex.PRNGKey,
+                    info: GraphInfo, *, 
+                    fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs

@@ -1,19 +1,21 @@
-import jax
-import jax.numpy as jnp
+from graphax.vertex_game import VertexGame, make_vertex_game_state
+from graphax.examples.helmholtz import construct_Helmholtz
 
-from graphax.vertex_game import VertexGame
-from graphax.examples.simple import construct_simple
+edges, info = construct_Helmholtz()
 
-gs = construct_simple()
+state = make_vertex_game_state(info, edges)
 
-env = VertexGame(gs)
-
-gs, rew2, done = env.step(gs, 1)
-print(gs.edges)
-gs, rew1, done = env.step(gs, 0)
-
-print(rew1 + rew2)
-print(gs.edges)
-print(gs.state)
-print(done)
+env = VertexGame(state)
+state, reward, terminated = env.step(state, 0)
+state, reward, terminated = env.step(state, 1)
+state, reward, terminated = env.step(state, 2)
+state, reward, terminated = env.step(state, 3)
+state, reward, terminated = env.step(state, 4)
+state, reward, terminated = env.step(state, 5)
+state, reward, terminated = env.step(state, 6)
+state, reward, terminated = env.step(state, 7)
+state, reward, terminated = env.step(state, 8)
+state, reward, terminated = env.step(state, 9)
+state, reward, terminated = env.step(state, 10)
+print(state.edges, reward, terminated)
 

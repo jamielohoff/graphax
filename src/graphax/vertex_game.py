@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, Tuple
+from typing import Tuple
 from functools import partial
 
 import jax
@@ -9,7 +9,7 @@ from jax.tree_util import register_pytree_node
 
 import chex
 
-from .core import eliminate, front_eliminate, back_eliminate
+from .core import GraphInfo, vertex_eliminate
 
 
 class VertexGameState:
@@ -50,27 +50,24 @@ class VertexGameState:
         - state (Array): An array containing the edges which have already been 
                         eliminated.
     """
-    info: chex.Array
+    info: GraphInfo
+    t: chex.Numeric
     edges: chex.Array
-    state: chex.Array
+    vertices: chex.Array
     
-    def __init__(self, 
-                info: chex.Array,
+    def __init__(self,
+                t: int, 
+                info: GraphInfo,
                 edges: chex.Array,
-                state: chex.Array) -> None:
+                vertices: chex.Array) -> None:
+        self.t = t
         self.info = info
         self.edges = edges
-        self.state = state
-        
-    def get_info(self) -> Tuple[int, int, int, int, int]:
-        """
-        Returns the graph.info array as a tuple.
-        """
-        return tuple(int(i) for i in self.info)
+        self.vertices = vertices
 
 
 def gamestate_flatten(vgs: VertexGameState):
-    children = (vgs.info, vgs.edges, vgs.state)
+    children = (vgs.t, vgs.info, vgs.edges, vgs.vertices)
     aux_data = None
     return children, aux_data
 
@@ -85,28 +82,26 @@ register_pytree_node(VertexGameState,
                     gamestate_unflatten)
 
 
+def make_vertex_game_state(info: GraphInfo, edges: chex.Array) -> VertexGameState:
+    padding = ((0, info.num_intermediates-1), (0, 0), (0, 0))
+    edges = jnp.pad(edges[jnp.newaxis, :, :], 
+                            pad_width=padding, 
+                            mode="constant", 
+                            constant_values=0)
+    vertices = jnp.zeros(info.num_intermediates)
+    return VertexGameState(t=0, info=info, edges=edges, vertices=vertices)
+
+
 def is_bipartite(vgs: VertexGameState) -> bool:
     """Alternative implementation that makes use of the game state for faster computation
-    Jittable function to test if a graph is bipartite by comparing the number of
+    jittable function to test if a graph is bipartite by comparing the number of
     non-zero entries in gs.states to the number of intermediate variables, i.e.
     gs.info.at[1].get().
 
     Arguments:
-        - gs (GraphState): GraphState object we want to check.
+        - vgs (GraphState): GraphState object we want to check.
     """
-    return jnp.count_nonzero(vgs.state) == vgs.info.at[1].get() # num_intermediates
-
-
-def vert_elim(info: chex.Array, gs: GraphState, vertex: int):
-    return eliminate(gs, vertex, info)
-
-
-def front_elim(info: chex.Array, gs: GraphState, edge: Tuple[int, int]):
-    return front_eliminate(gs, edge, info)
-
-
-def back_elim(info: chex.Array, gs: GraphState, edge: Tuple[int, int]):
-    return back_eliminate(gs, edge, info)
+    return jnp.count_nonzero(vgs.vertices) == vgs.info.num_intermediates
 
 
 class VertexGame:
@@ -131,34 +126,38 @@ class VertexGame:
     The `termination` of the game is indicated by the is_bipartite feature, i.e.
     the game is over when all intermediate vertices and edges have been eliminated.
     """
-    gs: GraphState
-    vertex_eliminate: Callable
+    vgs: VertexGameState
     
-    def __init__(self, gs: GraphState) -> None:
+    def __init__(self, vgs: VertexGameState) -> None:
         super().__init__()
-        self.gs = copy.deepcopy(gs)
-        self.vertex_eliminate = partial(vert_elim, gs.get_info())
+        self.vgs = copy.deepcopy(vgs)
     
     @partial(jax.jit, static_argnums=(0,))
     def step(self,
-            gs: GraphState,
-            action: int) -> Tuple[GraphState, float, bool]:  
+            vgs: VertexGameState,
+            action: int) -> Tuple[VertexGameState, float, bool]:  
         # Actions go from 0 to num_intermediates-1 
         # and vertices go from 1 to num_intermediates      
         vertex = action + 1
-        
-        new_gs, nops = self.vertex_eliminate(gs, vertex)
+        t = vgs.t
+
+        edges = vgs.edges[t]
+        new_edges, nops = vertex_eliminate(edges, vertex, self.vgs.info)
+
+        vgs.t += 1
+        vgs.edges = vgs.edges.at[t+1, :, :].set(new_edges)
+        vgs.vertices = vgs.vertices.at[t].set(vertex)
 
         # Reward is the negative of the multiplication count
         reward = -nops
         
-        terminated = lax.cond(is_bipartite(new_gs),
-                                    lambda: True,
-                                    lambda: False)
+        terminated = lax.cond(t == self.vgs.info.num_intermediates-1,
+                            lambda: True,
+                            lambda: False)
     
-        return new_gs, reward, terminated
+        return vgs, reward, terminated
     
     @partial(jax.jit, static_argnums=(0,))
-    def reset(self, key) -> GraphState:
+    def reset(self, key: chex.PRNGKey = None) -> VertexGameState:
         return copy.deepcopy(self.gs)
 

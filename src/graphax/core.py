@@ -55,12 +55,13 @@ def add_edge(edges: chex.Array,
         - info (Array): Contains meta data about the computational graph.
     """
     num_inputs = info.num_inputs
-    return edges.at[pos[0]+num_inputs-1, pos[1]-1].set(1), update_num_edges(info, 1)
+    num_edges = info.num_edges
+    return edges.at[pos[0]+num_inputs-1, pos[1]-1].set(1), update_num_edges(info, num_edges + 1)
 
 
 def front_eliminate(edges: chex.Array, 
                     edge: Tuple[int, int],
-                    info: GraphInfo) -> Tuple[chex.Array, int, GraphInfo]:
+                    info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements the front-elimination procedure
     on the edges of a GraphState object.
@@ -108,7 +109,7 @@ def front_eliminate(edges: chex.Array,
 
 def back_eliminate(edges: chex.Array, 
                    edge: Tuple[int, int],
-                   info: GraphInfo) -> Tuple[chex.Array, int, GraphInfo]:
+                   info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements the back-elimination procedure
     on the edges of a GraphState object.
@@ -157,7 +158,7 @@ def back_eliminate(edges: chex.Array,
 
 def vertex_eliminate(edges: chex.Array, 
                     vertex: int, 
-                    info: GraphInfo) -> Tuple[chex.Array, int, GraphInfo]:
+                    info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements the vertex-elimination procedure
     on a GraphState object. Vertex elimination means that we front-eliminate
@@ -200,14 +201,10 @@ def vertex_eliminate(edges: chex.Array,
                                     size=num_edges, 
                                     fill_value=-num_edges)).T
     output, _ = lax.scan(update_edges, (edges, 0), nonzeros)
-    # gs = output[0]
-    # num_steps = gs.info[4]
-    # gs.info = gs.info.at[4].add(1)
-    # gs.state = gs.state.at[num_steps].set(vertex)
     return output
 
 
-def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int, GraphInfo]:
+def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements forward-mode AD by 
     eliminating the vertices in sequential order 1,2,3,...,n-1,n.
