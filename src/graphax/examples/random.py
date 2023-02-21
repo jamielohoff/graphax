@@ -6,28 +6,33 @@ import jax.random as jrand
 
 import chex
 
-@jax.jit
+from ..core import GraphInfo, update_num_edges
+
 def construct_random_graph(key: chex.PRNGKey,
-                            info: chex.Array, *, 
-                            fraction: float = .35) -> Tuple[chex.Array, chex.Array]: 
-    num_inputs, num_intermediates, num_outputs, _, _ = info
+                            info: GraphInfo, *, 
+                            fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
+    num_i = info.num_inputs
+    num_v = info.num_intermediates
+    num_o = info.num_outputs
     in_key, var_key, out_key = jrand.split(key, 3)
     
-    in_conns = jrand.uniform(in_key, (num_inputs, num_intermediates))
+    in_conns = jrand.uniform(in_key, 
+                            (num_i, num_v),
+                            minval=.2, 
+                            maxval=.8)
     in_conns = jnp.where(in_conns > fraction, 0, 1)
     
-    var_conns = jrand.uniform(var_key, (num_intermediates, num_intermediates))
+    var_conns = jrand.uniform(var_key, (num_i, num_v))
     var_conns = jnp.where(var_conns > fraction, 0, 1)
     var_conns = jnp.triu(var_conns, k=1)
     
-    out_conns = jrand.uniform(out_key, (num_intermediates, num_outputs))
+    out_conns = jrand.uniform(out_key, (num_v, num_o))
     out_conns = jnp.where(out_conns > fraction, 0, 1)
     
-    edges = jnp.zeros((num_inputs+num_intermediates, num_intermediates+num_outputs), dtype=jnp.float32)    
-    edges = edges.at[:num_inputs, :num_intermediates].set(in_conns)
-    edges = edges.at[num_inputs:, :num_intermediates].set(var_conns)
-    edges = edges.at[num_inputs:, num_intermediates:].set(out_conns)
-        
-    info[3] = jnp.sum(edges).astype(jnp.int32)
-    return edges, info
+    edges = jnp.zeros((num_i+num_v, num_v+num_o))    
+    edges = edges.at[:num_i, :num_v].set(in_conns)
+    edges = edges.at[num_v:, :num_v].set(var_conns)
+    edges = edges.at[num_i:, num_v:].set(out_conns)
+    num_edges = int(edges.sum())
+    return edges, update_num_edges(info, num_edges)
 

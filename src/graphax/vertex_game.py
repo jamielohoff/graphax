@@ -69,23 +69,23 @@ class VertexGameState:
         return tuple(int(i) for i in self.info)
 
 
-def graphstate_flatten(gs: GraphState):
-    children = (gs.info, gs.edges, gs.state)
+def gamestate_flatten(vgs: VertexGameState):
+    children = (vgs.info, vgs.edges, vgs.state)
     aux_data = None
     return children, aux_data
 
 
-def graphstate_unflatten(aux_data, children) -> GraphState:
-    return GraphState(*children)
+def gamestate_unflatten(aux_data, children) -> VertexGameState:
+    return VertexGameState(*children)
 
 
 # Registering GraphState as a PyTree node so we can use it with vmap and jit
-register_pytree_node(GraphState,
-                    graphstate_flatten,
-                    graphstate_unflatten)
+register_pytree_node(VertexGameState,
+                    gamestate_flatten,
+                    gamestate_unflatten)
 
 
-def is_bipartite(gs: VertexGameState) -> bool:
+def is_bipartite(vgs: VertexGameState) -> bool:
     """Alternative implementation that makes use of the game state for faster computation
     Jittable function to test if a graph is bipartite by comparing the number of
     non-zero entries in gs.states to the number of intermediate variables, i.e.
@@ -94,7 +94,7 @@ def is_bipartite(gs: VertexGameState) -> bool:
     Arguments:
         - gs (GraphState): GraphState object we want to check.
     """
-    return jnp.count_nonzero(gs.state) == gs.info.at[1].get() # num_intermediates
+    return jnp.count_nonzero(vgs.state) == vgs.info.at[1].get() # num_intermediates
 
 
 def vert_elim(info: chex.Array, gs: GraphState, vertex: int):
@@ -158,55 +158,6 @@ class VertexGame:
     
         return new_gs, reward, terminated
     
-    @partial(jax.jit, static_argnums=(0,))
-    def reset(self, key) -> GraphState:
-        return copy.deepcopy(self.gs)
-
-
-# TODO add comments and docstring
-class EdgeGame:
-    """
-    OpenAI-like gymnax environment for the game
-    
-    The game always has finite termination range!
-    """
-    gs: GraphState
-    num_inputs: int
-    front_eliminate: Callable
-    back_eliminate: Callable
-    
-    def __init__(self, gs: GraphState) -> None:
-        super().__init__()
-        self.gs = copy.deepcopy(gs)
-        self.num_inputs = gs.get_info()[0]
-        self.num_intermediates = gs.get_info()[1]
-        self.num_outputs = gs.get_info()[2]
-        self.front_eliminate = partial(front_elim, gs.get_info())
-        self.back_eliminate = partial(back_elim, gs.get_info())
-    
-    # Remove JIT compilation here
-    @partial(jax.jit, static_argnums=(0,))
-    def step(self,
-            gs: GraphState,
-            action: chex.Array) -> Tuple[GraphState, float, bool]:
-        i, j, mode = action
-
-        i = i - self.num_inputs + 1
-        j += 1
-
-        new_gs, nops = lax.cond(mode == 0,
-                            lambda g: self.front_eliminate(g, (i,j)),
-                            lambda g: self.back_eliminate(g, (i,j)),
-                            gs)
-                
-        reward = -nops
-    
-        terminated = lax.cond(is_bipartite(new_gs),
-                            lambda: True,
-                            lambda: False)
-        return new_gs, reward, terminated
-    
-    # remove jit compilation here!
     @partial(jax.jit, static_argnums=(0,))
     def reset(self, key) -> GraphState:
         return copy.deepcopy(self.gs)

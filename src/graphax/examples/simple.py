@@ -1,20 +1,16 @@
 from typing import Tuple
 
-import jax
-import jax.numpy as jnp
-
 import chex
 
-from ..core import add_edge
+from ..core import GraphInfo, make_empty_edges, add_edge
 
 
-@jax.jit
-def construct_simple() -> Tuple[chex.Array, chex. Array]:
-    num_inputs = 2
-    num_intermediates = 2
-    num_outputs = 2
-    info = jnp.array([num_inputs, num_intermediates, num_outputs, 0, 0])
-    edges = jnp.zeros((num_inputs+num_intermediates, num_intermediates+num_outputs))
+def construct_simple() -> Tuple[chex.Array, GraphInfo]:
+    info = GraphInfo(num_inputs=2,
+                    num_intermediates=2,
+                    num_outputs=2,
+                    num_edges=0)
+    edges = make_empty_edges(info)
     
     edges, info = add_edge(edges, (-1, 1), info)
     edges, info = add_edge(edges, (0, 1), info)
