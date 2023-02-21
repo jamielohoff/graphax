@@ -11,24 +11,23 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
-from jaxtyping import Array
-
-from .graph import GraphState
+import chex
 
 
-def front_eliminate(gs: GraphState, 
+def front_eliminate(gs_edges: chex.Array, 
                     edge: Tuple[int, int],
-                    info: Array) -> Tuple[GraphState, int]:
-    """
+                    info: chex.Array) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
     Fully jit-compilable function that implements the front-elimination procedure
-    on a GraphState object.
+    on the edges of a GraphState object.
 
     Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
-                            where we want to front-eliminate the given edge.
+        - gs_edges (chex.Array): Edges contained in a GraphState object that 
+                                describes the computational graph where we want 
+                                to front-eliminate the given edge.
         - edge (Tuple[int, int]): Tuple of integers describing the edge we want
                                 to eliminate.
-        - info (Array): Meta-information about the computational graph.
+        - info (chex.Array): Meta-information about the computational graph.
 
     Returns:
         A tuple that contains a new GraphState object with updated edges and 
@@ -40,42 +39,42 @@ def front_eliminate(gs: GraphState,
     e0 = edge[0] + num_inputs - 1
     e1 = edge[1] - 1
     
-    edge_val = gs.edges[e0, e1]
-    gs.edges = gs.edges.at[e0, e1].set(0.)
+    edge_val = gs_edges[e0, e1]
+    gs_edges = gs_edges.at[e0, e1].set(0.)
 
     def front_update_edge(carry, nonzeros):
         edges, nops = carry
         i = nonzeros[0] - num_inputs + 1
         j = nonzeros[1] + 1
-        val = gs.edges.at[nonzeros[0], nonzeros[1]].get()
+        val = gs_edges.at[nonzeros[0], nonzeros[1]].get()
         edges, ops = lax.cond(i == edge[1], 
                             lambda x, m, n, val: (x.at[m, n].set(val), 1), 
                             lambda x, m, n, val: (x, 0), 
                             edges, e0, nonzeros[1], val*edge_val)
         nops += ops
         carry = (edges, nops)
-        return carry, edges
-    nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
+        return carry, None
+    nonzeros = jnp.stack(jnp.nonzero(gs_edges, 
                                     size=num_edges,
                                     fill_value=-num_edges)).transpose(1, 0)
-    output, _ = lax.scan(front_update_edge, (gs.edges, 0), nonzeros)
-    gs.edges = output[0]
-    return gs, output[1]
+    output, _ = lax.scan(front_update_edge, (gs_edges, 0), nonzeros)
+    return output
  
 
-def back_eliminate(gs: GraphState, 
+def back_eliminate(gs_edges: chex.Array, 
                    edge: Tuple[int, int],
-                   info: Array) -> Tuple[GraphState, int]:
-    """
+                   info: chex.Array) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
     Fully jit-compilable function that implements the back-elimination procedure
-    on a GraphState object.
+    on the edges of a GraphState object.
 
     Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
-                            where we want to back-eliminate the given edge.
+        - gs_edges (chex.Array): Edges contained in a GraphState object that 
+                                describes the computational graph where we want 
+                                to front-eliminate the given edge.
         - edge (Tuple[int, int]): Tuple of integers describing the edge we want
                                 to eliminate.
-        - info (Array): Meta-information about the computational graph.
+        - info (chex.Array): Meta-information about the computational graph.
 
     Returns:
         A tuple that contains a new GraphState object with updated edges and 
@@ -87,40 +86,39 @@ def back_eliminate(gs: GraphState,
     e0 = edge[0] + num_inputs - 1
     e1 = edge[1] - 1
     
-    edge_val = gs.edges[e0, e1]
-    gs.edges = gs.edges.at[e0, e1].set(0.)
+    edge_val = gs_edges[e0, e1]
+    gs_edges = gs_edges.at[e0, e1].set(0.)
 
     def back_update_edge(carry, nonzeros):
         edges, nops = carry
         i = nonzeros[0] - num_inputs + 1
         j = nonzeros[1] + 1
-        val = gs.edges.at[nonzeros[0], nonzeros[1]].get()
+        val = gs_edges.at[nonzeros[0], nonzeros[1]].get()
         edges, ops = lax.cond(j == edge[0], 
                             lambda x, m, n, val: (x.at[m, n].set(val), 1), 
                             lambda x, m, n, val: (x, 0), 
                             edges, nonzeros[0], e1, val*edge_val)
         nops += ops
         carry = (edges, nops)
-        return carry, edges
+        return carry, None
     
-    nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
+    nonzeros = jnp.stack(jnp.nonzero(gs_edges, 
                                     size=num_edges, 
                                     fill_value=-num_edges)).transpose(1, 0)
-    output, _ = lax.scan(back_update_edge, (gs.edges, 0), nonzeros)
-    gs.edges = output[0]
-    return gs, output[1]
+    output, _ = lax.scan(back_update_edge, (gs_edges, 0), nonzeros)
+    return output
 
 
-def eliminate(gs: GraphState, 
+def eliminate(gs_edges: chex.Array, 
             vertex: int, 
-            info: Array) -> Tuple[GraphState, int]:
-    """
+            info: chex.Array) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
     Fully jit-compilable function that implements the vertex-elimination procedure
     on a GraphState object. Vertex elimination means that we front-eliminate
     all incoming edges and back-eliminate all outgoing edges of a given vertex.
 
     Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
+        - gs_edges (GraphState): GraphState that describes the computational graph 
                             where we want to front-eliminate the given edge.
         - vertex (int): Vertex we want to eliminate.
         - info (Array): Meta-information about the computational graph.
@@ -133,38 +131,38 @@ def eliminate(gs: GraphState,
     num_inputs, _, _, num_edges, _ = info
     
     def update_edges(carry, nonzeros):
-        gs, nops = carry
+        edges, nops = carry
         i = nonzeros[0] - num_inputs + 1
         j = nonzeros[1] + 1
                         
-        gs, fops = lax.cond(j == vertex,
-                            lambda x, m, n: front_eliminate(x, (m,n), info), 
-                            lambda x, m, n: (x, 0), 
-                            gs, i, j)
+        edges, fops = lax.cond(j == vertex,
+                                lambda x, m, n: front_eliminate(x, (m,n), info), 
+                                lambda x, m, n: (x, 0), 
+                                edges, i, j)
 
-        gs, bops = lax.cond(i == vertex, 
-                            lambda x, m, n: back_eliminate(x, (m,n), info), 
-                            lambda x, m, n: (x, 0), 
-                            gs, i, j)
+        edges, bops = lax.cond(i == vertex, 
+                                lambda x, m, n: back_eliminate(x, (m,n), info), 
+                                lambda x, m, n: (x, 0), 
+                                edges, i, j)
         
         
         nops += (fops + bops)
-        carry = (gs, nops)
-        return carry, gs
+        carry = (edges, nops)
+        return carry, None
         
-    nonzeros = jnp.stack(jnp.nonzero(gs.edges, 
+    nonzeros = jnp.stack(jnp.nonzero(gs_edges, 
                                     size=num_edges, 
                                     fill_value=-num_edges)).transpose(1, 0)
-    output, _ = lax.scan(update_edges, (gs, 0), nonzeros)
-    gs = output[0]
-    num_steps = gs.info[4]
-    gs.info = gs.info.at[4].add(1)
-    gs.state = gs.state.at[num_steps].set(vertex)
-    return gs, output[1]
+    output, _ = lax.scan(update_edges, (gs_edges, 0), nonzeros)
+    # gs = output[0]
+    # num_steps = gs.info[4]
+    # gs.info = gs.info.at[4].add(1)
+    # gs.state = gs.state.at[num_steps].set(vertex)
+    return output
 
 
-def forward(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
-    """
+def forward(gs_edges: chex.Array, info: chex.Array) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
     Fully jit-compilable function that implements forward-mode AD by 
     eliminating the vertices in sequential order 1,2,3,...,n-1,n.
 
@@ -180,20 +178,19 @@ def forward(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
     """
     _, num_intermediates, _, _, _ = info
     
-    def fwd(carry, edge):
-        gs, nops = carry
-        gs, ops = eliminate(gs, edge, info)
+    def fwd(carry, vertex):
+        edges, nops = carry
+        edges, ops = eliminate(edges, vertex, info)
         nops += ops
-        carry = (gs, nops)
-        return carry, edge
+        carry = (edges, nops)
+        return carry, None
     vertex_list = jnp.arange(1, num_intermediates+1)
-    output, _ = lax.scan(fwd, (gs, 0), vertex_list)
-    gs = output[0]
-    return gs, output[1]
+    output, _ = lax.scan(fwd, (gs_edges, 0), vertex_list)
+    return output
 
 
-def reverse(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
-    """
+def reverse(gs_edges: chex.Array, info: chex.Array) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
     Fully jit-compilable function that implements reverse-mode AD by 
     eliminating the vertices in sequential order n,n-1,...,2,1.
 
@@ -209,14 +206,33 @@ def reverse(gs: GraphState, info: Array) -> Tuple[GraphState, int]:
     """
     _, num_intermediates, _, _, _ = info
     
-    def rev(carry, edge):
-        gs, nops = carry
-        gs, ops = eliminate(gs, edge, info)
+    def rev(carry, vertex):
+        edges, nops = carry
+        edges, ops = eliminate(edges, vertex, info)
         nops += ops
-        carry = (gs, nops)
-        return carry, edge
+        carry = (edges, nops)
+        return carry, None
     vertex_list = jnp.arange(1, num_intermediates+1)[::-1]
-    output, _ = lax.scan(rev, (gs, 0), vertex_list)
-    gs = output[0]
-    return gs, output[1]
+    output, _ = lax.scan(rev, (gs_edges, 0), vertex_list)
+    return output
+
+
+def add_edge(edges: chex.Array, 
+            pos: Tuple[int, int], 
+            info: chex.Array) -> chex.Array:
+    """TODO refine documentation
+    Jittable function to add a new edge to a GraphState object, i.e. a new
+    entry to the `edges` matrix.
+
+    Input vertices range from `-num_inputs+1` to 0, while the last `num_output` 
+    vertices are the output vertices.
+
+    Arguments:
+        - edges (GraphState): GraphState object where we want to add the edge.
+        - pos (Tuple[int, int]): Tuple that describes which two vertices are 
+                                connected, i.e. pos = (from, to).
+        - info (Array): Contains meta data about the computational graph.
+    """
+    num_inputs, _, _, _, _ = info
+    return edges.at[pos[0]+num_inputs-1, pos[1]-1].set(1), info.at[3].add(1)
 

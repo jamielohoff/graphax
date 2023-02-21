@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrand
 
-from graphax.elimination import front_eliminate, back_eliminate, eliminate, forward, reverse
+from graphax.core import front_eliminate, back_eliminate, eliminate, forward, reverse
 from graphax.examples.random import construct_random_graph
 from graphax.examples.helmholtz import construct_Helmholtz
 

@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from graphax.game import EdgeGame
+from graphax.vertex_game import EdgeGame
 from graphax.examples.simple import construct_simple
 
 gs = construct_simple()

@@ -6,14 +6,11 @@ import jax.random as jrand
 
 import chex
 
-from ..graph import GraphState
-
-
-def construct_random_graph(num_inputs: int, 
-                            num_intermediates: int, 
-                            num_outputs: int,
-                            key: chex.PRNGKey, *, 
-                            fraction: float = .35) -> Tuple[GraphState, int]: 
+@jax.jit
+def construct_random_graph(key: chex.PRNGKey,
+                            info: chex.Array, *, 
+                            fraction: float = .35) -> Tuple[chex.Array, chex.Array]: 
+    num_inputs, num_intermediates, num_outputs, _, _ = info
     in_key, var_key, out_key = jrand.split(key, 3)
     
     in_conns = jrand.uniform(in_key, (num_inputs, num_intermediates))
@@ -31,9 +28,6 @@ def construct_random_graph(num_inputs: int,
     edges = edges.at[num_inputs:, :num_intermediates].set(var_conns)
     edges = edges.at[num_inputs:, num_intermediates:].set(out_conns)
         
-    num_edges = jnp.sum(edges).astype(jnp.int32)
-    info = jnp.array([num_inputs, num_intermediates, num_outputs, num_edges, 0])
-    state = jnp.zeros(num_intermediates)
-    
-    return GraphState(info, edges, state)
+    info[3] = jnp.sum(edges).astype(jnp.int32)
+    return edges, info
 
