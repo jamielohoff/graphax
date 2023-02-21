@@ -1,4 +1,6 @@
 import sys
+from .core import GraphInfo
+from .vertex_game import VertexGameState, VertexGame, make_vertex_game_state
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`
