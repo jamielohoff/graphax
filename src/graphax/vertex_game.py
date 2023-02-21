@@ -139,7 +139,7 @@ class VertexGame:
         # Actions go from 0 to num_intermediates-1 
         # and vertices go from 1 to num_intermediates      
         vertex = action + 1
-        t = vgs.t
+        t = vgs.t.astype(jnp.int32)
 
         edges = vgs.edges[t]
         new_edges, nops = vertex_eliminate(edges, vertex, self.vgs.info)
@@ -159,5 +159,5 @@ class VertexGame:
     
     @partial(jax.jit, static_argnums=(0,))
     def reset(self, key: chex.PRNGKey = None) -> VertexGameState:
-        return copy.deepcopy(self.gs)
+        return copy.deepcopy(self.vgs)
 
