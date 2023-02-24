@@ -24,18 +24,22 @@ class GraphInfo(NamedTuple):
     num_edges: int
 
 
-def update_num_edges(info: GraphInfo, num_edges: int) -> GraphInfo:
-    return GraphInfo(num_inputs=info.num_inputs,
-                    num_intermediates=info.num_intermediates,
-                    num_outputs=info.num_outputs,
-                    num_edges=num_edges)
-
-
 def make_empty_edges(info: GraphInfo) -> chex.Array:
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs
     return jnp.zeros((num_i+num_v, num_v+num_o))
+
+
+def make_graph_info(info: chex.Array) -> GraphInfo:
+    num_i = info[0]
+    num_v = info[1]
+    num_o = info[2]
+    num_edges = (num_i+num_v)*(num_v+num_o) - num_v*(num_v-1)//2
+    return GraphInfo(num_inputs=info[0],
+                    num_intermediates=info[1],
+                    num_outputs=info[2],
+                    num_edges=num_edges)
 
 
 def add_edge(edges: chex.Array, 
@@ -55,8 +59,7 @@ def add_edge(edges: chex.Array,
         - info (Array): Contains meta data about the computational graph.
     """
     num_inputs = info.num_inputs
-    num_edges = info.num_edges
-    return edges.at[pos[0]+num_inputs-1, pos[1]-1].set(1), update_num_edges(info, num_edges + 1)
+    return edges.at[pos[0]+num_inputs-1, pos[1]-1].set(1)
 
 
 def front_eliminate(edges: chex.Array, 

@@ -50,8 +50,8 @@ class VertexGameState:
         - state (Array): An array containing the edges which have already been 
                         eliminated.
     """
-    info: GraphInfo
     t: chex.Numeric
+    info: GraphInfo
     edges: chex.Array
     vertices: chex.Array
     
@@ -83,11 +83,11 @@ register_pytree_node(VertexGameState,
 
 
 def make_vertex_game_state(info: GraphInfo, edges: chex.Array) -> VertexGameState:
-    padding = ((0, info.num_intermediates-1), (0, 0), (0, 0))
-    edges = jnp.pad(edges[jnp.newaxis, :, :], 
-                            pad_width=padding, 
-                            mode="constant", 
-                            constant_values=0)
+    # padding = ((0, info.num_intermediates-1), (0, 0), (0, 0))
+    # edges = jnp.pad(edges[jnp.newaxis, :, :], 
+    #                         pad_width=padding, 
+    #                         mode="constant", 
+    #                         constant_values=0)
     vertices = jnp.zeros(info.num_intermediates)
     return VertexGameState(t=0, info=info, edges=edges, vertices=vertices)
 
@@ -141,11 +141,11 @@ class VertexGame:
         vertex = action + 1
         t = vgs.t.astype(jnp.int32)
 
-        edges = vgs.edges[t]
+        edges = vgs.edges
         new_edges, nops = vertex_eliminate(edges, vertex, self.vgs.info)
 
         vgs.t += 1
-        vgs.edges = vgs.edges.at[t+1, :, :].set(new_edges)
+        vgs.edges = vgs.edges.at[:, :].set(new_edges)
         vgs.vertices = vgs.vertices.at[t].set(vertex)
 
         # Reward is the negative of the multiplication count

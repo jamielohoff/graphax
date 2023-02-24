@@ -6,7 +6,7 @@ import jax.random as jrand
 
 import chex
 
-from ..core import GraphInfo, update_num_edges
+from ..core import GraphInfo
 
 def construct_random(key: chex.PRNGKey,
                     info: GraphInfo, *, 
@@ -17,12 +17,12 @@ def construct_random(key: chex.PRNGKey,
     in_key, var_key, out_key = jrand.split(key, 3)
     
     in_conns = jrand.uniform(in_key, 
-                            (num_i, num_v),
-                            minval=.2, 
-                            maxval=.8)
+                            (num_i, num_v+num_o),
+                            minval=.1, 
+                            maxval=.5)
     in_conns = jnp.where(in_conns > fraction, 0, 1)
     
-    var_conns = jrand.uniform(var_key, (num_i, num_v))
+    var_conns = jrand.uniform(var_key, (num_v, num_v))
     var_conns = jnp.where(var_conns > fraction, 0, 1)
     var_conns = jnp.triu(var_conns, k=1)
     
@@ -30,9 +30,8 @@ def construct_random(key: chex.PRNGKey,
     out_conns = jnp.where(out_conns > fraction, 0, 1)
     
     edges = jnp.zeros((num_i+num_v, num_v+num_o))    
-    edges = edges.at[:num_i, :num_v].set(in_conns)
-    edges = edges.at[num_v:, :num_v].set(var_conns)
+    edges = edges.at[:num_i, :].set(in_conns)
+    edges = edges.at[num_i:, :num_v].set(var_conns)
     edges = edges.at[num_i:, num_v:].set(out_conns)
-    num_edges = int(edges.sum())
-    return edges, update_num_edges(info, num_edges)
+    return edges, info
 
