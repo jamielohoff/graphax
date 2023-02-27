@@ -36,6 +36,7 @@ def make_graph_info(info: chex.Array) -> GraphInfo:
     num_v = info[1]
     num_o = info[2]
     num_edges = (num_i+num_v)*(num_v+num_o) - num_v*(num_v-1)//2
+    num_edges = int(.5*num_edges)
     return GraphInfo(num_inputs=info[0],
                     num_intermediates=info[1],
                     num_outputs=info[2],
