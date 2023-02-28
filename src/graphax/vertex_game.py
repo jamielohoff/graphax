@@ -151,7 +151,7 @@ class VertexGame:
         # Reward is the negative of the multiplication count
         reward = -nops
         
-        terminated = lax.cond(t == self.vgs.info.num_intermediates-1,
+        terminated = lax.cond((t == self.vgs.info.num_intermediates-1).all(),
                             lambda: True,
                             lambda: False)
     
