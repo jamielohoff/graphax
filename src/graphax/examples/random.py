@@ -16,10 +16,7 @@ def construct_random(key: chex.PRNGKey,
     num_o = info.num_outputs
     in_key, var_key, out_key = jrand.split(key, 3)
     
-    in_conns = jrand.uniform(in_key, 
-                            (num_i, num_v+num_o),
-                            minval=.1, 
-                            maxval=.5)
+    in_conns = jrand.uniform(in_key, (num_i, num_v+num_o))
     in_conns = jnp.where(in_conns > fraction, 0, 1)
     
     var_conns = jrand.uniform(var_key, (num_v, num_v))

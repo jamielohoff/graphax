@@ -50,48 +50,37 @@ class EdgeGameState:
         - state (Array): An array containing the edges which have already been 
                         eliminated.
     """
-    t: chex.Numeric
     info: GraphInfo
     edges: chex.Array
-    vertices: chex.Array
     
     def __init__(self,
-                t: int, 
                 info: GraphInfo,
-                edges: chex.Array,
-                vertices: chex.Array) -> None:
-        self.t = t
+                edges: chex.Array) -> None:
         self.info = info
         self.edges = edges
 
 
-def gamestate_flatten(vgs: VertexGameState):
-    children = (vgs.t, vgs.info, vgs.edges, vgs.vertices)
+def gamestate_flatten(egs: EdgeGameState):
+    children = (egs.info, egs.edges)
     aux_data = None
     return children, aux_data
 
 
-def gamestate_unflatten(aux_data, children) -> VertexGameState:
-    return VertexGameState(*children)
+def gamestate_unflatten(aux_data, children) -> EdgeGameState:
+    return EdgeGameState(*children)
 
 
 # Registering GraphState as a PyTree node so we can use it with vmap and jit
-register_pytree_node(VertexGameState,
+register_pytree_node(EdgeGameState,
                     gamestate_flatten,
                     gamestate_unflatten)
 
 
-def make_vertex_game_state(info: GraphInfo, edges: chex.Array) -> VertexGameState:
-    # padding = ((0, info.num_intermediates-1), (0, 0), (0, 0))
-    # edges = jnp.pad(edges[jnp.newaxis, :, :], 
-    #                         pad_width=padding, 
-    #                         mode="constant", 
-    #                         constant_values=0)
-    vertices = jnp.zeros(info.num_intermediates)
-    return VertexGameState(t=0, info=info, edges=edges, vertices=vertices)
+def make_edge_game_state(info: GraphInfo, edges: chex.Array) -> EdgeGameState:
+    return EdgeGameState(t=0, info=info, edges=edges)
 
 
-def is_bipartite(vgs: VertexGameState) -> bool:
+def is_bipartite(egs: EdgeGameState) -> bool:
     """Alternative implementation that makes use of the game state for faster computation
     jittable function to test if a graph is bipartite by comparing the number of
     non-zero entries in gs.states to the number of intermediate variables, i.e.
@@ -100,10 +89,12 @@ def is_bipartite(vgs: VertexGameState) -> bool:
     Arguments:
         - vgs (GraphState): GraphState object we want to check.
     """
-    return jnp.count_nonzero(vgs.vertices) == vgs.info.num_intermediates
+    num_i = egs.info.num_inputs
+    num_v = egs.info.num_intermediates
+    return jnp.sum(egs.edges.at[:num_i, :num_v]) == 0
 
 
-class VertexGame:
+class EdgeGame:
     """
     OpenAI-like gymnax environment for a game where to goal is to find the 
     best vertex elimination order with minimal multiplication count.
@@ -125,38 +116,36 @@ class VertexGame:
     The `termination` of the game is indicated by the is_bipartite feature, i.e.
     the game is over when all intermediate vertices and edges have been eliminated.
     """
-    vgs: VertexGameState
+    egs: EdgeGameState
     
-    def __init__(self, vgs: VertexGameState) -> None:
+    def __init__(self, egs: EdgeGameState) -> None:
         super().__init__()
-        self.vgs = copy.deepcopy(vgs)
+        self.egs = copy.deepcopy(egs)
     
     @partial(jax.jit, static_argnums=(0,))
     def step(self,
-            vgs: VertexGameState,
-            action: int) -> Tuple[VertexGameState, float, bool]:  
+            egs: EdgeGameState,
+            action: int) -> Tuple[EdgeGameState, float, bool]:  
         # Actions go from 0 to num_intermediates-1 
         # and vertices go from 1 to num_intermediates      
         vertex = action + 1
-        t = vgs.t.astype(jnp.int32)
+        t = egs.t.astype(jnp.int32)
 
-        edges = vgs.edges
-        new_edges, nops = vertex_eliminate(edges, vertex, self.vgs.info)
+        edges = egs.edges
+        new_edges, nops = vertex_eliminate(edges, vertex, self.egs.info)
 
-        vgs.t += 1
-        vgs.edges = vgs.edges.at[:, :].set(new_edges)
-        vgs.vertices = vgs.vertices.at[t].set(vertex)
+        egs.edges = egs.edges.at[:, :].set(new_edges)
 
         # Reward is the negative of the multiplication count
         reward = -nops
         
-        terminated = lax.cond(t == self.vgs.info.num_intermediates-1,
+        terminated = lax.cond((t == self.vgs.info.num_intermediates-1).all(),
                             lambda: True,
                             lambda: False)
     
-        return vgs, reward, terminated
+        return egs, reward, terminated
     
     @partial(jax.jit, static_argnums=(0,))
-    def reset(self, key: chex.PRNGKey = None) -> VertexGameState:
-        return copy.deepcopy(self.vgs)
+    def reset(self, key: chex.PRNGKey = None) -> EdgeGameState:
+        return copy.deepcopy(self.egs)
 
