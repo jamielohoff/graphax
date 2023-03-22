@@ -1,11 +1,11 @@
 import jax
 
 from graphax.core import front_eliminate, back_eliminate, vertex_eliminate, forward, reverse
-from graphax.examples.simple import construct_simple
-from graphax.examples.helmholtz import construct_Helmholtz
+from graphax.examples.simple import make_simple
+from graphax.examples.helmholtz import make_Helmholtz
 
 
-edges, info = construct_simple()
+edges, info = make_simple()
 print(edges)
 print(info)
 
@@ -22,7 +22,7 @@ print(info)
 edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
 print(edges, nops)
 
-edges, info = construct_Helmholtz()
+edges, info = make_Helmholtz()
 print(edges, info)
 
 edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)

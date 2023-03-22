@@ -5,7 +5,7 @@ import chex
 from ..core import GraphInfo, make_graph_info, make_empty_edges, add_edge
 
 
-def construct_simple() -> Tuple[chex.Array, GraphInfo]:
+def make_simple() -> Tuple[chex.Array, GraphInfo]:
     info = make_graph_info([2, 2, 2])
     edges = make_empty_edges(info)
     
