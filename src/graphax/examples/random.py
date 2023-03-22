@@ -12,10 +12,11 @@ from ..core import GraphInfo, make_empty_edges, add_edge
 def make_random(key: chex.PRNGKey,
                 info: GraphInfo, *, 
                 fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
+    in_key, var_key, out_key = jrand.split(key, 3)
+    
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs
-    in_key, var_key, out_key = jrand.split(key, 3)
     
     in_conns = jrand.uniform(in_key, (num_i, num_v+num_o))
     in_conns = jnp.where(in_conns > fraction, 0, 1)
@@ -59,5 +60,3 @@ def make_connected_random(key: chex.PRNGKey,
         
     return edges, info
     
-    
-

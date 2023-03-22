@@ -16,7 +16,7 @@ print(edges)
 edges, ops = jax.jit(reverse, static_argnums=(1,))(edges, info)
 print(edges, ops)
 
-edges, info = make_connected_random(key, info)
+edges, info = make_connected_random(key, info, p=jnp.array([.4, .5, .1]))
 print(edges)
 
 edges, ops = jax.jit(reverse, static_argnums=(1,))(edges, info)

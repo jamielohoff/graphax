@@ -6,13 +6,15 @@ import jax.random as jrand
 
 import chex
 
-from ..core import GraphInfo
+from .core import GraphInfo
 
 # embeds a smaller graph into a larger graph frame
 def embed(key: chex.PRNGKey, 
         edges: chex.Array,
         info: GraphInfo,
         new_info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
+    ikey, vkey, okey = jrand.split(key, 3)
+    
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs
@@ -24,7 +26,6 @@ def embed(key: chex.PRNGKey,
     i_diff = new_num_i - num_i
     v_diff = new_num_v - num_v
     o_diff = new_num_o - num_o
-    ikey, vkey, okey, key = jrand.split(key, 4)
     
     i_split_idxs = jrand.randint(ikey, (i_diff,), 0, num_i)
     v_split_idxs = jrand.randint(vkey, (v_diff,), new_num_i, new_num_i+num_v)
