@@ -51,8 +51,7 @@ def make_connected_random(key: chex.PRNGKey,
         subkey, key = jrand.split(key, 2)
         
         lb = i+1 if i > 0 else 1
-        var = num_o if i > 0 else 0
-        choices = jnp.arange(lb, num_v + var + 1, 1)
+        choices = jnp.arange(lb, num_v + num_o + 1, 1)
         # p_dist = 
         js = jrand.choice(subkey, choices, (size,), replace=False, p=None)
         for j in js:

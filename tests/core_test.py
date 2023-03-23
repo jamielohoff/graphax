@@ -1,8 +1,8 @@
 import jax
 
 from graphax.core import front_eliminate, back_eliminate, vertex_eliminate, forward, reverse
-from graphax.examples.simple import make_simple
-from graphax.examples.helmholtz import make_Helmholtz
+from graphax.examples import make_simple
+from graphax.examples import make_Helmholtz
 
 
 edges, info = make_simple()
