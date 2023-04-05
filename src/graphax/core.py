@@ -208,6 +208,54 @@ def vertex_eliminate(edges: chex.Array,
     return output
 
 
+def vertex_eliminate_gpu(edges: chex.Array, 
+                        vertex: int, 
+                        info: GraphInfo) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
+    Fully jit-compilable function that implements the vertex-elimination procedure
+    on a GraphState object. Vertex elimination means that we front-eliminate
+    all incoming edges and back-eliminate all outgoing edges of a given vertex.
+
+    Arguments:
+        - gs_edges (GraphState): GraphState that describes the computational graph 
+                            where we want to front-eliminate the given edge.
+        - vertex (int): Vertex we want to eliminate.
+        - info (Array): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
+    """
+    num_inputs = info.num_inputs
+    num_edges = info.num_edges
+    num_intermediates = info.num_intermediates
+    num_outputs = info.num_outputs
+
+    col = edges.at[:, vertex-1].get()
+    ops = col.sum()
+    
+    def update_edges(carry, nonzero):
+        _edges, nops = carry
+
+        _edges = _edges.at[:, nonzero].add(col, mode="drop")     
+        
+        nops = lax.cond(nonzero > -1, lambda x: x+ops, lambda x: x, nops)
+        carry = (_edges, nops)
+        return carry, None
+        
+    nonzeros = jnp.nonzero(edges.at[num_inputs+vertex-1, :].get(), 
+                                    size=num_intermediates+num_outputs, 
+                                    fill_value=-num_edges)[0]
+    output, _ = lax.scan(update_edges, (edges, 0.), nonzeros)
+    edges, nops = output
+    edges = edges.at[num_inputs+vertex-1, :].set(0)
+    edges = edges.at[:, vertex-1].set(0)
+    # this is very costly!
+    # edges = jnp.bool_(edges).astype(jnp.float32)
+    return edges, nops
+
+
 def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements forward-mode AD by 
