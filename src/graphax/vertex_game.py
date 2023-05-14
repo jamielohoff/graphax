@@ -9,7 +9,7 @@ from jax.tree_util import register_pytree_node
 
 import chex
 
-from .core import GraphInfo, vertex_eliminate
+from .core import GraphInfo, vertex_eliminate_gpu
 
 
 class VertexGameState:
@@ -82,7 +82,7 @@ register_pytree_node(VertexGameState,
                     gamestate_unflatten)
 
 
-def make_vertex_game_state(info: GraphInfo, edges: chex.Array) -> VertexGameState:
+def make_vertex_game_state(edges: chex.Array, info: GraphInfo) -> VertexGameState:
     # padding = ((0, info.num_intermediates-1), (0, 0), (0, 0))
     # edges = jnp.pad(edges[jnp.newaxis, :, :], 
     #                         pad_width=padding, 
@@ -142,7 +142,7 @@ class VertexGame:
         t = vgs.t.astype(jnp.int32)
 
         edges = vgs.edges
-        new_edges, nops = vertex_eliminate(edges, vertex, self.vgs.info)
+        new_edges, nops = vertex_eliminate_gpu(edges, vertex, self.vgs.info)
 
         vgs.t += 1
         vgs.edges = vgs.edges.at[:, :].set(new_edges)

@@ -10,7 +10,8 @@ from ..core import GraphInfo, make_empty_edges, add_edge
 
 
 def make_random(key: chex.PRNGKey,
-                info: GraphInfo, *, 
+                info: GraphInfo, 
+                *, 
                 fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
     in_key, var_key, out_key = jrand.split(key, 3)
     

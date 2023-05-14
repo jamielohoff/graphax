@@ -252,7 +252,7 @@ def vertex_eliminate_gpu(edges: chex.Array,
     edges = edges.at[num_inputs+vertex-1, :].set(0)
     edges = edges.at[:, vertex-1].set(0)
     # this is very costly!
-    # edges = jnp.bool_(edges).astype(jnp.float32)
+    edges = jnp.bool_(edges).astype(jnp.float32)
     return edges, nops
 
 
@@ -280,7 +280,35 @@ def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
         carry = (_edges, nops)
         return carry, None
     vertices = jnp.arange(1, num_intermediates+1)
-    output, _ = lax.scan(fwd, (edges, 0), vertices)
+    output, _ = lax.scan(fwd, (edges, 0.), vertices)
+    return output
+
+
+def forward_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
+    Fully jit-compilable function that implements forward-mode AD by 
+    eliminating the vertices in sequential order 1,2,3,...,n-1,n.
+
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to differntiate.
+        - info (Array): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
+    """
+    num_intermediates = info.num_intermediates
+    
+    def fwd(carry, vertex):
+        _edges, nops = carry
+        _edges, ops = vertex_eliminate_gpu(_edges, vertex, info)
+        nops += ops
+        carry = (_edges, nops)
+        return carry, None
+    vertices = jnp.arange(1, num_intermediates+1)
+    output, _ = lax.scan(fwd, (edges, 0.), vertices)
     return output
 
 
@@ -308,6 +336,34 @@ def reverse(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
         carry = (_edges, nops)
         return carry, None
     vertices = jnp.arange(1, num_intermediates+1)[::-1]
-    output, _ = lax.scan(rev, (edges, 0), vertices)
+    output, _ = lax.scan(rev, (edges, 0.), vertices)
+    return output
+
+
+def reverse_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+    """TODO fix docstring
+    Fully jit-compilable function that implements reverse-mode AD by 
+    eliminating the vertices in sequential order n,n-1,...,2,1.
+
+    Arguments:
+        - gs (GraphState): GraphState that describes the computational graph 
+                            where we want to differntiate.
+        - info (Array): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains a new GraphState object with updated edges and 
+        an integer containing the number of multiplications necessary to 
+        eliminate the given edge. 
+    """
+    num_intermediates = info.num_intermediates
+    
+    def rev(carry, vertex):
+        _edges, nops = carry
+        _edges, ops = vertex_eliminate_gpu(_edges, vertex, info)
+        nops += ops
+        carry = (_edges, nops)
+        return carry, None
+    vertices = jnp.arange(1, num_intermediates+1)[::-1]
+    output, _ = lax.scan(rev, (edges, 0.), vertices)
     return output
 

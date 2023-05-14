@@ -4,7 +4,7 @@ import chex
 
 from ..core import GraphInfo, make_graph_info, make_empty_edges, add_edge
 
-
+# 33 ops
 def make_Helmholtz() -> Tuple[chex.Array, GraphInfo]:
     info = make_graph_info([4, 11, 4])
     edges = make_empty_edges(info)

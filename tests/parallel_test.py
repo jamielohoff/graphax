@@ -1,25 +1,31 @@
 import jax
 import jax.numpy as jnp
 import time
-from graphax.core import vertex_eliminate, vertex_eliminate_gpu, make_graph_info
+from graphax.core import (vertex_eliminate, 
+                          vertex_eliminate_gpu, 
+                          make_graph_info,
+                          reverse,
+                          reverse_gpu)
 from graphax.examples import make_random, make_simple, make_Helmholtz
 
+cpu_devices = jax.devices("cpu")
 
-vertex_eliminate = jax.jit(vertex_eliminate, static_argnums=(2,))
-# vertex_eliminate_gpu = jax.jit(vertex_eliminate_gpu, static_argnums=(2,))
+reverse = jax.jit(reverse, static_argnums=(1,))
+reverse_gpu = jax.jit(reverse_gpu, static_argnums=(1,))
 
-info = make_graph_info([10, 15, 5])
+info = make_graph_info([25, 50, 5])
 edges, info = make_random(jax.random.PRNGKey(42), info, fraction=0.9)
-edges, nops1 = vertex_eliminate(edges, 2, info)
-st = time.time()
-edges, nops2 = vertex_eliminate(edges, 1, info)
-print(time.time() - st)
-print(edges, nops1 + nops2)
+print(edges.device())
 
-edges, info = make_random(jax.random.PRNGKey(42), info, fraction=0.9)
-edges, nops1 = vertex_eliminate_gpu(edges, 2, info)
 st = time.time()
-edges, nops2 = vertex_eliminate_gpu(edges, 1, info)
+new_edges, nops = reverse(jax.device_put(edges, device=cpu_devices[0]), info)
 print(time.time() - st)
-print(edges, nops1 + nops2)
+print(new_edges, nops)
+
+info = make_graph_info([25, 50, 5])
+edges, info = make_random(jax.random.PRNGKey(42), info, fraction=0.9)
+st = time.time()
+new_edges, nops = reverse_gpu(jax.device_put(edges, device=cpu_devices[0]), info)
+print(time.time() - st)
+print(new_edges, nops)
 

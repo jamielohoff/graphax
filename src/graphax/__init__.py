@@ -1,6 +1,9 @@
 import sys
-from .core import GraphInfo
+from .core import GraphInfo, make_graph_info, make_empty_edges
 from .vertex_game import VertexGameState, VertexGame, make_vertex_game_state
+from .checker import connectivity_checker
+from .cleaner import clean
+from .embedding import embed
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`
@@ -16,3 +19,4 @@ except PackageNotFoundError:  # pragma: no cover
     __version__ = "unknown"
 finally:
     del version, PackageNotFoundError
+
