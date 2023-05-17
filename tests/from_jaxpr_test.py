@@ -26,7 +26,7 @@ def Helmholtz(x):
     return x * z
 
 x = jnp.ones(4)
-print(make_graph(Helmholtz, x)[0])
+print(make_graph(Helmholtz, x))
 
 edges, info = make_Helmholtz()
 print(edges, info)

@@ -4,7 +4,7 @@ from typing import Callable, Tuple, Union
 import jax
 import jax.numpy as jnp
 
-from jax._src.core import Var, Literal, Jaxpr, JaxprEqn, Primitive, ShapedArray
+from jax._src.core import Var, Jaxpr
 
 import chex
 
@@ -26,7 +26,7 @@ def filter_eqns(f_jaxpr):
     Function that filters out all the squeeze and dynamic_slicing operations
     to generate a computational graph.
     """
-
+    # TODO implement a fast sorting algorithm
     vo_eqns = [eqn for eqn in f_jaxpr.eqns if filter_literals(f_jaxpr.jaxpr._outvars) & filter_literals(eqn.invars)]
     o_eqns = [eqn for eqn in f_jaxpr.eqns if filter_literals(f_jaxpr.jaxpr._outvars) & filter_literals(eqn.outvars)]
     v_eqns = [eqn for eqn in f_jaxpr.eqns if not eqn in o_eqns or eqn in vo_eqns]
@@ -35,6 +35,9 @@ def filter_eqns(f_jaxpr):
 
 def make_graph(f_jaxpr: Union[Jaxpr, Callable], 
                *xs: chex.Array) -> Tuple[chex.Array, GraphInfo]:
+    """
+    TODO add documentation
+    """
     f_jaxpr = jax.make_jaxpr(f_jaxpr)(*xs) if isinstance(f_jaxpr, Callable) else f_jaxpr
     print(f_jaxpr)
     v_eqns, vo_eqns, o_eqns = filter_eqns(f_jaxpr)    
