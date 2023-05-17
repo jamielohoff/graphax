@@ -367,3 +367,8 @@ def reverse_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     output, _ = lax.scan(rev, (edges, 0.), vertices)
     return output
 
+
+# TODO introduce "safe preeliminations" to reduce problem complexity!
+def safe_preeliminations(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+    pass
+

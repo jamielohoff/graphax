@@ -2,13 +2,74 @@ import jax
 import jax.numpy as jnp
 
 from graphax.interpreter.from_jaxpr import make_graph
+from graphax.examples import make_Helmholtz, make_scalar_assignment_tree, make_lighthouse
 
 def f(x, y):
     z = x + y
-    w = 4.*z
-    u = w + z
-    v = 2.*w
-    return u, v
+    w = jnp.cos(z)
+    return w + z, 2.*w
 
-print(make_graph(f, 1., 2.))
+print(make_graph(f, 1., 1.))
+
+
+def simple(x):
+    z = x[0] + x[1]
+    w = jnp.cos(z)
+    return jnp.array([w + z, 2.*w])
+
+x = jnp.ones(2)
+print(make_graph(simple, x))
+
+
+def Helmholtz(x):
+    z = jnp.log(x / (1 - jnp.sum(x)))
+    return x * z
+
+x = jnp.ones(4)
+print(make_graph(Helmholtz, x)[0])
+
+edges, info = make_Helmholtz()
+print(edges, info)
+
+
+def scalar_assignment_tree(u):
+    return -10*u[1]*jnp.exp(u[2]) + jnp.log(u[0]) - 3*u[2]*(u[1]-1)*jnp.sqrt(u[0])
+
+x = jnp.ones(3)
+print(make_graph(scalar_assignment_tree, x))
+
+edges, info = make_scalar_assignment_tree()
+print(edges, info)
+
+
+def lighthouse(x):
+    nu = x[0]
+    gamma = x[1]
+    omega = x[2]
+    t = x[3]
+    y1 = nu*jnp.tan(omega*t)/(gamma-jnp.tan(omega*t))
+    y2 = gamma*y1
+    return jnp.array([y1, y2])
+
+x = jnp.ones(4)
+print(make_graph(lighthouse, x))
+
+edges, info = make_lighthouse()
+print(edges, info)
+
+
+def f(a, b, c, d):
+    x = a + b
+    y = c - d
+    z = x * y
+    w = jnp.exp(z)
+    p = jnp.log(a)
+    q = jnp.sqrt(b)
+    r = p + q
+    s = jnp.sin(c)
+    t = jnp.cos(d)
+    u = s * t
+    return w, r, u, z
+
+print(make_graph(f, 1., 1., 1., 1.))
 
