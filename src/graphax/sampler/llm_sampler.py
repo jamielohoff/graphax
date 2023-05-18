@@ -6,12 +6,6 @@ import jax.numpy as jnp
 
 from graphax.interpreter.from_jaxpr import make_graph
 
-API_KEY = "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"
-MESSAGE = """Generate an arbitrary JAX function with 4 inputs and 
-            4 outputs and a maximum of 10 operations. Name the 
-            function 'f' and only show the source code without 
-            jit and description."""
-
 # TODO refactor code such that we do no longer need the global variable
 jaxpr = ""
 
@@ -19,13 +13,20 @@ class ComputationalGraphSampler:
     """
     Class that implements a sampling function using ChatGPT to create realistic
     samples of computational graphs.
+    
+    Returns Jaxpr objects or string defining the function
     """
     api_key: str
     default_message: str
+    default_make_jaxpr: str
     
-    def __init__(self, api_key: str, default_message: str) -> None:
+    def __init__(self, 
+                api_key: str, 
+                default_message: str,
+                default_make_jaxpr: str) -> None:
         self.api_key = api_key
         self.default_message = default_message
+        self.default_make_jaxpr = default_make_jaxpr
     
     def sample(self, 
                num_samples: int = 1, 
@@ -37,6 +38,10 @@ class ComputationalGraphSampler:
         # Define prompt
         messages = [{"role": "user",
                     "content": message}]
+        
+        # List to store the strings that define the function
+        fn_list = []
+        graph_list = []
 
         # Use the API to generate a response
         responses = openai.ChatCompletion.create(model="gpt-3.5-turbo",
@@ -45,20 +50,15 @@ class ComputationalGraphSampler:
                                                 stop=None, 
                                                 **kwargs)
         
-        make_jaxpr = "\njaxpr = jax.make_jaxpr(f)(1., 1., 1., 1.)"
+        make_jaxpr = "\n" + self.default_make_jaxpr
         for response in responses.choices:
             # Print the generated response
             function = response.message.content
             lines = function.split("\n")
             function = "\n".join(lines[1:-1])
             function += make_jaxpr
-            print(function)
+            fn_list.append(function)
             exec(function, globals())
-            print("Output:", make_graph(jaxpr))
-        
-
-gen = ComputationalGraphSampler(api_key=API_KEY, default_message=MESSAGE)
-gen.sample(temperature=0.75, max_tokens=300)
-
-
+            graph_list.append(make_graph(jaxpr))
+        return fn_list, graph_list
 

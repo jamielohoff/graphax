@@ -382,6 +382,8 @@ def scan(f, init, xs, length=None):
 # TODO introduce "safe preeliminations" to reduce problem complexity!
 def safe_pre_eliminations_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     """
+    Function that runs a safe-preelimination routing that eliminates all vertices
+    with only one input and one output.
     WARNING: This changes the shape of the edges array and the number of intermediate variables!
     """
     num_intermediates = info.num_intermediates

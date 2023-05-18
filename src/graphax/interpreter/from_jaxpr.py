@@ -18,8 +18,10 @@ from ..core import GraphInfo, make_empty_edges, make_graph_info
 #         "broadcast_in_dim",
 #         "concatenate"]
 
+
 def filter_literals(vars):
     return set([var for var in vars if isinstance(var, Var)])
+
 
 def filter_eqns(f_jaxpr):
     """
@@ -27,20 +29,25 @@ def filter_eqns(f_jaxpr):
     to generate a computational graph.
     """
     # TODO implement a fast sorting algorithm
+    # Remark! nodes that directly feed to the output are treated as output nodes which can lead to 
+    # the weird case where an equation with output variable e is treated as a output node while f is
+    # an intermediate node. Thus one has to be careful about the mapping of the naming
+    # of rows and columns to the intermediate variables!
     vo_eqns = [eqn for eqn in f_jaxpr.eqns if filter_literals(f_jaxpr.jaxpr._outvars) & filter_literals(eqn.invars)]
     o_eqns = [eqn for eqn in f_jaxpr.eqns if filter_literals(f_jaxpr.jaxpr._outvars) & filter_literals(eqn.outvars)]
-    v_eqns = [eqn for eqn in f_jaxpr.eqns if not eqn in o_eqns or eqn in vo_eqns]
+    v_eqns = [eqn for eqn in f_jaxpr.eqns if eqn in vo_eqns or not eqn in o_eqns]
     return v_eqns, vo_eqns, o_eqns
     
 
 def make_graph(f_jaxpr: Union[Jaxpr, Callable], 
                *xs: chex.Array) -> Tuple[chex.Array, GraphInfo]:
     """
-    TODO add documentation
+    TODO this does not yet work as intended!!!
     """
     f_jaxpr = jax.make_jaxpr(f_jaxpr)(*xs) if isinstance(f_jaxpr, Callable) else f_jaxpr
     print(f_jaxpr)
     v_eqns, vo_eqns, o_eqns = filter_eqns(f_jaxpr)    
+    
     
     # How to add a primitive to a jaxpr (not very useful here because it changes jaxpr)
     # prim = Primitive("add")
