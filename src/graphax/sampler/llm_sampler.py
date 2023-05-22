@@ -39,9 +39,9 @@ class ComputationalGraphSampler:
         messages = [{"role": "user",
                     "content": message}]
         
-        # List to store the strings that define the function
-        fn_list = []
-        graph_list = []
+        # List to store the strings that define the function and the 
+        # comp. graph repr.
+        fn_list, graph_list = [], []
 
         # Use the API to generate a response
         responses = openai.ChatCompletion.create(model="gpt-3.5-turbo",

@@ -6,13 +6,47 @@ import jax.random as jrand
 
 import chex
 
-from .core import GraphInfo
+from ..core import GraphInfo
 
-# embeds a smaller graph into a larger graph frame
-def embed(key: chex.PRNGKey, 
-        edges: chex.Array,
+
+def embed(edges: chex.Array,
         info: GraphInfo,
         new_info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
+    """
+    Function that creates a deterministic embedding that is compatible with
+    a sequence transformer
+    """
+    num_i = info.num_inputs
+    num_v = info.num_intermediates
+    num_o = info.num_outputs
+    
+    new_num_i = new_info.num_inputs
+    new_num_v = new_info.num_intermediates
+    new_num_o = new_info.num_outputs
+    
+    i_diff = new_num_i - num_i
+    v_diff = new_num_v - num_v
+    o_diff = new_num_o - num_o
+        
+    le, re = jnp.vsplit(edges, (num_i,))
+    edges = jnp.concatenate([le, jnp.zeros((i_diff, num_v+num_o)), re], axis=0)
+    
+    te, be = jnp.hsplit(edges, (num_v,))
+    edges = jnp.concatenate([te, jnp.zeros((new_num_i+num_v, v_diff)), be], axis=1)
+        
+    edges = jnp.append(edges, jnp.zeros((v_diff, new_num_v+num_o)), axis=0)
+
+    edges = jnp.append(edges, jnp.zeros((new_num_i+new_num_v, o_diff)), axis=1)
+    
+    return edges, new_info
+    
+    
+# embeds a smaller graph into a larger graph frame
+# based on random inserts
+def random_embed(key: chex.PRNGKey, 
+                edges: chex.Array,
+                info: GraphInfo,
+                new_info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
     ikey, vkey, okey = jrand.split(key, 3)
     
     num_i = info.num_inputs
@@ -46,4 +80,5 @@ def embed(key: chex.PRNGKey,
         edges = jnp.concatenate([te, jnp.zeros((new_num_i+new_num_v, 1)), be], axis=1)
     
     return edges, new_info
+
     
