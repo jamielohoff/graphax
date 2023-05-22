@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 
+from graphax.core import reverse_gpu, forward_gpu
 from graphax.interpreter.from_jaxpr import make_graph
 from graphax.examples import make_Helmholtz, make_scalar_assignment_tree, make_lighthouse
 
@@ -21,12 +22,15 @@ from graphax.examples import make_Helmholtz, make_scalar_assignment_tree, make_l
 # print(make_graph(simple, x))
 
 
-# def Helmholtz(x):
-#     z = jnp.log(x / (1 - jnp.sum(x)))
-#     return x * z
+def Helmholtz(x):
+    z = jnp.log(x / (1 - jnp.sum(x)))
+    return x * z
 
-# x = jnp.ones(4)
-# print(make_graph(Helmholtz, x))
+x = jnp.ones(4)
+edges, info = make_graph(Helmholtz, x)
+
+out, nops = reverse_gpu(edges, info)
+print(out, nops)
 
 # edges, info = make_Helmholtz()
 # print(edges, info)
