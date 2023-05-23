@@ -22,15 +22,15 @@ from graphax.examples import make_Helmholtz, make_scalar_assignment_tree, make_l
 # print(make_graph(simple, x))
 
 
-def Helmholtz(x):
-    z = jnp.log(x / (1 - jnp.sum(x)))
-    return x * z
+# def Helmholtz(x):
+#     z = jnp.log(x / (1 - jnp.sum(x)))
+#     return x * z
 
-x = jnp.ones(4)
-edges, info = make_graph(Helmholtz, x)
+# x = jnp.ones(4)
+# edges, info = make_graph(Helmholtz, x)
 
-out, nops = reverse_gpu(edges, info)
-print(out, nops)
+# out, nops = reverse_gpu(edges, info)
+# print(out, nops)
 
 # edges, info = make_Helmholtz()
 # print(edges, info)
@@ -62,12 +62,18 @@ print(out, nops)
 # print(edges, info)
 
 
-def f(a, b, c, d):
-    x = jnp.square(a) + jnp.sin(b)
-    y = jnp.exp(c) * jnp.tan(d)
-    z = jnp.sqrt(a) / (b ** 2 + 1)
-    w = jnp.log(d) - jnp.arctan(c)
-    return x, y, z, w
+def f(x):
+    a = x[0] * x[1]
+    b = x[2] - x[3]
+    c = jnp.sin(x[0]) + jnp.cos(x[1])
+    d = jnp.exp(x[2]) / x[3]
+    e = a + b
+    f = jnp.sum(x) + c
+    g = jnp.log(d)
+    h = jnp.sqrt(jnp.abs(e))
+    i = jnp.tan(h)
+    j = jnp.maximum(x, 0)
+    return jnp.array([e, f, g, i])
 
-print(make_graph(f, 1., 1., 1., 1.))
+print(make_graph(f, jnp.ones(4)))
 

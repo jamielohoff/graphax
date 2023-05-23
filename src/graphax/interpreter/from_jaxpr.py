@@ -4,12 +4,19 @@ from typing import Callable, Tuple, Union, Sequence
 import jax
 import jax.numpy as jnp
 
-from jax._src.core import Var, Jaxpr
+from jax._src.core import Var, Jaxpr, JaxprEqn
 
 import chex
 
 from ..core import GraphInfo, make_empty_edges, make_graph_info
     
+
+def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
+    """
+    Function that filters out dead code.
+    """
+    return [eqn for eqn in eqns if not str(eqn.outvars[0]) == "_"]
+
 
 # TODO maybe build computational graph representation in numpy and not in JAX?
 def make_graph(f_jaxpr: Union[Jaxpr, Callable], 
@@ -22,11 +29,12 @@ def make_graph(f_jaxpr: Union[Jaxpr, Callable],
     3.)
     """
     jaxpr = jax.make_jaxpr(f_jaxpr)(*xs) if isinstance(f_jaxpr, Callable) else f_jaxpr
-    print(jaxpr) 
+    # print(jaxpr) 
             
     num_i = sum([aval.size for aval in jaxpr.in_avals])
     num_o = sum([aval.size for aval in jaxpr.out_avals])
-    num_v = sum([outvar.aval.size for eqn in jaxpr.eqns for outvar in eqn.outvars])
+    eqns = filter_eqns(jaxpr.eqns)
+    num_v = sum([outvar.aval.size for eqn in eqns for outvar in eqn.outvars])
        
     info = make_graph_info([num_i, num_v, num_o])
     edges = make_empty_edges(info)
@@ -40,7 +48,7 @@ def make_graph(f_jaxpr: Union[Jaxpr, Callable],
 
     # Process intermediate variables
     i = 0
-    for eqn in jaxpr.eqns:
+    for eqn in eqns:
         for outvar in eqn.outvars:
             if str(outvar) not in variables:
                 variables[str(outvar)] = counter

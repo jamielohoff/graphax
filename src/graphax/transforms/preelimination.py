@@ -9,7 +9,7 @@ import chex
 from ..core import GraphInfo, vertex_eliminate_gpu, make_graph_info
 
 
-def safe_preeliminations_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+def safe_preeliminations_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, GraphInfo, int]:
     """
     Function that runs a safe-preelimination routing that eliminates all vertices
     with only one input and one output.
@@ -31,16 +31,30 @@ def safe_preeliminations_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.A
         carry = _edges
         return carry, idx
     
-    vertices = jnp.arange(0, num_intermediates)
-    output, idxs = lax.scan(update_edges, edges, vertices)
+    vertices = jnp.arange(1, num_intermediates)
+    output, _ = lax.scan(update_edges, edges, vertices)
     
-    # Removes the zero rows and cols in the comp. graph repr.
-    # TODO think about whether this is actually necessary or if we should
-    # rather do this with attention masking?
-    idxs = jnp.trim_zeros(idxs)
-    for idx in idxs[::-1]:
-        output = jnp.delete(output, idx-1+num_inputs, axis=0)
-        output = jnp.delete(output, idx-1, axis=1)
-    new_info = make_graph_info([info.num_inputs, output.shape[0]-info.num_inputs, info.num_outputs])
-    return output, new_info, len(idxs)
+    return output, info
+
+
+def compress_graph(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
+    """
+    Function that removes all zero rows and cols from a comp. graph repr.
+    """
+    num_inputs = info.num_inputs
+    num_intermediates = info.num_intermediates
+    num_outputs = info.num_outputs
+
+    i, num_removed_vertices = 0, 0
+    for _ in range(num_intermediates):            
+        s1 = jnp.sum(edges.at[i+num_inputs, :].get()) == 0.
+        s2 = jnp.sum(edges.at[:, i].get()) == 0.
+        if s1 and s2:
+            edges = jnp.delete(edges, i+num_inputs, axis=0)
+            edges = jnp.delete(edges, i, axis=1)
+            num_removed_vertices += 1
+        else:
+            i += 1
+    new_info = make_graph_info([num_inputs, num_intermediates-num_removed_vertices, num_outputs])
+    return edges, new_info
 
