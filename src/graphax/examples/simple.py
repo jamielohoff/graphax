@@ -1,114 +1,62 @@
 from typing import Tuple
 
+import jax
+import jax.numpy as jnp
+
 import chex
 
-from ..core import GraphInfo, make_graph_info, make_empty_edges, add_edge
+from ..core import GraphInfo
+from ..interpreter.from_jaxpr import make_graph
 
 
 def make_simple() -> Tuple[chex.Array, GraphInfo]:
-    info = make_graph_info([2, 2, 2])
-    edges = make_empty_edges(info)
-    
-    edges = add_edge(edges, (-1, 1), info)
-    edges = add_edge(edges, (0, 1), info)
+    def simple(x, y):
+        z = x + y
+        w = jnp.cos(z)
+        return w + z, 2.*w
 
-    edges = add_edge(edges, (1, 2), info)
-    edges = add_edge(edges, (1, 3), info)
-
-    edges = add_edge(edges, (2, 3), info)
-    edges = add_edge(edges, (2, 4), info)
+    edges, info = make_graph(simple, 1., 1.)
     return edges, info
 
 
-# 15 ops
 def make_lighthouse() -> Tuple[chex.Array, GraphInfo]:
-    info = make_graph_info([4, 5, 2])
-    edges = make_empty_edges(info)
-    
-    edges = add_edge(edges, (-3, 4), info)
-    
-    edges = add_edge(edges, (-2, 3), info)
-    edges = add_edge(edges, (-2, 7), info)
-    
-    edges = add_edge(edges, (-1, 1), info)
-    
-    edges = add_edge(edges, (0, 1), info)
-    
-    edges = add_edge(edges, (1, 2), info)
-    
-    edges = add_edge(edges, (2, 3), info)
-    edges = add_edge(edges, (2, 4), info)
-    
-    edges = add_edge(edges, (3, 5), info)
-    
-    edges = add_edge(edges, (4, 5), info)
-    
-    edges = add_edge(edges, (5, 6), info)
-    edges = add_edge(edges, (5, 7), info)
+    def lighthouse(x):
+        nu = x[0]
+        gamma = x[1]
+        omega = x[2]
+        t = x[3]
+        y1 = nu*jnp.tan(omega*t)/(gamma-jnp.tan(omega*t))
+        y2 = gamma*y1
+        return jnp.array([y1, y2])
+
+    x = jnp.ones(4)
+    edges, info = make_graph(lighthouse, x)
     return edges, info
 
 
 def make_scalar_assignment_tree() -> Tuple[chex.Array, GraphInfo]:
-    info = make_graph_info([3, 10, 1])
-    edges = make_empty_edges(info)
-    
-    edges = add_edge(edges, (-2, 1), info)
-    edges = add_edge(edges, (-2, 2), info)
-    
-    edges = add_edge(edges, (-1, 3), info)
-    edges = add_edge(edges, (-1, 4), info)
-    
-    edges = add_edge(edges, (0, 5), info)
-    edges = add_edge(edges, (0, 6), info)
-    
-    edges = add_edge(edges, (1, 9), info)
-    
-    edges = add_edge(edges, (2, 7), info)
-    
-    edges = add_edge(edges, (3, 7), info)
-    
-    edges = add_edge(edges, (4, 8), info)
-    
-    edges = add_edge(edges, (5, 8), info)
-    
-    edges = add_edge(edges, (6, 10), info)
-    
-    edges = add_edge(edges, (7, 10), info)
-    
-    edges = add_edge(edges, (8, 9), info)
-    
-    edges = add_edge(edges, (9, 11), info)
-    
-    edges = add_edge(edges, (10, 11), info)
+    def scalar_assignment_tree(u):
+        return -10*u[1]*jnp.exp(u[2]) + jnp.log(u[0]) - 3*u[2]*(u[1]-1)*jnp.sqrt(u[0])
+
+    x = jnp.ones(3)
+    edges, info = make_graph(scalar_assignment_tree, x)
     return edges, info
 
 
-# 34 ops
 def make_hole() -> Tuple[chex.Array, GraphInfo]:
-    info = make_graph_info([4, 5, 3])
-    edges = make_empty_edges(info)
-    
-    edges = add_edge(edges, (-3, 2), info)
-    
-    edges = add_edge(edges, (-2, 1), info)
-    
-    edges = add_edge(edges, (-1, 1), info)
-    
-    edges = add_edge(edges, (0, 3), info)
-    
-    edges = add_edge(edges, (1, 2), info)
-    edges = add_edge(edges, (1, 3), info)
-    
-    edges = add_edge(edges, (2, 4), info)
-    
-    edges = add_edge(edges, (3, 5), info)
-    
-    edges = add_edge(edges, (4, 6), info)
-    edges = add_edge(edges, (4, 7), info)
-    edges = add_edge(edges, (4, 8), info)
-    
-    edges = add_edge(edges, (5, 6), info)
-    edges = add_edge(edges, (5, 7), info)
-    edges = add_edge(edges, (5, 8), info)
+    def hole(x, y, z, w):
+        a = y * z
+        b = a + x
+        c = a + w
+        
+        d = jnp.cos(b)
+        e = jnp.exp(c)
+        
+        f = d - e
+        g = d / e
+        h = d * e
+        return f, g, h
+
+    edges, info = make_graph(hole, 1., 1., 1., 1.)
     return edges, info
 

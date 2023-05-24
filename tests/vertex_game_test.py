@@ -1,5 +1,5 @@
 from graphax.vertex_game import VertexGame, make_vertex_game_state
-from graphax.examples.helmholtz import make_Helmholtz
+from graphax.examples import make_Helmholtz
 
 edges, info = make_Helmholtz()
 

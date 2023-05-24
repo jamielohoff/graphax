@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax.random as jrand
 
 from graphax.core import make_graph_info, vertex_eliminate, forward, reverse
-from graphax.examples.random import make_random, make_connected_random
+from graphax.examples import make_random, make_connected_random
 
 # import os
 # os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"

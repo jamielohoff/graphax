@@ -17,6 +17,15 @@ from ..core import GraphInfo, make_graph_info
 from ..transforms.embedding import embed
 
 
+def get_prompt_list(prompt_file: str):
+    out = None
+    with open(prompt_file) as pf:
+        out = pf.readlines()
+    prompts = out[0::2]
+    make_jaxpr = out[1::2]
+    return [(prompt.strip(), mj.strip()) for prompt, mj in zip(prompts, make_jaxpr)]
+
+
 def check_graph_shape(info: GraphInfo, max_graph_shape: Tuple[int, int, int]):
     a = info.num_inputs <= max_graph_shape[0]
     b = info.num_intermediates <= max_graph_shape[1]

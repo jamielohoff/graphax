@@ -27,10 +27,10 @@ class Graph2File:
                 api_key: str,
                 path: str,
                 prompt_list: Sequence[Tuple[str, str]],
-                sampler_batchsize: int = 10,
+                sampler_batchsize: int = 20,
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
-                samples_per_file: int = 20,
+                samples_per_file: int = 100,
                 max_graph_shape: Tuple[int, int, int] = (10, 15, 5)) -> None:
         self.path = path
         self.prompt_list = prompt_list

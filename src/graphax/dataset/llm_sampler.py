@@ -49,10 +49,11 @@ class ComputationalGraphSampler:
         # Define prompt
         messages = [{"role": "user", "content": message}]
         samples = []
-            
+        print(message)
         # Redo the failed samples
         while len(samples) < num_samples:
             # Use the API to generate a response
+            print("Sampling", num_samples-len(samples))
             responses = openai.ChatCompletion.create(model="gpt-3.5-turbo",
                                                     messages=messages,
                                                     n=num_samples-len(samples),
@@ -61,18 +62,34 @@ class ComputationalGraphSampler:
             
             for response in responses.choices:
                 function = response.message.content
-                print(function)
+                # print(function)
                 lines = function.split("\n")
-                function = "\n".join(lines[1:-1])
+                clean_lines = []
+                indicator = False
+                for line in lines:
+                    if "import" in line:
+                        indicator = True
+                    if indicator:
+                        clean_lines.append(line)
+                    if "return" in line:
+                        indicator = False
+                
+                if len(clean_lines) == 0:
+                    continue
+                function = "\n".join(clean_lines)
                 function += make_jaxpr
+                print(function)
                 try:
                     exec(function, globals())
                     edges, info = make_graph(jaxpr)
+                    edges, info = safe_preeliminations_gpu(edges, info)
+                    print(info)
                     if check_graph_shape(info, self.max_graph_shape):
-                        edges, info = safe_preeliminations_gpu(edges, info)
                         samples.append((function, edges, info))
-                except Exception:
+                except Exception as e:
+                    print(e)
                     continue
+            print("Sleeping...")
             sleep(16) # sleep timer due to openai limitations
         
         return samples
