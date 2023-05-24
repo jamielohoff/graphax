@@ -5,7 +5,8 @@ from graphax.transforms.preelimination import safe_preeliminations_gpu, compress
 
 API_KEY = "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"
 MESSAGE = """Generate an arbitrary JAX function with a input vector of size 4 and 
-            4 outputs and a maximum of 10 operations. Include a jnp.sum operation over multiple variables. 
+            4 outputs and a maximum of 10 operations. 
+            Include a jnp.sum operation over multiple variables. 
             Name the function 'f' and only show the source code without 
             jit and description."""
 MAKE_JAXPR = "jaxpr = jax.make_jaxpr(f)(jnp.ones(4))"

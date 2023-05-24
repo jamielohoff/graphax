@@ -31,7 +31,7 @@ class Graph2File:
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
                 samples_per_file: int = 100,
-                max_graph_shape: Tuple[int, int, int] = (10, 15, 5)) -> None:
+                max_graph_shape: Tuple[int, int, int] = (10, 30, 5)) -> None:
         self.path = path
         self.prompt_list = prompt_list
         self.fname_prefix = fname_prefix
