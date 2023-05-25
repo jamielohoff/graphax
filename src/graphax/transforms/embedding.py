@@ -20,10 +20,15 @@ def embed(edges: chex.Array,
     num_v = info.num_intermediates
     num_o = info.num_outputs
     
+    if info == new_info:
+        vertices = jnp.zeros(num_v)
+        attn_mask = jnp.zeros((num_v, num_v))
+        return edges, info, vertices, attn_mask
+    
     new_num_i = new_info.num_inputs
     new_num_v = new_info.num_intermediates
     new_num_o = new_info.num_outputs
-    
+        
     i_diff = new_num_i - num_i
     v_diff = new_num_v - num_v
     o_diff = new_num_o - num_o
@@ -38,14 +43,20 @@ def embed(edges: chex.Array,
 
     edges = jnp.append(edges, jnp.zeros((new_num_i+new_num_v, o_diff)), axis=1)
     
-    vertices = jnp.arange(num_i+1, new_num_i+1)[::-1]
-    attn_mask = jnp.concatenate(jnp.ones(new_num_i+new_num_v, num_i), jnp.zeros(new_num_i+new_num_v, v_diff))
+    zeros = jnp.zeros(num_v)
+    eliminated = jnp.arange(num_v+1, new_num_v+1)[::-1]
+    vertices = jnp.concatenate((eliminated, zeros))
+    
+    ones = jnp.ones((new_num_v, num_v))
+    zeros = jnp.zeros((new_num_v, v_diff))
+    attn_mask = jnp.concatenate((ones, zeros), axis=1)
     
     return edges, new_info, vertices, attn_mask
     
     
 # embeds a smaller graph into a larger graph frame
 # based on random inserts
+# TODO needs refactoring
 def random_embed(key: chex.PRNGKey, 
                 edges: chex.Array,
                 info: GraphInfo,

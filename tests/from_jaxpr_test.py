@@ -23,3 +23,4 @@ print(make_graph(f, jnp.ones(4)))
 def f(x):
     return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
 
+print(make_graph(f, jnp.ones(4)))

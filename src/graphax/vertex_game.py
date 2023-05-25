@@ -90,7 +90,7 @@ def make_vertex_game_state(edges: chex.Array,
                            vertices: chex.Array = None,
                            attn_mask: chex.Array = None) -> VertexGameState:
     vertices = jnp.zeros(info.num_intermediates) if vertices is None else vertices
-    mask = jnp.ones((info.num_inputs+info.num_intermediates, info.num_intermediates))
+    mask = jnp.ones((info.num_intermediates, info.num_intermediates))
     attn_mask = mask if attn_mask is None else attn_mask
     return VertexGameState(t=0, 
                             info=info, 
@@ -134,13 +134,10 @@ class VertexGame:
     the game is over when all intermediate vertices and edges have been eliminated.
     """
     vgs: VertexGameState
-    in_dim: int
-    num_intermediates: int
     
     def __init__(self, vgs: VertexGameState) -> None:
         super().__init__()
         self.vgs = copy.deepcopy(vgs)
-        self.in_dim = vgs.info.num_inputs + vgs.info.num_intermediates
     
     @partial(jax.jit, static_argnums=(0,))
     def step(self,
@@ -158,7 +155,7 @@ class VertexGame:
         vgs.t += 1
         vgs.edges = vgs.edges.at[:, :].set(new_edges)
         vgs.vertices = vgs.vertices.at[t].set(vertex)
-        vgs.attn_mask = vgs.attn_mask.at[:, action].set(jnp.zeros(self.in_dim))
+        vgs.attn_mask = vgs.attn_mask.at[:, action].set(jnp.zeros(self.vgs.info.num_intermediates))
 
         # Reward is the negative of the multiplication count
         reward = -nops
