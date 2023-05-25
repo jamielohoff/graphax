@@ -38,7 +38,10 @@ def embed(edges: chex.Array,
 
     edges = jnp.append(edges, jnp.zeros((new_num_i+new_num_v, o_diff)), axis=1)
     
-    return edges, new_info
+    vertices = jnp.arange(num_i+1, new_num_i+1)[::-1]
+    attn_mask = jnp.concatenate(jnp.ones(new_num_i+new_num_v, num_i), jnp.zeros(new_num_i+new_num_v, v_diff))
+    
+    return edges, new_info, vertices, attn_mask
     
     
 # embeds a smaller graph into a larger graph frame

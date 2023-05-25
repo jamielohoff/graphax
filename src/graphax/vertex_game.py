@@ -85,9 +85,13 @@ register_pytree_node(VertexGameState,
                     gamestate_unflatten)
 
 
-def make_vertex_game_state(edges: chex.Array, info: GraphInfo) -> VertexGameState:
-    vertices = jnp.zeros(info.num_intermediates)
-    attn_mask = jnp.ones((info.num_inputs+info.num_intermediates, info.num_intermediates))
+def make_vertex_game_state(edges: chex.Array, 
+                           info: GraphInfo,
+                           vertices: chex.Array = None,
+                           attn_mask: chex.Array = None) -> VertexGameState:
+    vertices = jnp.zeros(info.num_intermediates) if vertices is None else vertices
+    mask = jnp.ones((info.num_inputs+info.num_intermediates, info.num_intermediates))
+    attn_mask = mask if attn_mask is None else attn_mask
     return VertexGameState(t=0, 
                             info=info, 
                             edges=edges, 
@@ -160,8 +164,8 @@ class VertexGame:
         reward = -nops
         
         terminated = lax.cond((t == self.vgs.info.num_intermediates-1).all(),
-                            lambda: True,
-                            lambda: False)
+                                lambda: True,
+                                lambda: False)
 
         return obs, vgs, reward, terminated
     
