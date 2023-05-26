@@ -46,9 +46,8 @@ def write(fname: str,
         new_graph_info = make_graph_info(graph_shape)
         
         if idx + batchsize > num_samples:
-            file.close()
+            samples = samples[0:num_samples-idx]
             print("Maximum file size reached!")
-            return 0
         
         code_dset = file["data/code"]
         graph_dset = file["data/graph"]
@@ -93,14 +92,33 @@ def read(fname: str,
     """
     assert os.path.isfile(fname) == True
     
-    with h5py.File(fname, "a") as file:
-        header = file["header"]
-        print(header.attrs["num_samples"])
-        print(header.attrs["max_graph_shape"])
-        print(header.attrs["current_idx"])
-        
+    with h5py.File(fname, "a") as file:        
         codes = file["data/code"][batch_idxs]
         graphs = file["data/graph"][batch_idxs]
         info = file["data/info"][batch_idxs]
         return codes, graphs, info
+    
+    
+def read_graph_info(fname: str, 
+                    batch_idxs: Sequence[int]) -> Tuple[str, chex.Array, GraphInfo]:
+    """
+    TODO add documentation
+    """
+    assert os.path.isfile(fname) == True
+    
+    with h5py.File(fname, "a") as file:       
+        graphs = file["data/graph"][batch_idxs]
+        info = file["data/info"][batch_idxs]
+        return graphs, info
+    
+    
+def read_file_size(fname: str) -> int:
+    """
+    TODO add documentation
+    """
+    assert os.path.isfile(fname) == True
+    
+    with h5py.File(fname, "a") as file:
+        header = file["header"]
+        return header.attrs["num_samples"]
 

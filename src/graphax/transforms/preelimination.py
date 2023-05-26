@@ -17,13 +17,21 @@ def safe_preeliminations_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.A
     """
     num_intermediates = info.num_intermediates
     num_inputs = info.num_inputs
-    
+        
     def update_edges(carry, vertex):
         _edges = carry
+        
+        # remove vertices with markowitz degree 1, i.e. one input and one output
         row_flag = jnp.sum(_edges[vertex+num_inputs, :]) == 1
         col_flag = jnp.sum(_edges[:, vertex]) == 1
+        markowitz_degree_1 = jnp.logical_and(row_flag, col_flag)
         
-        _edges, idx = lax.cond(jnp.logical_and(row_flag, col_flag),
+        # remove dead branches from the computational graph
+        row_flag = jnp.sum(_edges[vertex+num_inputs, :]) >= 1
+        col_flag = jnp.sum(_edges[:, vertex]) == 0
+        dead_branch = jnp.logical_and(row_flag, col_flag)
+        
+        _edges, idx = lax.cond(jnp.logical_or(markowitz_degree_1, dead_branch),
                             lambda x: (vertex_eliminate_gpu(x, vertex+1, info)[0], vertex+1), 
                             lambda x: (x, 0), 
                             _edges)

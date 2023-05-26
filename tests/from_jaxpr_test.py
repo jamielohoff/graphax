@@ -14,13 +14,15 @@ def f(x):
     f = jnp.sum(x) + c
     g = jnp.log(d)
     h = jnp.sqrt(jnp.abs(e))
-    i = jnp.tan(h)
-    j = jnp.maximum(x, 0)
-    return jnp.array([e, f, g, i])
+    i = jnp.arctan(.5)
+    j = jnp.tan(h/i)
+    k = jnp.maximum(x, 0)
+    return jnp.array([e, f, g, j])
 
 print(make_graph(f, jnp.ones(4)))
 
-def f(x):
+def g(x):
     return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
 
-print(make_graph(f, jnp.ones(4)))
+print(make_graph(g, jnp.ones(4)))
+

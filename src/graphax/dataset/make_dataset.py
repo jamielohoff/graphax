@@ -51,18 +51,16 @@ class Graph2File:
         
     def generate(self) -> None:
         pbar = tqdm(range(self.num_files))
-        for f in pbar:
+        num_current_samples = 0
+        for _ in pbar:
             fname = self.new_file()
-            nbar = tqdm(range(self.samples_per_file//self.sampler_batchsize))
-            for s in nbar:
+            while num_current_samples < self.samples_per_file:
                 idx = random.randint(0, len(self.prompt_list)-1)
-                samples = []
-                try:
-                    samples = self.sampler.sample(self.sampler_batchsize, 
-                                                message=self.prompt_list[idx][0],
-                                                make_jaxpr=self.prompt_list[idx][1])
-                except SyntaxError:
-                    s -= 1
+                samples = self.sampler.sample(self.sampler_batchsize, 
+                                            message=self.prompt_list[idx][0],
+                                            make_jaxpr=self.prompt_list[idx][1])
+                print("Retrieved", len(samples), "samples")
+                num_current_samples += len(samples)
                 write(fname, samples)
 
     def new_file(self) -> str:
