@@ -21,7 +21,15 @@ def f(x):
 
 print(make_graph(f, jnp.ones(4)))
 
+<<<<<<< HEAD
 # def f(x):
 #     return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
 
 # print(make_graph(f, jnp.ones(4)))
+=======
+def g(x):
+    return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
+
+print(make_graph(g, jnp.ones(4)))
+
+>>>>>>> 63b2ae9dd2eb25ac0a5eb1a6fb51ff5e7f9669d7

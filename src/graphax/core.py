@@ -230,9 +230,9 @@ def vertex_eliminate_gpu(edges: chex.Array,
         eliminate the given edge. 
     """
     num_inputs = info.num_inputs
-    num_edges = info.num_edges
     num_intermediates = info.num_intermediates
     num_outputs = info.num_outputs
+    num_edges = info.num_edges
 
     col = edges.at[:, vertex-1].get()
     ops = col.sum()

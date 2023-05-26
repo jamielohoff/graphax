@@ -10,7 +10,7 @@ import chex
 from .utils import check_graph_shape
 from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
-from ..transforms import safe_preeliminations_gpu
+from ..transforms import safe_preeliminations_gpu, compress_graph
 
 # TODO refactor code such that we do no longer need the global variable
 jaxpr = ""
@@ -49,48 +49,46 @@ class ComputationalGraphSampler:
         # Define prompt
         messages = [{"role": "user", "content": message}]
         samples = []
-        print(message)
-        # Redo the failed samples
-        while len(samples) < num_samples:
-            # Use the API to generate a response
-            print("Sampling", num_samples-len(samples))
-            responses = openai.ChatCompletion.create(model="gpt-3.5-turbo",
-                                                    messages=messages,
-                                                    n=num_samples-len(samples),
-                                                    stop=None, 
-                                                    **kwargs)
+
+        # Use the API to generate a response
+        responses = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+                                                messages=messages,
+                                                n=num_samples,
+                                                stop=None, 
+                                                **kwargs)
+        
+        for response in responses.choices:
+            function = response.message.content
+            # print(function)
+            lines = function.split("\n")
+            clean_lines = []
+            indicator = False
+            for line in lines:
+                if "import" in line:
+                    indicator = True
+                if indicator:
+                    clean_lines.append(line)
+                if "return" in line:
+                    indicator = False
             
-            for response in responses.choices:
-                function = response.message.content
-                # print(function)
-                lines = function.split("\n")
-                clean_lines = []
-                indicator = False
-                for line in lines:
-                    if "import" in line:
-                        indicator = True
-                    if indicator:
-                        clean_lines.append(line)
-                    if "return" in line:
-                        indicator = False
-                
-                if len(clean_lines) == 0:
-                    continue
-                function = "\n".join(clean_lines)
-                function += make_jaxpr
-                print(function)
-                try:
-                    exec(function, globals())
-                    edges, info = make_graph(jaxpr)
-                    edges, info = safe_preeliminations_gpu(edges, info)
-                    print(info)
-                    if check_graph_shape(info, self.max_graph_shape):
-                        samples.append((function, edges, info))
-                except Exception as e:
-                    print(e)
-                    continue
-            print("Sleeping...")
-            sleep(16) # sleep timer due to openai limitations
+            if len(clean_lines) == 0:
+                continue
+            function = "\n".join(clean_lines)
+            function += make_jaxpr
+            # print(function)
+            try:
+                exec(function, globals())
+                edges, info = make_graph(jaxpr)
+                edges, info = safe_preeliminations_gpu(edges, info)
+                edges, info = compress_graph(edges, info)
+                print(info)
+                if check_graph_shape(info, self.max_graph_shape):
+                    samples.append((function, edges, info))
+            except Exception as e:
+                print(e)
+                continue
+        print("Sleeping...")
+        sleep(16) # sleep timer due to openai limitations
         
         return samples
 
