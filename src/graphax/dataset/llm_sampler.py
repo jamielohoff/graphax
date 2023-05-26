@@ -1,5 +1,4 @@
 from typing import Sequence, Tuple
-from time import sleep
 import openai
 
 import jax
@@ -27,19 +26,16 @@ class ComputationalGraphSampler:
     default_message: str
     default_make_jaxpr: str
     max_info: GraphInfo
-    sleep_timer: int
     
     def __init__(self, 
                 api_key: str, 
                 default_message: str,
                 default_make_jaxpr: str,
-                sleep_timer: int = 10,
                 max_info: Tuple[int, int, int] = make_graph_info([10, 30, 5])) -> None:
         self.api_key = api_key
         self.default_message = default_message
         self.default_make_jaxpr = default_make_jaxpr
         self.max_info = max_info
-        self.sleep_timer = sleep_timer
     
     def sample(self, 
                num_samples: int = 1, 
@@ -92,8 +88,6 @@ class ComputationalGraphSampler:
             except Exception as e:
                 print(e)
                 continue
-        print("Sleeping...")
-        sleep(self.sleep_timer) # sleep timer due to openai limitations
         
         return samples
 

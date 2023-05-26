@@ -56,12 +56,12 @@ def write(fname: str,
         
         for i, sample in enumerate(samples):
             edges = np.array(sample[1], dtype=bool)
-            vertices = np.array(sample[3], dtype=bool)
+            vertices = np.array(sample[3], dtype=np.int32)
             attn_mask = np.array(sample[4], dtype=bool)
             
             graph_dset[idx+i:idx+i+1] = edges[None,:,:]
             info_dset[idx+i:idx+i+1, :] = [*sample[2]]
-            vertices_dset[idx+i:idx+i+1, :] = vertices[None,:]
+            vertices_dset[idx+i:idx+i+1, :] = vertices
             attn_mask_dset[idx+i:idx+i+1] = attn_mask[None,:, :]
 
         header.attrs["current_idx"] = idx + batchsize
@@ -87,14 +87,14 @@ def create(fname: str,
         source_code = file.create_dataset("data/code", (num_samples,), dtype=str_dtype)
         
         graph_dims = (max_i+max_v, max_v+max_o)
+        mask_dims = (max_v, max_v)
         edges = file.create_dataset("data/graph", (num_samples,)+graph_dims, dtype=bool)
         meta_info = file.create_dataset("data/info", (num_samples, 4), dtype="i4")
-        vertices = file.create_dataset("data/vertices", (num_samples, 4), dtype=bool)
-        attn_mask = file.create_dataset("data/attn_mask", (num_samples, 4), dtype=bool)
+        vertices = file.create_dataset("data/vertices", (num_samples, max_v), dtype=bool)
+        attn_mask = file.create_dataset("data/attn_mask", (num_samples,)+mask_dims, dtype=bool)
     
     
-def read(fname: str, 
-        batch_idxs: Sequence[int]) -> Tuple[str, chex.Array, GraphInfo]:
+def read(fname: str, batch_idxs: Sequence[int]) -> Tuple[str, chex.Array, GraphInfo]:
     """
     codes variable needs to be decoded using .decode("utf-8)!
     """

@@ -2,6 +2,7 @@ import os
 import random
 from typing import Sequence, Tuple
 from tqdm import tqdm
+from time import sleep
 
 from ..core import GraphInfo, make_graph_info
 from .llm_sampler import ComputationalGraphSampler
@@ -18,6 +19,7 @@ class Graph2File:
     num_files: int
     samples_per_file: int
     max_info: GraphInfo
+    sleep_timer: int
     
     sampler_batchsize: int
     sampler: ComputationalGraphSampler
@@ -30,6 +32,7 @@ class Graph2File:
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
                 samples_per_file: int = 100,
+                sleep_timer: int = 12,
                 max_info: GraphInfo = make_graph_info((10, 30, 5))) -> None:
         self.path = path
         self.prompt_list = prompt_list
@@ -39,6 +42,7 @@ class Graph2File:
         self.num_files = num_samples // samples_per_file
         self.max_info = max_info
         self.current_num_files = 0
+        self.sleep_timer = sleep_timer
         
         self.sampler_batchsize = sampler_batchsize
         default_message = prompt_list[0][0]
@@ -46,7 +50,7 @@ class Graph2File:
         self.sampler = ComputationalGraphSampler(api_key, 
                                                 default_message, 
                                                 default_make_jaxpr,
-                                                max_info)
+                                                max_info=max_info)
         
     def generate(self) -> None:
         pbar = tqdm(range(self.num_files))
@@ -61,6 +65,9 @@ class Graph2File:
                 print("Retrieved", len(samples), "samples")
                 num_current_samples += len(samples)
                 write(fname, samples)
+                
+                print("Sleeping...")
+                sleep(self.sleep_timer)
 
     def new_file(self) -> str:
         name = self.fname_prefix + "-" + str(self.current_num_files) + ".hdf5"
