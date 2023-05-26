@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 import chex
 
-from graphax.dataset.utils import read, read_graph_info, read_file_size
+from .utils import read_graph_info, read_file_size
 
 
 class GraphDataset(Dataset):
@@ -35,8 +35,4 @@ class GraphDataset(Dataset):
         _idx = idx - sum(file_idx)
         graph, info = read_graph_info(file, _idx)
         return graph, info
-
-dataset = GraphDataset("./tests")
-print(len(dataset))
-print(dataset[99])
 
