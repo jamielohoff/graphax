@@ -8,9 +8,10 @@ import jax.numpy as jnp
 import chex
 
 from .utils import check_graph_shape
-from ..core import GraphInfo
+from ..core import GraphInfo, make_graph_info
 from ..interpreter.from_jaxpr import make_graph
-from ..transforms import safe_preeliminations_gpu, compress_graph
+from ..transforms import safe_preeliminations_gpu, compress_graph, embed
+
 
 # TODO refactor code such that we do no longer need the global variable
 jaxpr = ""
@@ -25,17 +26,20 @@ class ComputationalGraphSampler:
     api_key: str
     default_message: str
     default_make_jaxpr: str
-    max_graph_shape: Tuple[int, int, int]
+    max_info: GraphInfo
+    sleep_timer: int
     
     def __init__(self, 
                 api_key: str, 
                 default_message: str,
                 default_make_jaxpr: str,
-                max_graph_shape: Tuple[int, int, int]) -> None:
+                sleep_timer: int = 10,
+                max_info: Tuple[int, int, int] = make_graph_info([10, 30, 5])) -> None:
         self.api_key = api_key
         self.default_message = default_message
         self.default_make_jaxpr = default_make_jaxpr
-        self.max_graph_shape = max_graph_shape
+        self.max_info = max_info
+        self.sleep_timer = sleep_timer
     
     def sample(self, 
                num_samples: int = 1, 
@@ -73,22 +77,23 @@ class ComputationalGraphSampler:
             
             if len(clean_lines) == 0:
                 continue
+
             function = "\n".join(clean_lines)
             function += make_jaxpr
-            # print(function)
             try:
                 exec(function, globals())
                 edges, info = make_graph(jaxpr)
                 edges, info = safe_preeliminations_gpu(edges, info)
                 edges, info = compress_graph(edges, info)
+                edges, _, vertices, attn_mask = embed(edges, info, self.max_info)
                 print(info)
-                if check_graph_shape(info, self.max_graph_shape):
-                    samples.append((function, edges, info))
+                if check_graph_shape(info, self.max_info):
+                    samples.append((function, edges, info, vertices, attn_mask))
             except Exception as e:
                 print(e)
                 continue
         print("Sleeping...")
-        sleep(16) # sleep timer due to openai limitations
+        sleep(self.sleep_timer) # sleep timer due to openai limitations
         
         return samples
 

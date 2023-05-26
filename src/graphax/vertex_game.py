@@ -89,6 +89,17 @@ def make_vertex_game_state(edges: chex.Array,
                            info: GraphInfo,
                            vertices: chex.Array = None,
                            attn_mask: chex.Array = None) -> VertexGameState:
+    """TODO add docstring
+
+    Args:
+        edges (chex.Array): _description_
+        info (GraphInfo): _description_
+        vertices (chex.Array, optional): _description_. Defaults to None.
+        attn_mask (chex.Array, optional): _description_. Defaults to None.
+
+    Returns:
+        VertexGameState: _description_
+    """
     vertices = jnp.zeros(info.num_intermediates) if vertices is None else vertices
     mask = jnp.ones((info.num_intermediates, info.num_intermediates))
     attn_mask = mask if attn_mask is None else attn_mask
@@ -97,7 +108,7 @@ def make_vertex_game_state(edges: chex.Array,
                             edges=edges, 
                             vertices=vertices,
                             attn_mask=attn_mask)
-
+    
 
 def is_bipartite(vgs: VertexGameState) -> bool:
     """Alternative implementation that makes use of the game state for faster computation

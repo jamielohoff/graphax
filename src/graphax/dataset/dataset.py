@@ -30,9 +30,9 @@ class GraphDataset(Dataset):
         return self.length
     
     def __getitem__(self, idx: int) -> Tuple[chex.Array, chex.Array]:
-        file_idx = [fs for fs in self.file_sizes if fs < idx]
+        file_idx = [fs for i, fs in enumerate(self.file_sizes) if sum(self.file_sizes[:i+1]) <= idx]
         file = self.files[len(file_idx)-1]
         _idx = idx - sum(file_idx)
-        graph, info = read_graph_info(file, _idx)
-        return graph, info
+        graph, info, vertices, attn_mask = read_graph_info(file, _idx)
+        return graph, info, vertices, attn_mask
 

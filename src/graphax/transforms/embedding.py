@@ -11,7 +11,7 @@ from ..core import GraphInfo
 
 def embed(edges: chex.Array,
         info: GraphInfo,
-        new_info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
+        new_info: GraphInfo) -> Tuple[chex.Array, GraphInfo, chex.Array, chex.Array]:
     """
     Function that creates a deterministic embedding that is compatible with
     a sequence transformer
@@ -95,4 +95,3 @@ def random_embed(key: chex.PRNGKey,
     
     return edges, new_info
 
-    
