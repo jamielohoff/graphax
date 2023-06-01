@@ -7,9 +7,9 @@ API_KEY = "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"
 PROMPT_LIST = get_prompt_list("./prompt_list.txt")   
 key = jrand.PRNGKey(42) 
 
-sampler = RandomSampler(min_num_intermediates=12)
+sampler = RandomSampler(16, min_num_intermediates=12)
 
-gen = Graph2File(sampler, "./")
+gen = Graph2File(sampler, "./", sampler_batchsize=32)
 
 gen.generate(key=key, minval=0.05, maxval=0.5)
 

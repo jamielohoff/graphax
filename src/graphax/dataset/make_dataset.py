@@ -1,6 +1,9 @@
 import os
 from tqdm import tqdm
 
+import jax
+import jax.random as jrand
+
 import chex
 
 from .sampler import ComputationalGraphSampler
@@ -46,8 +49,9 @@ class Graph2File:
             fname = self.new_file()
             num_current_samples = 0
             while num_current_samples < self.samples_per_file:
+                subkey, key = jrand.split(key, 2)
                 try:
-                    samples = self.sampler.sample(self.sampler_batchsize, key=key, **kwargs)
+                    samples = self.sampler.sample(self.sampler_batchsize, key=subkey, **kwargs)
                 except Exception as e:
                     print(e)
                     continue
