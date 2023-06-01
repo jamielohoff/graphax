@@ -4,8 +4,8 @@ import jax.random as jrand
 from graphax.core import front_eliminate, back_eliminate, vertex_eliminate, forward, reverse
 from graphax.examples import make_Helmholtz
 from graphax.examples import make_random
-from graphax.checker import connectivity_checker
-from graphax.cleaner import clean
+from graphax.transforms.checker import connectivity_checker
+from graphax.transforms.cleaner import clean
 
 
 edges, info = make_Helmholtz()

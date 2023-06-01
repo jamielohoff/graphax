@@ -58,19 +58,17 @@ class VertexGameState:
     
     def __init__(self,
                 t: int, 
-                info: GraphInfo,
                 edges: chex.Array,
                 vertices: chex.Array,
                 attn_mask: chex.Array) -> None:
         self.t = t
-        self.info = info
         self.edges = edges
         self.vertices = vertices
         self.attn_mask = attn_mask
 
 
 def gamestate_flatten(vgs: VertexGameState):
-    children = (vgs.t, vgs.info, vgs.edges, vgs.vertices, vgs.attn_mask)
+    children = (vgs.t, vgs.edges, vgs.vertices, vgs.attn_mask)
     aux_data = None
     return children, aux_data
 
@@ -103,24 +101,11 @@ def make_vertex_game_state(edges: chex.Array,
     vertices = jnp.zeros(info.num_intermediates) if vertices is None else vertices
     mask = jnp.ones((info.num_intermediates, info.num_intermediates))
     attn_mask = mask if attn_mask is None else attn_mask
-    return VertexGameState(t=0, 
-                            info=info, 
+    return VertexGameState(t=0,  
                             edges=edges, 
                             vertices=vertices,
                             attn_mask=attn_mask)
     
-
-def is_bipartite(vgs: VertexGameState) -> bool:
-    """Alternative implementation that makes use of the game state for faster computation
-    jittable function to test if a graph is bipartite by comparing the number of
-    non-zero entries in gs.states to the number of intermediate variables, i.e.
-    gs.info.at[1].get().
-
-    Arguments:
-        vgs (GraphState): GraphState object we want to check.
-    """
-    return jnp.count_nonzero(vgs.vertices) == vgs.info.num_intermediates
-
 
 class VertexGame:
     """
@@ -144,11 +129,11 @@ class VertexGame:
     The `termination` of the game is indicated by the is_bipartite feature, i.e.
     the game is over when all intermediate vertices and edges have been eliminated.
     """
-    vgs: VertexGameState
+    info: GraphInfo
     
-    def __init__(self, vgs: VertexGameState) -> None:
+    def __init__(self, info: GraphInfo) -> None:
         super().__init__()
-        self.vgs = copy.deepcopy(vgs)
+        self.info = info
     
     @partial(jax.jit, static_argnums=(0,))
     def step(self,
@@ -160,24 +145,20 @@ class VertexGame:
         t = vgs.t.astype(jnp.int32)
 
         edges = vgs.edges
-        new_edges, nops = vertex_eliminate_gpu(edges, vertex, self.vgs.info)
-        obs = lax.slice_in_dim(new_edges, 0, self.vgs.info.num_intermediates, axis=1)
+        new_edges, nops = vertex_eliminate_gpu(edges, vertex, self.info)
+        obs = lax.slice_in_dim(new_edges, 0, self.info.num_intermediates, axis=1)
                 
         vgs.t += 1
         vgs.edges = vgs.edges.at[:, :].set(new_edges)
         vgs.vertices = vgs.vertices.at[t].set(vertex)
-        vgs.attn_mask = vgs.attn_mask.at[:, action].set(jnp.zeros(self.vgs.info.num_intermediates))
+        vgs.attn_mask = vgs.attn_mask.at[:, action].set(jnp.zeros(self.info.num_intermediates))
 
         # Reward is the negative of the multiplication count
         reward = -nops
         
-        terminated = lax.cond((t == self.vgs.info.num_intermediates-1).all(),
+        terminated = lax.cond((t == self.info.num_intermediates-1).all(),
                                 lambda: True,
                                 lambda: False)
 
         return obs, vgs, reward, terminated
-    
-    @partial(jax.jit, static_argnums=(0,))
-    def reset(self, key: chex.PRNGKey = None) -> VertexGameState:
-        return copy.deepcopy(self.vgs)
 

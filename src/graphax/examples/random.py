@@ -36,6 +36,7 @@ def make_random(key: chex.PRNGKey,
     return edges, info
 
 
+# TODO check if this is deprecated
 def make_connected_random(key: chex.PRNGKey,
                         info: GraphInfo, *, 
                         max_connections: int = 4,

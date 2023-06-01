@@ -5,4 +5,4 @@ from .simple import (make_simple,
                     make_hole)
 from .lif import make_LIF, make_adaptive_LIF
 from .fancy import make_f, make_g
-from ._random import make_random, make_connected_random
+from .random import make_random, make_connected_random

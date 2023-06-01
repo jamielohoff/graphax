@@ -1,12 +1,11 @@
 import os
-import random
-from typing import Sequence, Tuple
 from tqdm import tqdm
-from time import sleep
 
-from ..core import GraphInfo, make_graph_info
-from .llm_sampler import ComputationalGraphSampler
+import chex
+
+from .sampler import ComputationalGraphSampler
 from .utils import create, write
+from ..core import GraphInfo, make_graph_info
 
 class Graph2File:
     """
@@ -14,61 +13,48 @@ class Graph2File:
     """
     path: str
     fname_prefix: str
-    prompt_list: Sequence[Tuple[str, str]]
     num_samples: int
     num_files: int
     samples_per_file: int
     max_info: GraphInfo
-    sleep_timer: int
     
     sampler_batchsize: int
     sampler: ComputationalGraphSampler
     
     def __init__(self, 
-                api_key: str,
+                sampler: ComputationalGraphSampler,
                 path: str,
-                prompt_list: Sequence[Tuple[str, str]],
                 sampler_batchsize: int = 20,
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
                 samples_per_file: int = 100,
-                sleep_timer: int = 12,
-                max_info: GraphInfo = make_graph_info((10, 30, 5))) -> None:
+                max_info: GraphInfo = make_graph_info([10, 30, 5])) -> None:
         self.path = path
-        self.prompt_list = prompt_list
         self.fname_prefix = fname_prefix
         self.num_samples = num_samples
         self.samples_per_file = samples_per_file
         self.num_files = num_samples // samples_per_file
-        self.max_info = max_info
         self.current_num_files = 0
-        self.sleep_timer = sleep_timer
+        self.max_info = max_info
         
         self.sampler_batchsize = sampler_batchsize
-        default_message = prompt_list[0][0]
-        default_make_jaxpr = prompt_list[0][1]
-        self.sampler = ComputationalGraphSampler(api_key, 
-                                                default_message, 
-                                                default_make_jaxpr,
-                                                max_info=max_info)
+        self.sampler = sampler
         
-    def generate(self) -> None:
+    def generate(self, key: chex.PRNGKey = None, **kwargs) -> None:
         pbar = tqdm(range(self.num_files))
-        num_current_samples = 0
         for _ in pbar:
             fname = self.new_file()
+            num_current_samples = 0
             while num_current_samples < self.samples_per_file:
-                idx = random.randint(0, len(self.prompt_list)-1)
-                samples = self.sampler.sample(self.sampler_batchsize, 
-                                            message=self.prompt_list[idx][0],
-                                            make_jaxpr=self.prompt_list[idx][1])
+                try:
+                    samples = self.sampler.sample(self.sampler_batchsize, key=key, **kwargs)
+                except Exception as e:
+                    print(e)
+                    continue
                 print("Retrieved", len(samples), "samples")
                 num_current_samples += len(samples)
                 write(fname, samples)
                 
-                print("Sleeping...")
-                sleep(self.sleep_timer)
-
     def new_file(self) -> str:
         name = self.fname_prefix + "-" + str(self.current_num_files) + ".hdf5"
         fname = os.path.join(self.path, name)

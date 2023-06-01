@@ -90,7 +90,7 @@ def create(fname: str,
         mask_dims = (max_v, max_v)
         edges = file.create_dataset("data/graph", (num_samples,)+graph_dims, dtype=bool)
         meta_info = file.create_dataset("data/info", (num_samples, 4), dtype="i4")
-        vertices = file.create_dataset("data/vertices", (num_samples, max_v), dtype=bool)
+        vertices = file.create_dataset("data/vertices", (num_samples, max_v), dtype="i4")
         attn_mask = file.create_dataset("data/attn_mask", (num_samples,)+mask_dims, dtype=bool)
     
     

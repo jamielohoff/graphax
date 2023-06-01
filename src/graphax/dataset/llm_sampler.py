@@ -2,12 +2,13 @@ from typing import Sequence, Tuple
 import openai
 
 import jax
-import jax.numpy as jnp
+import jax.random as jrand
 
 import chex
 
+from .sampler import ComputationalGraphSampler
 from .utils import check_graph_shape
-from ..core import GraphInfo, make_graph_info
+from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
 from ..transforms import safe_preeliminations_gpu, compress_graph, embed
 
@@ -15,36 +16,37 @@ from ..transforms import safe_preeliminations_gpu, compress_graph, embed
 # TODO refactor code such that we do no longer need the global variable
 jaxpr = ""
 
-class ComputationalGraphSampler:
+class LLMSampler(ComputationalGraphSampler):
     """
     Class that implements a sampling function using ChatGPT to create realistic
     examples of computational graphs.
     
-    Returns Jaxpr objects or string defining the function
+    Returns jaxpr objects or string defining the function
     """
     api_key: str
-    default_message: str
-    default_make_jaxpr: str
-    max_info: GraphInfo
+    prompt_list: Sequence[Tuple[str, str]]
+    sleep_timer: int
     
     def __init__(self, 
                 api_key: str, 
-                default_message: str,
-                default_make_jaxpr: str,
-                max_info: Tuple[int, int, int] = make_graph_info([10, 30, 5])) -> None:
+                prompt_list: Sequence[Tuple[str, str]],
+                *args,
+                sleep_timer: int = 12,
+                **kwargs) -> None:
+        super().__init__(self, *args, **kwargs)
+        
         self.api_key = api_key
-        self.default_message = default_message
-        self.default_make_jaxpr = default_make_jaxpr
-        self.max_info = max_info
+        self.prompt_list = prompt_list
+        self.sleep_timer = sleep_timer
     
     def sample(self, 
                num_samples: int = 1, 
-               message: str = None,
-               make_jaxpr: str = None,
+               key: chex.PRNGKey = None,
                **kwargs) -> Sequence[tuple[str, chex.Array, GraphInfo]]:
         openai.api_key = self.api_key
-        message = self.default_message if message is None else message
-        make_jaxpr = "\n"+self.default_make_jaxpr if make_jaxpr is None else "\n"+make_jaxpr
+        idx = jrand.randint(key, (), 0, len(self.prompt_list)-1)
+        message, make_jaxpr = self.prompt_list[idx]
+        make_jaxpr = "\n"+make_jaxpr
 
         # Define prompt
         messages = [{"role": "user", "content": message}]
@@ -81,9 +83,10 @@ class ComputationalGraphSampler:
                 edges, info = make_graph(jaxpr)
                 edges, info = safe_preeliminations_gpu(edges, info)
                 edges, info = compress_graph(edges, info)
+                num_intermediates = info.num_intermediates
                 edges, _, vertices, attn_mask = embed(edges, info, self.max_info)
                 print(info)
-                if check_graph_shape(info, self.max_info):
+                if check_graph_shape(info, self.max_info) and num_intermediates > self.min_num_intermediates:
                     samples.append((function, edges, info, vertices, attn_mask))
             except Exception as e:
                 print(e)
