@@ -36,3 +36,23 @@ def make_g(size: int = 5) -> Tuple[chex.Array, GraphInfo]:
     edges, info = make_graph(g, x)
     return edges, info
 
+
+def make_h() -> Tuple[chex.Array, GraphInfo]:
+    # Define the component functions
+    def g1(x):
+        return x[0] ** 2 + x[1] ** 2
+
+    def g2(x):
+        return jnp.sin(x[2]) + jnp.log(x[3])
+    
+    # Define the overall function
+    def h(x):
+        return g1(x) + g2(x)
+
+    x = jnp.ones(4)
+    h_grad = jax.grad(h)
+    print(h_grad(x))
+    print(jax.make_jaxpr(h_grad)(x))
+    edges, info = make_graph(h_grad, x)
+    return edges, info
+

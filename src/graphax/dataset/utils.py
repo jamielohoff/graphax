@@ -13,7 +13,7 @@ import numpy as np
 
 import chex
 
-from ..core import GraphInfo, make_graph_info
+from ..core import make_graph_info, GraphInfo
 
 
 def get_prompt_list(prompt_file: str):
@@ -68,7 +68,7 @@ def write(fname: str,
         
         
 def create(fname: str, 
-            num_samples: int = 3, 
+            num_samples: int, 
             max_info: GraphInfo = make_graph_info((10, 15, 5))) -> None:
     assert os.path.isfile(fname) == False
     
@@ -94,30 +94,29 @@ def create(fname: str,
         attn_mask = file.create_dataset("data/attn_mask", (num_samples,)+mask_dims, dtype=bool)
     
     
-def read(fname: str, batch_idxs: Sequence[int]) -> Tuple[str, chex.Array, GraphInfo]:
+def read(fname: str, batch_idxs: Sequence[int]) -> Tuple[str, chex.Array, GraphInfo, chex.Array, chex.Array]:
     """
-    codes variable needs to be decoded using .decode("utf-8)!
+    codes variable needs to be decoded using .decode("utf-8")!
     """
     assert os.path.isfile(fname) == True
     
-    codes, graphs, info = None, None, None
     with h5py.File(fname) as file:        
         codes = file["data/code"][batch_idxs]
         graphs = file["data/graph"][batch_idxs]
         info = file["data/info"][batch_idxs]
         vertices = file["data/vertices"][batch_idxs]
         attn_mask = file["data/attn_mask"][batch_idxs]
-    return codes, graphs, info, vertices, attn_mask
+        return codes, graphs, info, vertices, attn_mask
     
     
 def read_graph_info(fname: str, 
-                    batch_idxs: Sequence[int]) -> Tuple[str, chex.Array, GraphInfo]:
+                    batch_idxs: Sequence[int]) -> Tuple[chex.Array, GraphInfo, chex.Array, chex.Array]:
     """
     TODO add documentation
     """
     assert os.path.isfile(fname) == True
     
-    with h5py.File(fname, "a") as file:       
+    with h5py.File(fname) as file:       
         graphs = file["data/graph"][batch_idxs]
         info = file["data/info"][batch_idxs]
         vertices = file["data/vertices"][batch_idxs]

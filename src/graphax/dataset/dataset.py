@@ -2,21 +2,20 @@ from typing import Dict, Sequence, Tuple
 import os
 from torch.utils.data import Dataset
 
-import jax 
-import jax.numpy as jnp
-
 import chex
 
-from .utils import read_graph_info, read_file_size
+from .utils import read, read_graph_info, read_file_size
 
 
 class GraphDataset(Dataset):
     files: Sequence[str]
     file_sizes: Sequence[int]
     length: int
+    include_code: bool
     
-    def __init__(self, dir: str) -> None:
+    def __init__(self, dir: str, include_code: bool = False) -> None:
         self.length = 0
+        self.include_code = include_code
         self.files, self.file_sizes = [], []
         for file in os.listdir(dir):
             if file.endswith(".hdf5"):
@@ -33,6 +32,11 @@ class GraphDataset(Dataset):
         file_idx = [fs for i, fs in enumerate(self.file_sizes) if sum(self.file_sizes[:i+1]) <= idx]
         file = self.files[len(file_idx)-1]
         _idx = idx - sum(file_idx)
-        graph, info, vertices, attn_mask = read_graph_info(file, _idx)
-        return graph, info, vertices, attn_mask
+        
+        if self.include_code:
+            src, graph, info, vertices, attn_mask = read(file, _idx)
+            return src, graph, info, vertices, attn_mask
+        else:
+            graph, info, vertices, attn_mask = read_graph_info(file, _idx)
+            return graph, info, vertices, attn_mask
 
