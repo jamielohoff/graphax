@@ -12,7 +12,8 @@ id_p = jax.core.Primitive("id")
 def id_prim(x, y):
     return id_p.bind(x, y)
 
-def id_impl()
+def id_impl():
+    pass
 
 
 def f(x, y):

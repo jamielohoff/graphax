@@ -13,7 +13,7 @@ from ..core import GraphInfo, make_empty_edges, make_graph_info
 
 def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
     """
-    Function that filters out dead code.
+    Function that filters out assignments of unused variables.
     """
     return [eqn for eqn in eqns if not str(eqn.outvars[0]) == "_"]
 
