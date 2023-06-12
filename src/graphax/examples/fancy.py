@@ -37,7 +37,7 @@ def make_g(size: int = 5) -> Tuple[chex.Array, GraphInfo]:
     return edges, info
 
 
-def make_h() -> Tuple[chex.Array, GraphInfo]:
+def make_minimal_reverse() -> Tuple[chex.Array, GraphInfo]:
     # Define the component functions
     def g1(x):
         return x[0] ** 2 + x[1] ** 2
@@ -46,13 +46,22 @@ def make_h() -> Tuple[chex.Array, GraphInfo]:
         return jnp.sin(x[2]) + jnp.log(x[3])
     
     # Define the overall function
-    def h(x):
+    def minimal_reverse(x):
         return g1(x) + g2(x)
 
     x = jnp.ones(4)
-    h_grad = jax.grad(h)
-    print(h_grad(x))
-    print(jax.make_jaxpr(h_grad)(x))
-    edges, info = make_graph(h_grad, x)
+    edges, info = make_graph(minimal_reverse, x)
+    return edges, info
+
+
+def make_hessian() -> Tuple[chex.Array, GraphInfo]:
+    def f(x):
+        z = jnp.cos(x[1]) * jnp.sin(x[2])
+        w = jnp.exp(x[0] + x[3])
+        return z + w
+
+    x = jnp.ones(4)
+    grad_f = jax.grad(f)
+    edges, info = make_graph(grad_f, x)
     return edges, info
 

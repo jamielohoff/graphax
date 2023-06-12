@@ -9,7 +9,10 @@ from ..examples import (make_LIF,
                               make_scalar_assignment_tree,
                               make_f,
                               make_g,
-                              make_h)
+                              make_minimal_reverse,
+                              make_hessian,
+                              make_sdf_box,
+                              make_sdf_sphere)
 
 
 def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30, 5])) -> None:
@@ -22,7 +25,7 @@ def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30
         _type_: _description_
     """
     samples = []
-    create(fname, 9, info)
+    create(fname, 10, info)
 
     # We use the field that is usually reserved for source code to store the names
     edges, _info = make_lighthouse()
@@ -42,12 +45,6 @@ def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30
     edges, _info = compress_graph(edges, _info)
     edges, _, vertices, attn_mask = embed(edges, _info, info)
     samples.append(("Adaptive LIF", edges, info, vertices, attn_mask))
-
-    edges, _info = make_Helmholtz()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("Helmholtz", edges, info, vertices, attn_mask))
         
     edges, _info = make_hole()
     edges, _info = safe_preeliminations_gpu(edges, _info)
@@ -67,18 +64,30 @@ def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30
     edges, _, vertices, attn_mask = embed(edges, _info, info)
     samples.append(("f", edges, info, vertices, attn_mask))
 
-    edges, _info = make_g(size=8)
+    edges, _info = make_g(size=10)
     edges, _info = safe_preeliminations_gpu(edges, _info)
     edges, _info = compress_graph(edges, _info)
     edges, _, vertices, attn_mask = embed(edges, _info, info)
     samples.append(("g", edges, info, vertices, attn_mask))
 
-    edges, _info = make_h(size=8)
+    edges, _info = make_minimal_reverse()
     edges, _info = safe_preeliminations_gpu(edges, _info)
     edges, _info = compress_graph(edges, _info)
     edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("h", edges, info, vertices, attn_mask))
-
+    samples.append(("minimal reverse", edges, info, vertices, attn_mask))
+    
+    edges, _info = make_hessian()
+    edges, _info = safe_preeliminations_gpu(edges, _info)
+    edges, _info = compress_graph(edges, _info)
+    edges, _, vertices, attn_mask = embed(edges, _info, info)
+    samples.append(("hessian", edges, info, vertices, attn_mask))
+    
+    edges, _info = make_sdf_sphere()
+    edges, _info = safe_preeliminations_gpu(edges, _info)
+    edges, _info = compress_graph(edges, _info)
+    edges, _, vertices, attn_mask = embed(edges, _info, info)
+    samples.append(("sdf sphere", edges, info, vertices, attn_mask))
+    
     write(fname, samples)
 
     
