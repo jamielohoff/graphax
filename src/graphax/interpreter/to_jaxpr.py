@@ -13,24 +13,23 @@ from jax.core import (ClosedJaxpr,
 from jax import lax
 from jax._src.util import safe_map
 from jax._src.interpreters.ad import get_primitive_transpose, primitive_jvps
+from jax._src.interpreters.ad import primitive_jvps
 
 elemental_registry = {}
 
 elemental_registry[lax.exp_p] = lax.exp_p
 elemental_registry[lax.sin_p] = lax.cos_p
+elemental_registry[lax.add_p] = lax.cos_p
+
 
 def f(x, y):
     return x**2 + y**2
 
 jaxpr = jax.make_jaxpr(f)(1., 1.)
-prm = jaxpr.eqns[2].primitive
 
-
-# TODO how to get the proper primitive?
 def add_eqn(jaxpr: ClosedJaxpr, eqn: JaxprEqn) -> Jaxpr:
-    prim = jax.core.Primitive("mul")
-    print(prim)
-    # print(primitive_jvps[prim])
+    prim = lax.add_p
+    print(primitive_jvps[prim])
     outvar_list = [eqn.outvars[0] for eqn in jaxpr.jaxpr._eqns]
     print(outvar_list)
     

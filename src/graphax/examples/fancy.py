@@ -65,3 +65,17 @@ def make_hessian() -> Tuple[chex.Array, GraphInfo]:
     edges, info = make_graph(grad_f, x)
     return edges, info
 
+
+def make_softmax_attention():
+    def attn(q, k, v):
+        a = jnp.outer(q, k)
+        b = jnp.softmax(a, axis=-1)
+        return b*v
+    
+    q = jnp.ones(3)
+    k = jnp.ones(3)
+    v = jnp.ones(3)
+    
+    edges, info = make_graph(attn, q, k, v)
+    return edges, info
+
