@@ -141,15 +141,15 @@ print(ops)
 # print(ops)
 
 
-# edges, info = make_hessian()
-# edges, info = safe_preeliminations_gpu(edges, info)
-# edges, info = compress_graph(edges, info)
+edges, info = make_hessian()
+edges, info = safe_preeliminations_gpu(edges, info)
+edges, info = compress_graph(edges, info)
 
-# print(edges, info)
-# _, ops = forward_gpu(edges, info)
-# print(ops)
-# _, ops = reverse_gpu(edges, info)
-# print(ops)
+print(edges, info)
+_, ops = forward_gpu(edges, info)
+print(ops)
+_, ops = reverse_gpu(edges, info)
+print(ops)
 
 # key = jrand.PRNGKey(123)
 # print(random_solver(edges, info, num_iterations=500, key=key))

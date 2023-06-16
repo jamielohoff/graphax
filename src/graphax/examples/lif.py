@@ -17,8 +17,7 @@ def make_LIF() -> Tuple[chex.Array, GraphInfo]:
         
         return U_next, I_next, S_next
     
-    edges, info = make_graph(lif, .1, .2, 1., .95, .9, 1.)
-    return edges, info
+    return make_graph(lif, .1, .2, 1., .95, .9, 1.)
 
 
 # From Bellec et al. e-prop paper
@@ -30,7 +29,5 @@ def make_adaptive_LIF() -> Tuple[chex.Array, GraphInfo]:
         a_next = rho*a - S_next
         
         return U_next, a_next, S_next
-    
-    edges, info = make_graph(ada_lif, .1, .2, 1., .95, .9, .9, 1.)
-    return edges, info
+    return make_graph(ada_lif, .1, .2, 1., .95, .9, .9, 1.)
 

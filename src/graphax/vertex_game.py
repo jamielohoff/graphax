@@ -101,7 +101,7 @@ def make_vertex_game_state(edges: chex.Array,
     vertices = jnp.zeros(info.num_intermediates) if vertices is None else vertices
     mask = jnp.ones((info.num_intermediates, info.num_intermediates))
     attn_mask = mask if attn_mask is None else attn_mask
-    return VertexGameState(t=0,  
+    return VertexGameState(t=jnp.where(vertices > 0., 1, 0).sum(),  
                             edges=edges, 
                             vertices=vertices,
                             attn_mask=attn_mask)
@@ -151,7 +151,8 @@ class VertexGame:
         vgs.t += 1
         vgs.edges = vgs.edges.at[:, :].set(new_edges)
         vgs.vertices = vgs.vertices.at[t].set(vertex)
-        vgs.attn_mask = vgs.attn_mask.at[:, action].set(jnp.zeros(self.info.num_intermediates))
+        vgs.attn_mask = vgs.attn_mask.at[:, action].set(0.)
+        vgs.attn_mask = vgs.attn_mask.at[action, :].set(0.)
 
         # Reward is the negative of the multiplication count
         reward = -nops

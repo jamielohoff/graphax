@@ -86,7 +86,7 @@ def create(fname: str,
         str_dtype = h5py.string_dtype(encoding="utf-8")
         source_code = file.create_dataset("data/code", (num_samples,), dtype=str_dtype)
         
-        graph_dims = (max_i+max_v, max_v+max_o)
+        graph_dims = (max_i+max_v, max_v)
         mask_dims = (max_v, max_v)
         edges = file.create_dataset("data/graph", (num_samples,)+graph_dims, dtype=bool)
         meta_info = file.create_dataset("data/info", (num_samples, 4), dtype="i4")

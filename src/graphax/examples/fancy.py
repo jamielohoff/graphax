@@ -1,6 +1,7 @@
 from typing import Tuple
 
 import jax
+import jax.nn as jnn
 import jax.numpy as jnp
 
 import chex
@@ -24,8 +25,7 @@ def make_f() -> Tuple[chex.Array, GraphInfo]:
         return jnp.array([e, f, g, i])
 
     x = jnp.ones(4)
-    edges, info = make_graph(f, x)
-    return edges, info
+    return make_graph(f, x)
 
 
 def make_g(size: int = 5) -> Tuple[chex.Array, GraphInfo]:
@@ -33,8 +33,7 @@ def make_g(size: int = 5) -> Tuple[chex.Array, GraphInfo]:
         return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
     
     x = jnp.ones(size)
-    edges, info = make_graph(g, x)
-    return edges, info
+    return make_graph(g, x)
 
 
 def make_minimal_reverse() -> Tuple[chex.Array, GraphInfo]:
@@ -50,8 +49,7 @@ def make_minimal_reverse() -> Tuple[chex.Array, GraphInfo]:
         return g1(x) + g2(x)
 
     x = jnp.ones(4)
-    edges, info = make_graph(minimal_reverse, x)
-    return edges, info
+    return make_graph(minimal_reverse, x)
 
 
 def make_hessian() -> Tuple[chex.Array, GraphInfo]:
@@ -62,20 +60,27 @@ def make_hessian() -> Tuple[chex.Array, GraphInfo]:
 
     x = jnp.ones(4)
     grad_f = jax.grad(f)
-    edges, info = make_graph(grad_f, x)
-    return edges, info
+    return make_graph(grad_f, x)
 
 
 def make_softmax_attention():
+    def softmax(x):
+        exp = jnp.exp(x)
+        norm = jnp.sum(exp, axis=-1)
+        return exp / norm
+    
     def attn(q, k, v):
-        a = jnp.outer(q, k)
-        b = jnp.softmax(a, axis=-1)
-        return b*v
+        a1 = q[0] * k
+        a2 = q[1] * k
+        b1 = jnp.dot(softmax(a1), v)
+        b2 = jnp.dot(softmax(a2), v)
+        return jnp.array([b1, b2])
     
-    q = jnp.ones(3)
-    k = jnp.ones(3)
-    v = jnp.ones(3)
+    q = jnp.ones(2)
+    k = jnp.ones(2)
+    v = jnp.ones(2)
     
-    edges, info = make_graph(attn, q, k, v)
-    return edges, info
+    print(jax.make_jaxpr(attn)(q, k, v))
+    
+    return make_graph(attn, q, k, v)
 

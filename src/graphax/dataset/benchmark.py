@@ -12,7 +12,8 @@ from ..examples import (make_LIF,
                               make_minimal_reverse,
                               make_hessian,
                               make_sdf_box,
-                              make_sdf_sphere)
+                              make_sdf_sphere,
+                              make_softmax_attention)
 
 
 def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30, 5])) -> None:
@@ -87,6 +88,12 @@ def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30
     edges, _info = compress_graph(edges, _info)
     edges, _, vertices, attn_mask = embed(edges, _info, info)
     samples.append(("sdf sphere", edges, info, vertices, attn_mask))
+    
+    edges, _info = make_softmax_attention()
+    edges, _info = safe_preeliminations_gpu(edges, _info)
+    edges, _info = compress_graph(edges, _info)
+    edges, _, vertices, attn_mask = embed(edges, _info, info)
+    samples.append(("softmax attention", edges, info, vertices, attn_mask))
     
     write(fname, samples)
 

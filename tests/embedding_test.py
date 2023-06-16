@@ -7,32 +7,32 @@ from graphax.core import make_graph_info
 from graphax.transforms.embedding import embed
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 key = jrand.PRNGKey(42)
-new_info = make_graph_info([10, 15, 5])
+new_info = make_graph_info([10, 20, 5])
 
-edges, info = make_Helmholtz()
-edges, info = embed(edges, info, new_info)
-print(edges, info)
-edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
-print(nops)
+edges, info, output_vertices, attn_mask = make_Helmholtz()
+edges, info, vertices, attn_mask = embed(edges, info, new_info, output_vertices, attn_mask)
+print(edges, info, vertices, attn_mask)
+# edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
+# print(nops)
 
-edges, info = make_lighthouse()
-edges, info = embed(edges, info, new_info)
-print(edges, info)
-edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
-print(nops)
+# edges, info = make_lighthouse()
+# edges, info = embed(edges, info, new_info)
+# print(edges, info)
+# edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
+# print(nops)
 
-edges, info = make_adaptive_LIF()
-edges, info = embed(edges, info, new_info)
-print(edges, info)
-edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
-print(nops)
+# edges, info = make_adaptive_LIF()
+# edges, info = embed(edges, info, new_info)
+# print(edges, info)
+# edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
+# print(nops)
 
-edges, info = make_free_energy()
-edges, info = embed(edges, info, new_info)
-print(edges, info)
-edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
-print(nops)
+# edges, info = make_free_energy()
+# edges, info = embed(edges, info, new_info)
+# print(edges, info)
+# edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
+# print(nops)
 

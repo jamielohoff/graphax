@@ -1,4 +1,8 @@
+from typing import Dict, Sequence, Tuple
+from collections import defaultdict
+
 import jax
+import jax.lax as lax
 import jax.numpy as jnp
 from jax.core import (ClosedJaxpr, 
                     Jaxpr, 
@@ -10,58 +14,204 @@ from jax.core import (ClosedJaxpr,
                     Atom, 
                     Literal, 
                     ShapedArray)
-from jax import lax
-from jax._src.util import safe_map
-from jax._src.interpreters.ad import get_primitive_transpose, primitive_jvps
-from jax._src.interpreters.ad import primitive_jvps
 
+
+class ElementalPartial:
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        pass
+    
+class ElementalExp(ElementalPartial):
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        return eqn.outvars, None
+    
+class ElementalSin(ElementalPartial):
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        outvars = [Var(count, "_d", ShapedArray((), jnp.float32))]
+        return outvars, new_jaxpr_eqn(eqn.invars, outvars, lax.cos_p, {}, set(), source_info=None)
+    
+class ElementalAdd(ElementalPartial):
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        # TODO improve this for vectorized edges
+        return [Literal(1., ShapedArray((), jnp.float32))], None
+    
+class ElementalMul(ElementalPartial):
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        # swap invars and outvars here
+        outvars = list(set(eqn.invars) - set([invar]))
+        return outvars, None
+    
+class ElementalTan(ElementalPartial):
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        # swap invars and outvars here
+        outvars = list(set(eqn.invars) - set([invar]))
+        return outvars, None
+    
+class ElementalDiv(ElementalPartial):
+    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
+        # swap invars and outvars here
+        outvars = list(set(eqn.invars) - set([invar]))
+        return outvars, None
+    
 elemental_registry = {}
 
-elemental_registry[lax.exp_p] = lax.exp_p
-elemental_registry[lax.sin_p] = lax.cos_p
-elemental_registry[lax.add_p] = lax.cos_p
+elemental_registry[lax.exp_p] = ElementalExp()
+elemental_registry[lax.sin_p] = ElementalSin()
+elemental_registry[lax.add_p] = ElementalAdd()
+elemental_registry[lax.mul_p] = ElementalMul()
 
+# def f(x, y):
+#     z = x * y
+#     w = jnp.sin(z)
+#     return w + z, jnp.exp(z)
 
-def f(x, y):
-    return x**2 + y**2
+def f(nu, gamma, omega, t):
+        y1 = nu*jnp.tan(omega*t)/(gamma-jnp.tan(omega*t))
+        y2 = gamma*y1
+        return y1, y2
 
-jaxpr = jax.make_jaxpr(f)(1., 1.)
+jaxpr = jax.make_jaxpr(f)(2., 2., 2., 2.)
+jac_f = jax.jacrev(f, argnums=(0, 1, 2, 3))
+print(jac_f(2., 2., 2., 2.))
+jac_jaxpr = jax.make_jaxpr(jac_f)(2., 2., 2., 2.)
+print(jac_jaxpr)
 
-def add_eqn(jaxpr: ClosedJaxpr, eqn: JaxprEqn) -> Jaxpr:
-    prim = lax.add_p
-    print(primitive_jvps[prim])
-    outvar_list = [eqn.outvars[0] for eqn in jaxpr.jaxpr._eqns]
-    print(outvar_list)
+class ComputationalGraph:
+    edges: Dict
+    jaxpr: ClosedJaxpr
+    count: int
+    num_invars: int
+    derivative_code: Sequence[JaxprEqn]
     
-    outvars = [Var(6, "", ShapedArray((), jnp.float32))]
-    eqn = new_jaxpr_eqn(outvar_list[1:], outvars, prim, {}, set(), source_info=None)
-    print(eqn.source_info)
-    jaxpr.jaxpr._eqns.append(eqn)
+    def __init__(self, jaxpr: ClosedJaxpr) -> None:
+        self.jaxpr = jaxpr
+        self.count = len([eqn.outvars[0] for eqn in jaxpr.jaxpr._eqns]) + len(jaxpr.jaxpr._invars)
+        self.num_invars = len(self.jaxpr.jaxpr._invars)
+        self.in_edges = {i: {} for i in range(-self.num_invars+1, len(jaxpr.eqns)+1)}
+        self.out_edges = {i: {} for i in range(-self.num_invars+1, len(jaxpr.eqns)+1)}
+        self.derivative_code = []
+        
+        for j, eqn in enumerate(self.jaxpr.eqns, 1):
+            # Add "global" incoming edges to the vertex if the exist
+            for i, invar in enumerate(self.jaxpr.jaxpr._invars, -self.num_invars+1):
+                if invar in eqn.invars:
+                    if j in self.out_edges[i]:
+                        self.in_edges[j][i] = self.out_edges[i][j]
+                    else: 
+                        derivative = elemental_registry[eqn.primitive]
+                        partials, jaxpreqn = derivative.get_jaxpr(invar, eqn, self.count)
+                        self.in_edges[j][i] = partials
+                        self.out_edges[i][j] = partials
+                        if jaxpreqn is not None :
+                            self.derivative_code.append(jaxpreqn)
+                            self.count += 1
+            
+            # Add incoming edges to the vertex
+            for i, _eqn in enumerate(self.jaxpr.eqns[:j], 1):
+                if len(set(eqn.invars) & set(_eqn.outvars)) != 0:
+                    if j in self.out_edges[i]:
+                        self.in_edges[j][i] = self.out_edges[i][j]
+                    else: 
+                        derivative = elemental_registry[eqn.primitive]
+                        partials, jaxpreqn = derivative.get_jaxpr(_eqn.outvars[0], eqn, self.count)
+                        self.in_edges[j][i] = partials
+                        self.out_edges[i][j] = partials
+                        if jaxpreqn is not None :
+                            self.derivative_code.append(jaxpreqn)
+                            self.count += 1
+                       
+            # Add outgoing edges to the vertex
+            for k, _eqn in enumerate(self.jaxpr.eqns[j+1:], j+1):
+                if len(set(eqn.invars) & set(_eqn.outvars)) != 0:
+                    if j in self.in_edges[k]:
+                        self.out_edges[j][k] = self.in_edges[k][j] 
+                    else:
+                        derivative = elemental_registry[_eqn.primitive]
+                        partials, jaxpreqn = derivative.get_jaxpr(eqn.outvars[0], _eqn, self.count)
+                        self.in_edges[k][j] = partials
+                        self.out_edges[j][k] = partials
+                        if jaxpreqn is not None:
+                            self.derivative_code.append(jaxpreqn)
+                            self.count += 1 
     
-    new_outvar_list = [eqn.outvars[0] for eqn in jaxpr.eqns]
-    jaxpr.jaxpr._outvars.append(new_outvar_list[-1])
-    return jaxpr
+    def build(self):
+        self.jaxpr.jaxpr._outvars = []
+        # Package the components of the Jacobian
+        for i in range(-self.num_invars+1, 1):
+            invars = []
+            for j in self.out_edges[i].keys():
+                invar = self.out_edges[i][j]
+                if invar[0].aval.shape == ():
+                    _invars = [Var(self.count, "_d", ShapedArray((1,), jnp.float32))]
+                    eqn = new_jaxpr_eqn(invar, _invars, lax.broadcast_in_dim_p, {"broadcast_dimensions":(), "shape":(1,)}, set(), source_info=None)
+                    invars.extend(_invars)
+                    self.derivative_code.append(eqn)
+                    self.count += 1
+                else: 
+                    invars.extend(invar)
+            l = len(self.out_edges[i].keys())
+            outvars = [Var(self.count, "_d", ShapedArray((l,), jnp.float32))]
+            eqn = new_jaxpr_eqn(invars, outvars, lax.concatenate_p, {"dimension": 0}, set(), source_info=None)
+            self.derivative_code.append(eqn)
+            self.jaxpr.jaxpr._outvars.extend(outvars)
+            self.count += 1
 
-new_jaxpr = add_eqn(jaxpr, None)
+        # Add the derivative code
+        self.jaxpr.jaxpr._eqns.extend(self.derivative_code)
+        return jaxpr 
+    
+    def vertex_eliminate(self, j: int):
+        del_in_idxs = set()
+        del_out_idxs = set()
+        for i in self.in_edges[j].keys():
+            for k in self.out_edges[j].keys():
+                # Multiply the pre-partial and post-partial results
+                outvars = [Var(self.count, "_d", ShapedArray((), jnp.float32))]
+                invars = self.in_edges[j][i] + self.out_edges[j][k]
+                multiplication = new_jaxpr_eqn(invars, outvars, lax.mul_p, {}, set(), source_info=None)
+                self.derivative_code.append(multiplication)
+                self.count += 1
+                
+                # Check if we have an additional addition because there already exists a direct edge
+                if i in self.in_edges[k].keys():
+                    invars = self.in_edges[k][i] + outvars
+                    outvars = [Var(self.count, "_d", ShapedArray((), jnp.float32))]
+                    addition = new_jaxpr_eqn(invars, outvars, lax.add_p, {}, set(), source_info=None)
+                    self.derivative_code.append(addition)
+                    self.count += 1
+                    
+                self.out_edges[i][k] = outvars
+                self.in_edges[k][i] = outvars
+                del_in_idxs.add((k, j))
+                del_out_idxs.add((i, j))
+        # Delete all the edges of the respective vertex
+        for iidx in del_in_idxs:
+            del self.in_edges[iidx[0]][iidx[1]]
+        for oidx in del_out_idxs:
+            del self.out_edges[oidx[0]][oidx[1]]
+        del self.in_edges[j]
+        del self.out_edges[j]
+        
+    def front_eliminate(self):
+        pass
+    
+    def back_eliminate(self):
+        pass
+
+
+graph = ComputationalGraph(jaxpr)
+for i in range(1, 9):
+    graph.vertex_eliminate(i)
+print(graph.out_edges)
+new_jaxpr = graph.build()
 print(new_jaxpr)
 
-print(eval_jaxpr(new_jaxpr.jaxpr, new_jaxpr.literals, 1., 1.))
+import time
 
-# def elementals(f):
-#     @wraps
-#     def wrapped(*args, **kwargs):
-#         closed_jaxpr = jax.make_jaxpr(f)(*args, **kwargs)
-#         out = jaxpr_with_elementals(closed_jaxpr.jaxpr, closed_jaxpr.literals, *args)
-#         return out[0]
-#     return wrapped
-
-
-# How to add a primitive to a jaxpr (not very useful here because it changes jaxpr)
-# prim = Primitive("add")
-# ins = [Literal(0., ShapedArray((), jnp.float32)), f_jaxpr.jaxpr._outvars[-1]]
-# outs = [Var(14, "", ShapedArray((), jnp.float32))]
-# e = JaxprEqn(ins, outs, prim, {}, set(), f_jaxpr.eqns[0].source_info)
-# f_jaxpr.eqns.append(e)
-# f_jaxpr.jaxpr._outvars = f_jaxpr.jaxpr._outvars[:-1] + outs
-# print(f_jaxpr)
+f = lambda x, y: eval_jaxpr(new_jaxpr.jaxpr, new_jaxpr.literals, x, y)
+f_jit = jax.jit(f)
+print(f_jit(2., 2., 2., 2.))
+st = time.time()
+for _ in range(100000):
+    f_jit(2., 2., 2., 2.)
+print(time.time() - st)
 

@@ -29,21 +29,19 @@ class GraphInfo(NamedTuple):
 def make_empty_edges(info: GraphInfo) -> chex.Array:
     num_i = info.num_inputs
     num_v = info.num_intermediates
-    num_o = info.num_outputs
-    return jnp.zeros((num_i+num_v, num_v+num_o))
+    return jnp.zeros((num_i+num_v, num_v))
 
 
 def make_graph_info(info: chex.Array) -> GraphInfo:
     num_i = info[0]
     num_v = info[1]
-    num_o = info[2]
-    num_edges = (num_i+num_v)*(num_v+num_o) - num_v*(num_v-1)//2
+    num_edges = (num_i+num_v)*(num_v) - num_v*(num_v-1)//2
     num_edges = int(.5*num_edges)
     return GraphInfo(num_inputs=info[0],
                     num_intermediates=info[1],
                     num_outputs=info[2],
                     num_edges=num_edges)
-
+    
 
 def add_edge(edges: chex.Array, 
             pos: Tuple[int, int], 
@@ -240,7 +238,9 @@ def vertex_eliminate_gpu(edges: chex.Array,
     def update_edges(carry, nonzero):
         _edges, nops = carry
 
-        _edges = _edges.at[:, nonzero].add(col, mode="drop")     
+        _col = _edges.at[:, nonzero].get()
+        new_col = jnp.where(_col > 0., _col, col)
+        _edges = _edges.at[:, nonzero].set(new_col, mode="drop")     
         
         nops = lax.cond(nonzero > -1, lambda x: x+ops, lambda x: x, nops)
         carry = (_edges, nops)
@@ -253,8 +253,6 @@ def vertex_eliminate_gpu(edges: chex.Array,
     edges, nops = output
     edges = edges.at[num_inputs+vertex-1, :].set(0)
     edges = edges.at[:, vertex-1].set(0)
-    # this is very costly!
-    edges = jnp.bool_(edges).astype(jnp.float32)
     return edges, nops
 
 
