@@ -208,8 +208,8 @@ def vertex_eliminate(edges: chex.Array,
     return output
 
 
-def vertex_eliminate_gpu(edges: chex.Array, 
-                        vertex: int, 
+def vertex_eliminate_gpu(vertex: int, 
+                        edges: chex.Array,
                         info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements the vertex-elimination procedure

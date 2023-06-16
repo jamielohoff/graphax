@@ -43,7 +43,7 @@ def safe_preeliminations_gpu(edges: chex.Array,
         dead_branch = jnp.logical_and(row_flag, col_flag)
                 
         __edges, __attn_mask, idx = lax.cond(jnp.logical_or(markowitz_degree_1, dead_branch),
-                                    lambda x, a: (vertex_eliminate_gpu(x, vertex, info)[0], 
+                                    lambda x, a: (vertex_eliminate_gpu(vertex, x, info)[0], 
                                                 remove_vertex_attn_mask(vertex, a), 
                                                 vertex), 
                                     lambda x, a: (x, a, 0), 

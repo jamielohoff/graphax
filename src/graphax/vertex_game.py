@@ -145,7 +145,7 @@ class VertexGame:
         t = vgs.t.astype(jnp.int32)
 
         edges = vgs.edges
-        new_edges, nops = vertex_eliminate_gpu(edges, vertex, self.info)
+        new_edges, nops = vertex_eliminate_gpu(vertex, edges, self.info)
         obs = lax.slice_in_dim(new_edges, 0, self.info.num_intermediates, axis=1)
                 
         vgs.t += 1
