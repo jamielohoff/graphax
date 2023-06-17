@@ -85,17 +85,17 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable],
             i += outvar.aval.size
             
     # Processing output variables
-    output_vertices = jnp.zeros(num_v)
+    vertex_mask = jnp.zeros(num_v)
     k = 0
     for outvar in jaxpr.jaxpr._outvars:
         if not outvar in is_invar_list:
             idx = variables[str(outvar)]
             size = outvar.aval.size
             for i in range(size):
-                output_vertices = output_vertices.at[k+i].set(idx-size+i+1)
+                vertex_mask = vertex_mask.at[k+i].set(idx-size+i+1)
                 
     # Make attention mask
     attn_mask = jnp.ones((num_v, num_v))
     # attn_mask = populate_attn_mask(attn_mask, output_vertices.astype(jnp.int32))
-    return edges, info, output_vertices, attn_mask
+    return edges, info, vertex_mask, attn_mask
 

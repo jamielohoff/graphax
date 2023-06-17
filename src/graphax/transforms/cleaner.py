@@ -15,12 +15,12 @@ def connectivity_checker(edges: chex.Array, info: GraphInfo) -> chex.Array:
 	in_sum = jnp.sum(edges, axis=1)
 	out_sum = jnp.sum(edges, axis=0)
 	ins_connected = jnp.not_equal(in_sum, 0)[info.num_inputs:]
-	outs_connected = jnp.not_equal(out_sum, 0)[:info.num_intermediates]
+	outs_connected = jnp.not_equal(out_sum, 0)
 	return jnp.logical_not(jnp.logical_xor(ins_connected, outs_connected))
 
 
 # removes all unconnected interior nodes
-def clean(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
+def clean(edges: chex.Array, info: GraphInfo, vertex_mask: chex.Array) -> Tuple[chex.Array, GraphInfo]:
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs

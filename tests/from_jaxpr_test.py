@@ -19,16 +19,16 @@ edges, info, output_vertices, attn_mask = safe_preeliminations_gpu(edges, info, 
 print(edges, info, output_vertices, attn_mask)
 edges, info, output_vertices, attn_mask = compress_graph(edges, info, output_vertices, attn_mask)
 print(edges, info, output_vertices, attn_mask)
-# ops = 0
+ops = 0
 
-# for i in sorted([3, 4, 5, 6, 2, 1])[::-1]:
-#     edges, nops = vertex_eliminate_gpu(i, edges, info)
-#     print(i, "###")
-#     print(edges)
-#     ops += nops
-#     print(nops)
+for i in sorted([3, 4, 5, 6, 2, 1])[::-1]:
+    edges, nops = vertex_eliminate_gpu(i, edges, info)
+    print(i, "###")
+    print(edges)
+    ops += nops
+    print(nops)
 
-# print(edges, ops)
+print(edges, ops)
 
 # def g(x):
 #     return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)

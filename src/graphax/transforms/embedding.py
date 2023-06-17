@@ -45,11 +45,11 @@ def embed(edges: chex.Array,
     zeros = jnp.zeros((v_diff, new_num_v))
     attn_mask = jnp.concatenate((attn_mask, zeros), axis=0)
     
-    vertices = 1. + jnp.nonzero(1. - attn_mask.at[0, :].get())[0]
-    num_zeros = len(jnp.nonzero(attn_mask.at[0, :].get())[0])
-    vertices = jnp.append(vertices, jnp.zeros(num_zeros))
     
-    return edges, new_info, vertices, attn_mask
+    vertices = 1. + jnp.nonzero(1. - attn_mask.at[0, :].get())[0]
+    vertex_mask = jnp.append(vertices, output_vertices)
+    
+    return edges, new_info, vertex_mask, attn_mask
     
     
 # embeds a smaller graph into a larger graph frame based on random inserts

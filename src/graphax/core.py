@@ -42,27 +42,7 @@ def make_graph_info(info: chex.Array) -> GraphInfo:
                     num_outputs=info[2],
                     num_edges=num_edges)
     
-
-def add_edge(edges: chex.Array, 
-            pos: Tuple[int, int], 
-            info: GraphInfo) -> Tuple[chex.Array, GraphInfo]:
-    """TODO refine documentation
-    Jittable function to add a new edge to a GraphState object, i.e. a new
-    entry to the `edges` matrix.
-
-    Input vertices range from `-num_inputs+1` to 0, while the last `num_output` 
-    vertices are the output vertices.
-
-    Arguments:
-        - edges (GraphState): GraphState object where we want to add the edge.
-        - pos (Tuple[int, int]): Tuple that describes which two vertices are 
-                                connected, i.e. pos = (from, to).
-        - info (Array): Contains meta data about the computational graph.
-    """
-    num_inputs = info.num_inputs
-    return edges.at[pos[0]+num_inputs-1, pos[1]-1].set(1)
-
-
+    
 def front_eliminate(edges: chex.Array, 
                     edge: Tuple[int, int],
                     info: GraphInfo) -> Tuple[chex.Array, int]:
@@ -284,7 +264,7 @@ def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     return output
 
 
-def forward_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+def forward_gpu(edges: chex.Array, vertex_mask: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements forward-mode AD by 
     eliminating the vertices in sequential order 1,2,3,...,n-1,n.
@@ -303,7 +283,11 @@ def forward_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     
     def fwd(carry, vertex):
         _edges, nops = carry
-        _edges, ops = vertex_eliminate_gpu(_edges, vertex, info)
+        is_masked = jnp.bool_((vertex == vertex_mask).sum())
+        _edges, ops = lax.cond(is_masked,
+                                lambda e: (e, 0.),
+                                lambda e: vertex_eliminate_gpu(vertex, e, info),
+                               _edges)
         nops += ops
         carry = (_edges, nops)
         return carry, None
@@ -340,7 +324,7 @@ def reverse(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     return output
 
 
-def reverse_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+def reverse_gpu(edges: chex.Array, vertex_mask: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements reverse-mode AD by 
     eliminating the vertices in sequential order n,n-1,...,2,1.
@@ -359,7 +343,11 @@ def reverse_gpu(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     
     def rev(carry, vertex):
         _edges, nops = carry
-        _edges, ops = vertex_eliminate_gpu(_edges, vertex, info)
+        is_masked = jnp.bool_((vertex == vertex_mask).sum())
+        _edges, ops = lax.cond(is_masked,
+                                lambda e: (e, 0.),
+                                lambda e: vertex_eliminate_gpu(vertex, e, info),
+                               _edges)
         nops += ops
         carry = (_edges, nops)
         return carry, None

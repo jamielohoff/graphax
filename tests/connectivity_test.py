@@ -4,11 +4,10 @@ import jax.random as jrand
 from graphax.core import front_eliminate, back_eliminate, vertex_eliminate, forward, reverse
 from graphax.examples import make_Helmholtz
 from graphax.examples import make_random
-from graphax.transforms.checker import connectivity_checker
-from graphax.transforms.cleaner import clean
+from graphax.transforms.cleaner import clean, connectivity_checker
 
 
-edges, info = make_Helmholtz()
+edges, info, vertex_mask = make_Helmholtz()
 print(connectivity_checker(edges, info))
 
 key = jrand.PRNGKey(42)

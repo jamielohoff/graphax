@@ -1,6 +1,7 @@
 from typing import Tuple
 
 import jax
+import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
 
@@ -10,54 +11,74 @@ from ..core import GraphInfo, make_empty_edges
 
 
 def make_random(key: chex.PRNGKey,
-                info: GraphInfo, 
-                *, 
+                info: GraphInfo,
                 fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
-    in_key, var_key, out_key = jrand.split(key, 3)
+    in_key, var_key, key = jrand.split(key, 3)
     
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs
     
-    in_conns = jrand.uniform(in_key, (num_i, num_v+num_o))
-    in_conns = jnp.where(in_conns > fraction, 0, 1)
+    i_conns = jrand.uniform(in_key, (num_i, num_v))
+    i_conns = jnp.where(i_conns > fraction, 0, 1)
     
-    var_conns = jrand.uniform(var_key, (num_v, num_v))
-    var_conns = jnp.where(var_conns > fraction, 0, 1)
-    var_conns = jnp.triu(var_conns, k=1)
+    v_conns = jrand.uniform(var_key, (num_v, num_v))
+    v_conns = jnp.where(v_conns > fraction, 0, 1)
+    v_conns = jnp.triu(v_conns, k=1)
     
-    out_conns = jrand.uniform(out_key, (num_v, num_o))
-    out_conns = jnp.where(out_conns > fraction, 0, 1)
+    edges = jnp.zeros((num_i+num_v, num_v))    
+    edges = edges.at[:num_i, :].set(i_conns)
+    edges = edges.at[num_i:, :num_v].set(v_conns)
     
-    edges = jnp.zeros((num_i+num_v, num_v+num_o))    
-    edges = edges.at[:num_i, :].set(in_conns)
-    edges = edges.at[num_i:, :num_v].set(var_conns)
-    edges = edges.at[num_i:, num_v:].set(out_conns)
-    return edges, info
+    # Randomly select n <= info.num_outputs many output variables by deleting
+    # the respective rows
+    output_vertices = jnp.zeros(num_v)
+    output_vertices, i = lax.cond(edges.at[:, -1].get().sum() != 0.,
+                                lambda ov: (ov.at[0].set(num_v), 1),
+                                lambda ov: (ov, 0),
+                                output_vertices)
+        
+    n = jrand.randint(key, (), 1, num_o-i)
+    idx = jrand.randint(key, (), 0, num_v)
+    vertices = jrand.choice(key, jnp.arange(num_i+idx, num_i+num_v-i+1), (n,))
+    
+    def make_output_vertex_fn(carry, vertex):
+        j, _edges, _output_vertices = carry
+        _edges = _edges.at[vertex-1, :].set(0.)
+        _output_vertices = _output_vertices.at[j].set(vertex-num_i)
+        j += 1
+        carry = (j, _edges, _output_vertices)
+        return carry, None
+    
+    output, _ = lax.scan(make_output_vertex_fn, (i, edges, output_vertices), vertices)
+    _, edges, output_vertices = output
+    return edges, info, output_vertices
 
 
-# # TODO check if this is deprecated
-# def make_connected_random(key: chex.PRNGKey,
-#                         info: GraphInfo, *, 
-#                         max_connections: int = 4,
-#                         p: chex.Array = None) -> Tuple[chex.Array, GraphInfo]:
-#     num_i = info.num_inputs
-#     num_v = info.num_intermediates
-#     num_o = info.num_outputs
-#     edges = make_empty_edges(info)
+def make_connected_random(key: chex.PRNGKey,
+                        info: GraphInfo,
+                        p: chex.Array = None) -> Tuple[chex.Array, GraphInfo]:
+    num_i = info.num_inputs
+    num_v = info.num_intermediates
+    num_o = info.num_outputs
+    edges = make_empty_edges(info)
+    output_vertices = jnp.zeros(num_v)
     
-#     size_choices = jnp.arange(1, max_connections, 1)
-#     sizes = jrand.choice(key, size_choices, (num_i+num_v,), p=p)
+    size_choices = jnp.arange(1, p.size+1)
+    sizes = jrand.choice(key, size_choices, (num_v,), p=p)
     
-#     for i, size in zip(range(-num_i+1, num_v+1), sizes):
-#         subkey, key = jrand.split(key, 2)
+
+    for j, size in zip(jnp.arange(0, num_v), sizes):
+        subkey, key = jrand.split(key, 2)
         
-#         lb = i+1 if i > 0 else 1
-#         choices = jnp.arange(lb, num_v + num_o + 1, 1)
-#         # p_dist = 
-#         js = jrand.choice(subkey, choices, (size,), replace=False, p=None)
-#         for j in js:
-#             edges = add_edge(edges, (i, j), info)
+        choices = jnp.arange(0, num_i+j)
+        edge_positions = jrand.choice(subkey, choices, (size,), replace=False)
+        def add_edge_fn(_edges, i):
+            _edges = _edges.at[i, j].set(1.)
+            return _edges, None
+        edges, _ = lax.scan(add_edge_fn, edges, edge_positions)
         
-#     return edges, info
+    # TODO manage output graphs
+        
+    return edges, info, output_vertices
     
