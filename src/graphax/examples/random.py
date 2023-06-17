@@ -9,7 +9,7 @@ import chex
 
 from ..core import GraphInfo, make_empty_edges
 
-
+# TODO also needs to output vertex_mask and attn_mask
 def make_random(key: chex.PRNGKey,
                 info: GraphInfo,
                 fraction: float = .35) -> Tuple[chex.Array, GraphInfo]: 
@@ -54,7 +54,7 @@ def make_random(key: chex.PRNGKey,
     _, edges, output_vertices = output
     return edges, info, output_vertices
 
-
+# TODO also needs to output vertex_mask and attn_mask
 def make_connected_random(key: chex.PRNGKey,
                         info: GraphInfo,
                         p: chex.Array = None) -> Tuple[chex.Array, GraphInfo]:
@@ -78,7 +78,7 @@ def make_connected_random(key: chex.PRNGKey,
             return _edges, None
         edges, _ = lax.scan(add_edge_fn, edges, edge_positions)
         
-    # TODO manage output graphs
+    # TODO manage output variables
         
     return edges, info, output_vertices
     

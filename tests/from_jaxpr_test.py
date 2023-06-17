@@ -13,12 +13,12 @@ def f(x):
     z = jnp.log(w)
     return x*z
 
-edges, info, output_vertices, attn_mask = make_graph(f, jnp.ones(4))
-print(edges, info, output_vertices, attn_mask)
-edges, info, output_vertices, attn_mask = safe_preeliminations_gpu(edges, info, output_vertices, attn_mask)
-print(edges, info, output_vertices, attn_mask)
-edges, info, output_vertices, attn_mask = compress_graph(edges, info, output_vertices, attn_mask)
-print(edges, info, output_vertices, attn_mask)
+edges, info, vertex_mask, attn_mask = make_graph(f, jnp.ones(4))
+print(edges, info, vertex_mask, attn_mask)
+edges, info, vertex_mask, attn_mask = safe_preeliminations_gpu(edges, info, vertex_mask, attn_mask)
+print(edges, info, vertex_mask, attn_mask)
+edges, info, vertex_mask, attn_mask = compress_graph(edges, info, vertex_mask, attn_mask)
+print(edges, info, vertex_mask, attn_mask)
 ops = 0
 
 for i in sorted([3, 4, 5, 6, 2, 1])[::-1]:

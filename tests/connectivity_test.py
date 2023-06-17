@@ -7,11 +7,11 @@ from graphax.examples import make_random
 from graphax.transforms.cleaner import clean, connectivity_checker
 
 
-edges, info, vertex_mask = make_Helmholtz()
+edges, info, vertex_mask, attn_mask = make_Helmholtz()
 print(connectivity_checker(edges, info))
 
 key = jrand.PRNGKey(42)
-edges, info = make_random(key, info, fraction=.2)
+edges, info, vertex_mask, attn_mask = make_random(key, info, fraction=.2)
 print(edges)
 edges, info = clean(edges, info)
 
