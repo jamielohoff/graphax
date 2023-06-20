@@ -1,15 +1,10 @@
-from typing import Tuple
-
 import jax
 import jax.numpy as jnp
 
-import chex
-
-from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
 
 
-def make_LIF() -> Tuple[chex.Array, GraphInfo]:
+def make_LIF():
     def lif(U, I, S, a, b, threshold):
         U_next = a*U + (1-a)*I
         I_next = b*I + (1-b)*S
@@ -21,7 +16,7 @@ def make_LIF() -> Tuple[chex.Array, GraphInfo]:
 
 
 # From Bellec et al. e-prop paper
-def make_adaptive_LIF() -> Tuple[chex.Array, GraphInfo]:
+def make_adaptive_LIF():
     def ada_lif(U, a, S, alpha, beta, rho, threshold):
         U_next = alpha*U + S    
         A_th = threshold + beta*a

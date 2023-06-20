@@ -1,18 +1,13 @@
-from typing import Tuple
-
 import jax
 import jax.numpy as jnp
 
-import chex
-
-from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
 
 
 def sdf_sphere(x, c, r):
     return jnp.sum(jnp.square(x - c)) - r
 
-def make_sdf_sphere() -> Tuple[chex.Array, GraphInfo]:
+def make_sdf_sphere():
     x = jnp.ones(3)
     c = jnp.zeros(3)
     r = 2
@@ -26,7 +21,7 @@ def sdf_sphere_union(x):
     s2 = sdf_sphere(x, c2, 2)
     return jnp.minimum(s1, s2)
 
-def make_sdf_sphere_union() -> Tuple[chex.Array, GraphInfo]:
+def make_sdf_sphere_union():
     x = jnp.ones(3)
     edges, info = make_graph(sdf_sphere_union, x)
     return edges, info
@@ -49,7 +44,7 @@ def sdf_box(x, c, s):
     d = jnp.maximum(d, c)
     return d
 
-def make_sdf_box() -> Tuple[chex.Array, GraphInfo]:
+def make_sdf_box():
     x = jnp.ones(3)
     c = jnp.zeros(3)
     s = jnp.ones(3)

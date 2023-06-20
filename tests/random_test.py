@@ -8,15 +8,15 @@ from graphax.examples import make_random, make_connected_random
 
 key = jrand.PRNGKey(42)
 info = make_graph_info([4, 11, 4])
-# edges, info, vertex_mask = make_random(key, info, fraction=.45)
-# print(edges, vertex_mask)
+edges, info, vertex_mask, attn_mask = make_random(key, info, fraction=.45)
+print(edges, vertex_mask)
 
-# edges, ops = jax.jit(reverse_gpu, static_argnums=(2,))(edges, vertex_mask, info)
-# print(edges, ops)
+edges, ops = jax.jit(reverse_gpu, static_argnums=(2,))(edges, info, vertex_mask)
+print(edges, ops)
 
-edges, info, vertex_mask = make_connected_random(key, info, p=jnp.array([.3, .5, .1, .1]))
-print(edges)
+edges, info, vertex_mask, attn_mask = make_connected_random(key, info, p=jnp.array([.2, .5, .15, .15]))
+print(edges, vertex_mask)
 
-edges, ops = jax.jit(reverse_gpu, static_argnums=(2,))(edges, vertex_mask, info)
+edges, ops = jax.jit(forward_gpu, static_argnums=(2,))(edges, info, vertex_mask)
 print(edges, ops)
 

@@ -264,7 +264,7 @@ def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     return output
 
 
-def forward_gpu(edges: chex.Array, vertex_mask: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+def forward_gpu(edges: chex.Array, info: GraphInfo, vertex_mask: chex.Array) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements forward-mode AD by 
     eliminating the vertices in sequential order 1,2,3,...,n-1,n.
@@ -283,7 +283,7 @@ def forward_gpu(edges: chex.Array, vertex_mask: chex.Array, info: GraphInfo) -> 
     
     def fwd(carry, vertex):
         _edges, nops = carry
-        is_masked = jnp.bool_((vertex == vertex_mask).sum())
+        is_masked = jnp.any((vertex == vertex_mask))
         _edges, ops = lax.cond(is_masked,
                                 lambda e: (e, 0.),
                                 lambda e: vertex_eliminate_gpu(vertex, e, info),
@@ -324,7 +324,7 @@ def reverse(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
     return output
 
 
-def reverse_gpu(edges: chex.Array, vertex_mask: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
+def reverse_gpu(edges: chex.Array, info: GraphInfo, vertex_mask: chex.Array) -> Tuple[chex.Array, int]:
     """TODO fix docstring
     Fully jit-compilable function that implements reverse-mode AD by 
     eliminating the vertices in sequential order n,n-1,...,2,1.
@@ -343,7 +343,7 @@ def reverse_gpu(edges: chex.Array, vertex_mask: chex.Array, info: GraphInfo) -> 
     
     def rev(carry, vertex):
         _edges, nops = carry
-        is_masked = jnp.bool_((vertex == vertex_mask).sum())
+        is_masked = jnp.any((vertex == vertex_mask))
         _edges, ops = lax.cond(is_masked,
                                 lambda e: (e, 0.),
                                 lambda e: vertex_eliminate_gpu(vertex, e, info),

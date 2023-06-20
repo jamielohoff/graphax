@@ -1,34 +1,28 @@
-from typing import Tuple
-
 import jax
 import jax.nn as jnn
 import jax.numpy as jnp
 
-import chex
-
-from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
 
 
-def make_f() -> Tuple[chex.Array, GraphInfo]:
-    def f(x):
-        a = x[0] * x[1]
-        b = x[2] - x[3]
-        c = jnp.sin(x[0]) + jnp.cos(x[1])
-        d = jnp.exp(x[2]) / x[3]
+def make_f():
+    def f(x, y, z, w):
+        a = x * y
+        b = z - w
+        c = jnp.sin(x) + jnp.cos(y)
+        d = jnp.exp(z) / w
         e = a + b
         f = jnp.sum(x) + c
         g = jnp.log(d)
         h = jnp.sqrt(jnp.abs(e))
         i = jnp.tan(h)
         j = jnp.maximum(x, 0)
-        return jnp.array([e, f, g, i])
+        return e, f, g, i
 
-    x = jnp.ones(4)
-    return make_graph(f, x)
+    return make_graph(f, 1., 1., 1., 1.)
 
 
-def make_g(size: int = 5) -> Tuple[chex.Array, GraphInfo]:
+def make_g(size: int = 5):
     def g(x):
         return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
     
@@ -36,31 +30,30 @@ def make_g(size: int = 5) -> Tuple[chex.Array, GraphInfo]:
     return make_graph(g, x)
 
 
-def make_minimal_reverse() -> Tuple[chex.Array, GraphInfo]:
+def make_minimal_reverse():
     # Define the component functions
-    def g1(x):
-        return x[0] ** 2 + x[1] ** 2
+    def g1(x, y, z, w):
+        return x ** 2 + y ** 2
 
-    def g2(x):
-        return jnp.sin(x[2]) + jnp.log(x[3])
+    def g2(x, y, z, w):
+        return jnp.sin(z) + jnp.log(w)
     
     # Define the overall function
-    def minimal_reverse(x):
-        return g1(x) + g2(x)
+    def minimal_reverse(x, y, z, w):
+        return g1(x, y, z, w) + g2(x, y, z, w)
 
-    x = jnp.ones(4)
-    return make_graph(minimal_reverse, x)
+    print(jax.make_jaxpr(minimal_reverse)(1., 1., 1., 1.))
+    return make_graph(minimal_reverse, 1., 1., 1., 1.)
 
 
-def make_hessian() -> Tuple[chex.Array, GraphInfo]:
-    def f(x):
-        z = jnp.cos(x[1]) * jnp.sin(x[2])
-        w = jnp.exp(x[0] + x[3])
-        return z + w
+def make_hessian():
+    def f(x, y, z, w):
+        a = jnp.cos(y) * jnp.sin(z)
+        b = jnp.exp(x + w)
+        return a + b
 
-    x = jnp.ones(4)
     grad_f = jax.grad(f)
-    return make_graph(grad_f, x)
+    return make_graph(grad_f, 1., 1., 1., 1.)
 
 
 def make_softmax_attention():

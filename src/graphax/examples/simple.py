@@ -1,46 +1,36 @@
-from typing import Tuple
-
 import jax
 import jax.numpy as jnp
 
-import chex
-
-from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
 
 
-def make_simple() -> Tuple[chex.Array, GraphInfo]:
+def make_simple():
     def simple(x, y):
-        z = x + y
-        w = jnp.cos(z)
-        return w + z, 2.*w
+        z = x * y
+        w = jnp.sin(z)
+        return w + z, jnp.log(w)
 
+    print(jax.make_jaxpr(simple)(1., 1.))
     return make_graph(simple, 1., 1.)
 
 
-def make_lighthouse() -> Tuple[chex.Array, GraphInfo]:
-    def lighthouse(x):
-        nu = x[0]
-        gamma = x[1]
-        omega = x[2]
-        t = x[3]
+def make_lighthouse():
+    def lighthouse(nu, gamma, omega, t):
         y1 = nu*jnp.tan(omega*t)/(gamma-jnp.tan(omega*t))
         y2 = gamma*y1
-        return jnp.array([y1, y2])
+        return y1, y2
 
-    x = jnp.ones(4)
-    return make_graph(lighthouse, x)
-
-
-def make_scalar_assignment_tree() -> Tuple[chex.Array, GraphInfo]:
-    def scalar_assignment_tree(u):
-        return -10*u[1]*jnp.exp(u[2]) + jnp.log(u[0]) - 3*u[2]*(u[1]-1)*jnp.sqrt(u[0])
-
-    x = jnp.ones(3)
-    return make_graph(scalar_assignment_tree, x)
+    return make_graph(lighthouse, 1., 1., 1., 1.)
 
 
-def make_hole() -> Tuple[chex.Array, GraphInfo]:
+def make_scalar_assignment_tree():
+    def scalar_assignment_tree(u, v, w):
+        return -10*v*jnp.exp(u) + jnp.log(u) - 3*w*(v-1)*jnp.sqrt(u)
+
+    return make_graph(scalar_assignment_tree, 1., 1., 1.)
+
+
+def make_hole():
     def hole(x, y, z, w):
         a = y * z
         b = a + x
