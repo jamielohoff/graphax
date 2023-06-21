@@ -109,7 +109,7 @@ def make_vertex_game_state(edges: chex.Array,
 
 class VertexGame:
     """
-    OpenAI-like gymnax environment for a game where to goal is to find the 
+    OpenAI-like environment for a game where to goal is to find the 
     best vertex elimination order with minimal multiplication count.
     This game always has finite termination range.
 

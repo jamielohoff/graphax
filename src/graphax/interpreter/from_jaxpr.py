@@ -80,7 +80,8 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: chex.Array) -> Tuple[
             idx = variables[str(outvar)]
             size = outvar.aval.size
             for i in range(size):
-                vertex_mask = vertex_mask.at[k+i].set(idx-size+i+1)
+                vertex_mask = vertex_mask.at[k+i].set(idx+i-num_i+1)
+            k += size
                 
     # Make attention mask
     attn_mask = jnp.ones((num_v, num_v))
