@@ -26,17 +26,17 @@ def make_sdf_sphere_union():
     edges, info = make_graph(sdf_sphere_union, x)
     return edges, info
 
-def sdf_box(x, c, s):
-    da1 = x[0] - c[0] - s[0]/2
-    da2 = c[0] - x[0] - s[0]/2
+def sdf_box(x1, x2, x3, c1, c2, c3, s1, s2, s3):
+    da1 = x1 - c1 - s1/2
+    da2 = c1 - x2 - s1/2
     a = jnp.maximum(da1, da2)
     
-    db1 = x[1] - c[1] - s[1]/2
-    db2 = c[1] - x[1] - s[1]/2
+    db1 = x2 - c2 - s2/2
+    db2 = c2 - x2 - s2/2
     b = jnp.maximum(db1, db2)
     
-    dc1 = x[2] - c[2] - s[2]/2
-    dc2 = c[2] - x[2] - s[2]/2
+    dc1 = x3 - c3 - s3/2
+    dc2 = c3 - x3 - s3/2
     c = jnp.maximum(dc1, dc2)
     
     d = a
@@ -45,9 +45,6 @@ def sdf_box(x, c, s):
     return d
 
 def make_sdf_box():
-    x = jnp.ones(3)
-    c = jnp.zeros(3)
-    s = jnp.ones(3)
-    edges, info = make_graph(sdf_box, x, c, s)
+    edges, info = make_graph(sdf_box, 1., 1., 1., 1., 1., 1., 1., 1., 1.)
     return edges, info
 

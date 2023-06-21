@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 import chex
 
-from ..core import GraphInfo, vertex_eliminate_gpu, make_graph_info
+from ..core import GraphInfo, vertex_eliminate
 
 
 def remove_vertex_attn_mask(vertex: int, attn_mask: chex.Array) -> chex.Array:
@@ -43,7 +43,7 @@ def safe_preeliminations_gpu(edges: chex.Array,
         dead_branch = jnp.logical_and(row_flag, col_flag)
                 
         __edges, __attn_mask, idx = lax.cond(jnp.logical_or(markowitz_degree_1, dead_branch),
-                                    lambda x, a: (vertex_eliminate_gpu(vertex, x, info)[0], 
+                                    lambda x, a: (vertex_eliminate(vertex, x, info)[0], 
                                                 remove_vertex_attn_mask(vertex, a), 
                                                 vertex), 
                                     lambda x, a: (x, a, 0), 
@@ -62,35 +62,4 @@ def safe_preeliminations_gpu(edges: chex.Array,
     output, _ = lax.scan(update_edges, (edges, attn_mask), vertices)
     edges, attn_mask = output
     return edges, info, vertex_mask, attn_mask
-
-
-def compress_graph(edges: chex.Array, 
-                   info: GraphInfo,
-                   vertex_mask: chex.Array,
-                   attn_mask: chex.Array) -> Tuple[chex.Array, GraphInfo]:
-    """
-    Function that removes all zero rows and cols from a comp. graph repr.
-    WARNING: This changes the shape of the edges array and the number of intermediate variables!
-    """
-    num_inputs = info.num_inputs
-    num_intermediates = info.num_intermediates
-    num_outputs = info.num_outputs
-            
-    i, num_removed_vertices = 1, 0
-    for _ in range(1, num_intermediates+1):            
-        s1 = jnp.sum(edges.at[i+num_inputs-1, :].get()) == 0.
-        s2 = jnp.sum(edges.at[:, i-1].get()) == 0.
-        if s1 and s2:           
-            add_mask = jnp.where(vertex_mask >= i, 1, 0)
-            vertex_mask -= add_mask     
-            edges = jnp.delete(edges, i+num_inputs-1, axis=0)
-            edges = jnp.delete(edges, i-1, axis=1)
-            attn_mask = jnp.delete(attn_mask, i-1, axis=0)
-            attn_mask = jnp.delete(attn_mask, i-1, axis=1)
-            num_removed_vertices += 1
-        else:
-            i += 1
-
-    new_info = make_graph_info([num_inputs, num_intermediates-num_removed_vertices, num_outputs])
-    return edges, new_info, lax.slice_in_dim(vertex_mask, 0, num_intermediates-num_removed_vertices), attn_mask
 

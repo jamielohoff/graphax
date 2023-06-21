@@ -8,20 +8,25 @@ import chex
 
 from ..core import GraphInfo
 
+# TODO needs adjustments
+def connectivity_checker(edges: chex.Array, info: GraphInfo) -> chex.Array:    
+    """
+    Function that checks if graph is fully connected
+    """   
+    in_sum = jnp.sum(edges, axis=1)
+    out_sum = jnp.sum(edges, axis=0)
+    ins_connected = jnp.not_equal(in_sum, 0)[info.num_inputs:]
+    outs_connected = jnp.not_equal(out_sum, 0)
+    return jnp.logical_not(jnp.logical_xor(ins_connected, outs_connected))
 
-# function that checks if graph is fully connected
-# scales linearly with number of intermediates
-# quick implementation...
-def connectivity_checker(edges: chex.Array, info: GraphInfo) -> chex.Array:       
-	in_sum = jnp.sum(edges, axis=1)
-	out_sum = jnp.sum(edges, axis=0)
-	ins_connected = jnp.not_equal(in_sum, 0)[info.num_inputs:]
-	outs_connected = jnp.not_equal(out_sum, 0)
-	return jnp.logical_not(jnp.logical_xor(ins_connected, outs_connected))
-
-
-# removes all unconnected interior nodes
-def clean(edges: chex.Array, info: GraphInfo, vertex_mask: chex.Array, attn_mask: chex.Array) -> Tuple[chex.Array, GraphInfo]:
+# TODO needs adjustments
+def clean(edges: chex.Array, 
+        info: GraphInfo, 
+        vertex_mask: chex.Array, 
+        attn_mask: chex.Array) -> Tuple[chex.Array, GraphInfo, chex.Array, chex.Array]:
+    """
+    Removes all unconnected interior nodes
+    """
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs

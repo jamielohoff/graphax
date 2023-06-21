@@ -44,15 +44,15 @@ from graphax.random_search_solver import random_solver
 # _, ops = reverse_gpu(edges, info)
 # print(ops)
 
-# edges, info = make_Helmholtz()
-# edges, info = safe_preeliminations_gpu(edges, info)
-# edges, info = compress_graph(edges, info)
+edges, info, vertex_mask, attn_mask = make_Helmholtz()
+edges, info, vertex_mask, attn_mask = safe_preeliminations_gpu(edges, info, vertex_mask, attn_mask)
+edges, info, vertex_mask, attn_mask = compress_graph(edges, info, vertex_mask, attn_mask)
 
-# print(edges, info)
-# _, ops = forward_gpu(edges, info)
-# print(ops)
-# _, ops = reverse_gpu(edges, info)
-# print(ops)
+print(edges, info, vertex_mask, attn_mask)
+_, ops = forward_gpu(edges, info, vertex_mask)
+print(ops)
+_, ops = reverse_gpu(edges, info, vertex_mask)
+print(ops)
 
 
 # edges, info = make_LIF()
@@ -154,6 +154,4 @@ from graphax.random_search_solver import random_solver
 
 # key = jrand.PRNGKey(123)
 # print(random_solver(edges, info, num_iterations=500, key=key))
-
-edges, info, vertex_mask, attn_mask = make_simple()
 

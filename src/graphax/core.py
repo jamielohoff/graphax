@@ -1,24 +1,28 @@
 """ 
-Edge and vertex elimination functions for Cross-Country elimination 
-that are totally jit-compilable. For an in-depth discussion of Cross-Country 
+GPU-friendly edge and vertex elimination procedures for Cross-Country Elimination 
+that are totally JIT-compilable. For an in-depth discussion of Cross-Country 
 Elimination and the methods described here see the book 
 `Evaluating Derivatives` by Griewank et al., 2008,
 https://doi.org/10.1137/1.9780898717761
 
 DO NOT TOUCH!
 """
+from functools import partial
 from typing import NamedTuple, Tuple
 
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
-import chex
+from chex import Array
+
+
+Edge = Tuple[int, int]
 
 
 class GraphInfo(NamedTuple):
     """
-    Meta-information about the computational graph
+    Meta-information about the computational graph.
     """
     num_inputs: int
     num_intermediates: int
@@ -26,13 +30,19 @@ class GraphInfo(NamedTuple):
     num_edges: int
 
 
-def make_empty_edges(info: GraphInfo) -> chex.Array:
+def make_empty_edges(info: GraphInfo) -> Array:
+    """
+    Creates an empty matrix fo represent the connectivity of the computational graph.
+    """
     num_i = info.num_inputs
     num_v = info.num_intermediates
     return jnp.zeros((num_i+num_v, num_v))
 
 
-def make_graph_info(info: chex.Array) -> GraphInfo:
+def make_graph_info(info: Array) -> GraphInfo:
+    """
+    Create GraphInfo object from input numpy array or list.
+    """
     num_i = info[0]
     num_v = info[1]
     num_edges = (num_i+num_v)*(num_v) - num_v*(num_v-1)//2
@@ -43,315 +53,186 @@ def make_graph_info(info: chex.Array) -> GraphInfo:
                     num_edges=num_edges)
     
     
-def front_eliminate(edges: chex.Array, 
-                    edge: Tuple[int, int],
-                    info: GraphInfo) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements the front-elimination procedure
-    on the edges of a GraphState object.
+def front_eliminate(edge: Edge, edges: Array, info: GraphInfo) -> Tuple[Array, float]:
+    """
+    Fully JIT-compilable function that implements the front-elimination procedure
+    on the edge representation of a computational graph.
 
     Arguments:
-        - edges (chex.Array): Edges contained in a GraphState object that 
-                                describes the computational graph where we want 
-                                to front-eliminate the given edge.
-        - edge (Tuple[int, int]): Tuple of integers describing the edge we want
-                                to eliminate.
-        - info (chex.Array): Meta-information about the computational graph.
+        edge (Edge): Edge we want to eliminate.
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops). 
     """
     num_inputs = info.num_inputs
-    num_edges = info.num_edges
     
     e0 = edge[0] + num_inputs - 1
-    e1 = edge[1] - 1
+    e1 = edge[1] + num_inputs - 1
     
-    edge_val = edges[e0, e1]
-    edges = edges.at[e0, e1].set(0.)
-
-    def front_update_edge(carry, nonzeros):
-        _edges, nops = carry
-        i = nonzeros[0] - num_inputs + 1
-        j = nonzeros[1] + 1
-        val = edges.at[nonzeros[0], nonzeros[1]].get()
-        _edges, ops = lax.cond(i == edge[1], 
-                            lambda x, m, n, val: (x.at[m, n].set(val), 1), 
-                            lambda x, m, n, val: (x, 0), 
-                            _edges, e0, nonzeros[1], val*edge_val)
-        nops += ops
-        carry = (_edges, nops)
-        return carry, None
-    nonzeros = jnp.stack(jnp.nonzero(edges, 
-                                    size=num_edges,
-                                    fill_value=-num_edges)).T
-    output, _ = lax.scan(front_update_edge, (edges, 0), nonzeros)
-    return output
+    edges = edges.at[e0, e1-num_inputs].set(0.)
+    row = edges.at[e0, :].get()
+    _row = edges.at[e1, :].get()
+    fmas = jnp.sum(_row)
+    
+    new_row = jnp.where(_row > 0., _row, row)
+    edges = edges.at[e0, :].set(new_row)     
+    
+    # Cleanup of unneeded edges
+    edges = lax.cond(jnp.sum(edges.at[:, e1-num_inputs].get()) == 0.,
+                    lambda e: e.at[e1, :].set(0.),
+                    lambda e: e,
+                    edges)
+    
+    return edges, fmas
  
-
-def back_eliminate(edges: chex.Array, 
-                   edge: Tuple[int, int],
-                   info: GraphInfo) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements the back-elimination procedure
+ 
+def back_eliminate(edge: Edge, edges: Array, info: GraphInfo) -> Tuple[Array, float]:
+    """
+    Fully JIT-compilable function that implements the back-elimination procedure
     on the edges of a GraphState object.
 
     Arguments:
-        - edges (chex.Array): Edges contained in a GraphState object that 
-                                describes the computational graph where we want 
-                                to front-eliminate the given edge.
-        - edge (Tuple[int, int]): Tuple of integers describing the edge we want
-                                to eliminate.
-        - info (chex.Array): Meta-information about the computational graph.
+        edge (Edge): Edge we want to eliminate.
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphState): Meta-information about the computational graph.
 
     Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
     """
     num_inputs = info.num_inputs
-    num_edges = info.num_edges
     
-    e0 = edge[0] + num_inputs - 1
+    e0 = edge[0] - 1
     e1 = edge[1] - 1
     
-    edge_val = edges[e0, e1]
-    edges = edges.at[e0, e1].set(0.)
-
-    def back_update_edge(carry, nonzeros):
-        _edges, nops = carry
-        i = nonzeros[0] - num_inputs + 1
-        j = nonzeros[1] + 1
-        val = edges.at[nonzeros[0], nonzeros[1]].get()
-        _edges, ops = lax.cond(j == edge[0], 
-                            lambda x, m, n, val: (x.at[m, n].set(val), 1), 
-                            lambda x, m, n, val: (x, 0), 
-                            _edges, nonzeros[0], e1, val*edge_val)
-        nops += ops
-        carry = (_edges, nops)
-        return carry, None
+    edges = edges.at[e0+num_inputs, e1].set(0.)
+    col = edges.at[:, e1].get()
+    _col = edges.at[:, e0].get()
+    fmas = jnp.sum(_col)
     
-    nonzeros = jnp.stack(jnp.nonzero(edges, 
-                                    size=num_edges, 
-                                    fill_value=-num_edges)).T
-    output, _ = lax.scan(back_update_edge, (edges, 0), nonzeros)
-    return output
+    new_col = jnp.where(_col > 0., _col, col)
+    edges = edges.at[:, e1].set(new_col)   
+    
+    # Cleanup of unneeded edges
+    edges = lax.cond(jnp.sum(edges.at[e0+num_inputs, :].get()) == 0.,
+                    lambda e: e.at[:, e0].set(0.),
+                    lambda e: e,
+                    edges)
+    
+    return edges, fmas
 
 
-def vertex_eliminate(edges: chex.Array, 
-                    vertex: int, 
-                    info: GraphInfo) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements the vertex-elimination procedure
-    on a GraphState object. Vertex elimination means that we front-eliminate
-    all incoming edges and back-eliminate all outgoing edges of a given vertex.
-
-    Arguments:
-        - gs_edges (GraphState): GraphState that describes the computational graph 
-                            where we want to front-eliminate the given edge.
-        - vertex (int): Vertex we want to eliminate.
-        - info (Array): Meta-information about the computational graph.
-
-    Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
+def vertex_eliminate(vertex: int, edges: Array, info: GraphInfo) -> Tuple[Array, float]:
     """
-    num_inputs = info.num_inputs
-    num_edges = info.num_edges
-    
-    def update_edges(carry, nonzeros):
-        _edges, nops = carry
-        i = nonzeros[0] - num_inputs + 1
-        j = nonzeros[1] + 1
-                        
-        _edges, fops = lax.cond(j == vertex,
-                                lambda x, m, n: front_eliminate(x, (m, n), info), 
-                                lambda x, m, n: (x, 0), 
-                                _edges, i, j)
-
-        _edges, bops = lax.cond(i == vertex, 
-                                lambda x, m, n: back_eliminate(x, (m, n), info), 
-                                lambda x, m, n: (x, 0), 
-                                _edges, i, j)
-        
-        nops += (fops + bops)
-        carry = (_edges, nops)
-        return carry, None
-        
-    nonzeros = jnp.stack(jnp.nonzero(edges, 
-                                    size=num_edges, 
-                                    fill_value=-num_edges)).T
-    output, _ = lax.scan(update_edges, (edges, 0), nonzeros)
-    return output
-
-
-def vertex_eliminate_gpu(vertex: int, 
-                        edges: chex.Array,
-                        info: GraphInfo) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements the vertex-elimination procedure
-    on a GraphState object. Vertex elimination means that we front-eliminate
-    all incoming edges and back-eliminate all outgoing edges of a given vertex.
+    Fully JIT-compilable function that implements the vertex-elimination procedure. 
+    Vertex elimination means that we front-eliminate all incoming edges and 
+    back-eliminate all outgoing edges of a given vertex. However, the implementation
+    here does not make use of the function above to be more efficient.
 
     Arguments:
-        - gs_edges (GraphState): GraphState that describes the computational graph 
-                            where we want to front-eliminate the given edge.
-        - vertex (int): Vertex we want to eliminate.
-        - info (Array): Meta-information about the computational graph.
+        vertex (int): Vertex we want to eliminate.
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
     """
     num_inputs = info.num_inputs
     num_intermediates = info.num_intermediates
-    num_outputs = info.num_outputs
-    num_edges = info.num_edges
 
     col = edges.at[:, vertex-1].get()
-    ops = col.sum()
+    _fmas = col.sum()
     
-    def update_edges(carry, nonzero):
-        _edges, nops = carry
+    def update_edges_fn(carry, nonzero):
+        _edges, fmas = carry
 
         _col = _edges.at[:, nonzero].get()
         new_col = jnp.where(_col > 0., _col, col)
-        _edges = _edges.at[:, nonzero].set(new_col, mode="drop")     
+        _edges = _edges.at[:, nonzero].set(new_col)     
         
-        nops = lax.cond(nonzero > -1, lambda x: x+ops, lambda x: x, nops)
-        carry = (_edges, nops)
+        fmas = lax.cond(nonzero > -1, lambda x: x+_fmas, lambda x: x, fmas)
+        carry = (_edges, fmas)
         return carry, None
         
-    nonzeros = jnp.nonzero(edges.at[num_inputs+vertex-1, :].get(), 
-                                    size=num_intermediates+num_outputs, 
-                                    fill_value=-num_edges)[0]
-    output, _ = lax.scan(update_edges, (edges, 0.), nonzeros)
-    edges, nops = output
+    nonzeros = jnp.nonzero(edges.at[num_inputs+vertex-1, :].get(),
+                           size=num_intermediates,
+                           fill_value=-1)[0].T
+    output, _ = lax.scan(update_edges_fn, (edges, 0.), nonzeros)
+    edges, fmas = output
     edges = edges.at[num_inputs+vertex-1, :].set(0)
     edges = edges.at[:, vertex-1].set(0)
-    return edges, nops
+    return edges, fmas
 
 
-def forward(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements forward-mode AD by 
-    eliminating the vertices in sequential order 1,2,3,...,n-1,n.
+def forward(edges: Array, info: GraphInfo, vertex_mask: Array) -> Tuple[Array, float]:
+    """
+    Fully JIT-compilable function that implements forward-mode AD by 
+    eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
+    the ones that are given by vertex_mask, because these are typically the 
+    output vertices.
 
     Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
-                            where we want to differntiate.
-        - info (Array): Meta-information about the computational graph.
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
     """
     num_intermediates = info.num_intermediates
     
-    def fwd(carry, vertex):
-        _edges, nops = carry
-        _edges, ops = vertex_eliminate(_edges, vertex, info)
-        nops += ops
-        carry = (_edges, nops)
+    def fwd_fn(carry, vertex):
+        _edges, fmas = carry
+        is_masked = jnp.any((vertex == vertex_mask))
+        _edges, _fmas = lax.cond(is_masked,
+                                lambda e: (e, 0.),
+                                lambda e: vertex_eliminate(vertex, e, info),
+                               _edges)
+        fmas += _fmas
+        carry = (_edges, fmas)
         return carry, None
     vertices = jnp.arange(1, num_intermediates+1)
-    output, _ = lax.scan(fwd, (edges, 0.), vertices)
+    output, _ = lax.scan(fwd_fn, (edges, 0.), vertices)
     return output
 
 
-def forward_gpu(edges: chex.Array, info: GraphInfo, vertex_mask: chex.Array) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements forward-mode AD by 
-    eliminating the vertices in sequential order 1,2,3,...,n-1,n.
+def reverse(edges: Array, info: GraphInfo, vertex_mask: Array) -> Tuple[Array, float]:
+    """
+    Fully JIT-compilable function that implements reverse-mode AD by 
+    eliminating the vertices in sequential order n,n-1,...,2,1 and ignores
+    the ones that are given by vertex_mask, because these are typically the 
+    output vertices.
 
     Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
-                            where we want to differntiate.
-        - info (Array): Meta-information about the computational graph.
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
     """
     num_intermediates = info.num_intermediates
     
-    def fwd(carry, vertex):
-        _edges, nops = carry
+    def rev_fn(carry, vertex):
+        _edges, fmas = carry
         is_masked = jnp.any((vertex == vertex_mask))
-        _edges, ops = lax.cond(is_masked,
+        _edges, _fmas = lax.cond(is_masked,
                                 lambda e: (e, 0.),
-                                lambda e: vertex_eliminate_gpu(vertex, e, info),
+                                lambda e: vertex_eliminate(vertex, e, info),
                                _edges)
-        nops += ops
-        carry = (_edges, nops)
-        return carry, None
-    vertices = jnp.arange(1, num_intermediates+1)
-    output, _ = lax.scan(fwd, (edges, 0.), vertices)
-    return output
-
-
-def reverse(edges: chex.Array, info: GraphInfo) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements reverse-mode AD by 
-    eliminating the vertices in sequential order n,n-1,...,2,1.
-
-    Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
-                            where we want to differntiate.
-        - info (Array): Meta-information about the computational graph.
-
-    Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
-    """
-    num_intermediates = info.num_intermediates
-    
-    def rev(carry, vertex):
-        _edges, nops = carry
-        _edges, ops = vertex_eliminate(_edges, vertex, info)
-        nops += ops
-        carry = (_edges, nops)
+        fmas += _fmas
+        carry = (_edges, fmas)
         return carry, None
     vertices = jnp.arange(1, num_intermediates+1)[::-1]
-    output, _ = lax.scan(rev, (edges, 0.), vertices)
-    return output
-
-
-def reverse_gpu(edges: chex.Array, info: GraphInfo, vertex_mask: chex.Array) -> Tuple[chex.Array, int]:
-    """TODO fix docstring
-    Fully jit-compilable function that implements reverse-mode AD by 
-    eliminating the vertices in sequential order n,n-1,...,2,1.
-
-    Arguments:
-        - gs (GraphState): GraphState that describes the computational graph 
-                            where we want to differntiate.
-        - info (Array): Meta-information about the computational graph.
-
-    Returns:
-        A tuple that contains a new GraphState object with updated edges and 
-        an integer containing the number of multiplications necessary to 
-        eliminate the given edge. 
-    """
-    num_intermediates = info.num_intermediates
-    
-    def rev(carry, vertex):
-        _edges, nops = carry
-        is_masked = jnp.any((vertex == vertex_mask))
-        _edges, ops = lax.cond(is_masked,
-                                lambda e: (e, 0.),
-                                lambda e: vertex_eliminate_gpu(vertex, e, info),
-                               _edges)
-        nops += ops
-        carry = (_edges, nops)
-        return carry, None
-    vertices = jnp.arange(1, num_intermediates+1)[::-1]
-    output, _ = lax.scan(rev, (edges, 0.), vertices)
+    output, _ = lax.scan(rev_fn, (edges, 0.), vertices)
     return output
 

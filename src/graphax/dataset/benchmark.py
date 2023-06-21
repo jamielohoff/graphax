@@ -16,7 +16,7 @@ from ..examples import (make_LIF,
                               make_softmax_attention)
 
 
-def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 30, 5])) -> None:
+def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 50, 10])) -> None:
     """_summary_
 
     Args:

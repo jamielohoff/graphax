@@ -18,19 +18,7 @@ def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
     return [eqn for eqn in eqns if not str(eqn.outvars[0]) == "_"]
 
 
-def populate_attn_mask(mask: chex.Array, output_vertices: chex.Array):
-    def loop_fn(carry, idx):
-        _mask = carry
-        _mask = _mask.at[idx-1, :].set(0.)
-        _mask = _mask.at[:, idx-1].set(0.)
-        return _mask, None
-    
-    output, _ = lax.scan(loop_fn, mask, output_vertices)
-    return output
-
-
-def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], 
-               *xs: chex.Array) -> Tuple[chex.Array, GraphInfo]:
+def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: chex.Array) -> Tuple[chex.Array, GraphInfo]:
     """
     Function that creates a computational graph from a pure JAX input function
     or a jaxpr.
@@ -96,6 +84,5 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable],
                 
     # Make attention mask
     attn_mask = jnp.ones((num_v, num_v))
-    # attn_mask = populate_attn_mask(attn_mask, output_vertices.astype(jnp.int32))
     return edges, info, vertex_mask, attn_mask
 
