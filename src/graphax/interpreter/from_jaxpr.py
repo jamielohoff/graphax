@@ -10,6 +10,16 @@ import chex
 
 from ..core import GraphInfo, make_empty_edges, make_graph_info
     
+    
+IGNORE = {lax.dynamic_slice_p, 
+          lax.broadcast_in_dim_p,
+            lax.dot_general_p, 
+            lax.squeeze_p,
+            # jax._src.pjit.pjit_p,
+            lax.conv_general_dilated_p,
+            lax.slice_p,
+            lax.dynamic_update_slice_p}
+    
 
 def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
     """
@@ -20,8 +30,7 @@ def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
 
 def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: chex.Array) -> Tuple[chex.Array, GraphInfo]:
     """
-    Function that creates a computational graph from a pure JAX input function
-    or a jaxpr.
+    Function that creates a computational graph from a JAX input function or a jaxpr.
     """
     jaxpr = jax.make_jaxpr(f_jaxpr)(*xs) if isinstance(f_jaxpr, Callable) else f_jaxpr
             
@@ -45,6 +54,7 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: chex.Array) -> Tuple[
     # Process intermediate variables
     i = 0
     for eqn in eqns:
+        assert not eqn.primitive in IGNORE, "Primitive not supported by interpreter!"
         for outvar in eqn.outvars:
             if str(outvar) not in variables:
                 variables[str(outvar)] = counter
@@ -55,17 +65,17 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: chex.Array) -> Tuple[
                     is_invar_list.append(invar)
                 if isinstance(invar, Var):
                     if outvar.aval.size > 1 and invar.aval.size > 1:
-                        # parallel op
+                        # Parallel op
                         for k in range(invar.aval.size):
                             j = variables[str(invar)]
                             edges = edges.at[j+k, i+k].set(1.) 
                     elif outvar.aval.size > 1 and invar.aval.size == 1:
-                        # vectorized op
+                        # Vectorized op
                         for k in range(outvar.aval.size):
                             j = variables[str(invar)]
                             edges = edges.at[j, i+k].set(1.)                      
                     else:
-                        # accumulation op
+                        # Accumulation op
                         for k in range(invar.aval.size):
                             j = variables[str(invar)]
                             edges = edges.at[j+k, i].set(1.)  
