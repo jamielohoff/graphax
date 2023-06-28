@@ -5,12 +5,13 @@ from graphax.interpreter.from_jaxpr import make_graph
 
 
 def simple(x, y):
-    z = x*y
-    w = jnp.sin(z)
-    return w+z, jnp.log(w)
+        z = x * y
+        w = jnp.sin(z)
+        return w + z, jnp.log(w)
 
-edges, info, vertex_mask, attn_mask = make_graph(simple, 1., 1.)
-print(edges, info, vertex_mask, attn_mask)
+print(jax.make_jaxpr(simple)(1., 1.))
+edges = make_graph(simple, 1., 1.)
+print(edges)
 
 
 def Helmholtz(x):
@@ -22,17 +23,31 @@ def Helmholtz(x):
 
 x = jnp.ones(4)
 print(jax.make_jaxpr(Helmholtz)(x))
-edges, info, vertex_mask, attn_mask = make_graph(Helmholtz, x)
-print(edges, info, vertex_mask, attn_mask)
+edges = make_graph(Helmholtz, x)
+print(edges)
 
 
-def f(x, y):
-    return 2.* x * y
+def NeuralNetwork(x, W1, b1, W2, b2, y):
+    y1 = W1 @ x
+    z1 = y1 + b1
+    a1 = jnp.tanh(z1)
+    
+    y2 = W2 @ a1
+    z2 = y2 + b2
+    a2 = jnp.tanh(z2)
+    d = a2 - y
+    e = d**2
+    return .5*jnp.sum(e)
 
 x = jnp.ones(4)
-f_jac = jax.jacrev(f, argnums=(0,1))
-print(jax.make_jaxpr(f_jac)(x, x))
-print(f_jac(x, x))
-edges, info, vertex_mask, attn_mask = make_graph(f, x, x)
-print(edges, info, vertex_mask, attn_mask)
+y = jnp.ones(4)
+
+W1 = jnp.ones((3, 4))
+b1 = jnp.ones(3)
+
+W2 = jnp.ones((4, 3))
+b2 = jnp.ones(4)
+print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
+edges = make_graph(NeuralNetwork, x, W1, b1, W2, b2, y)
+print(edges)
 

@@ -10,7 +10,6 @@ def make_simple():
         w = jnp.sin(z)
         return w + z, jnp.log(w)
 
-    print(jax.make_jaxpr(simple)(1., 1.))
     return make_graph(simple, 1., 1.)
 
 

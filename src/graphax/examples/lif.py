@@ -5,6 +5,7 @@ from ..interpreter.from_jaxpr import make_graph
 
 
 def make_LIF():
+    
     def lif(U, I, S, a, b, threshold):
         U_next = a*U + (1-a)*I
         I_next = b*I + (1-b)*S

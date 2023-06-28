@@ -4,12 +4,11 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
 
-import chex
+from chex import Array, PRNGKey
 
-from ..core import GraphInfo, make_empty_edges
+from ..core import make_empty_edges
 
-
-def make_random(key: chex.PRNGKey, info: GraphInfo, fraction: float = .35): 
+def make_random(key: PRNGKey, info: Array, fraction: float = .35): 
     in_key, var_key, key = jrand.split(key, 3)
     
     num_i = info.num_inputs
@@ -48,7 +47,7 @@ def make_random(key: chex.PRNGKey, info: GraphInfo, fraction: float = .35):
     return edges, info, vertex_mask, attn_mask
 
 
-def make_connected_random(key: chex.PRNGKey, info: GraphInfo, p: chex.Array = None):
+def make_connected_random(key: PRNGKey, info: Array, p: Array = None):
     num_i = info.num_inputs
     num_v = info.num_intermediates
     num_o = info.num_outputs

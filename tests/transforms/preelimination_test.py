@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from graphax.interpreter.from_jaxpr import make_graph
-from graphax.core import reverse_gpu, vertex_eliminate_gpu
+from graphax.core import reverse, vertex_eliminate
 from graphax.transforms.preelimination import safe_preeliminations_gpu, compress_graph
 
 

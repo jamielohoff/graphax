@@ -1,6 +1,7 @@
 from typing import Callable, Tuple, Union, Sequence
 
 import jax
+import jax.nn as jnn
 import jax.lax as lax
 import jax.numpy as jnp
 
@@ -9,20 +10,21 @@ from jax._src.core import Var, ClosedJaxpr, JaxprEqn
 from chex import Array
 
 from graphax.core import GraphInfo, make_graph_info
-    
-# Needed to resolve PJIT subgraphs
-PJIT = {jax._src.pjit.pjit_p}
+
+
 # Reshaping of tensors. Does not change the Jacobian accumulation as slicing also
 # merely copies the respective partials. However, it terminates the derivative
 # flow over "sliced-off" edges.
 RESHAPING = {lax.concatenate_p, lax.squeeze_p, lax.convert_element_type_p,
-            lax.slice_p, lax.dynamic_slice_p, lax.dynamic_update_slice_p}
+            lax.slice_p, lax.dynamic_slice_p, lax.dynamic_update_slice_p,
+            lax.stop_gradient_p}
 # Parallel operations
 PARALLEL = {lax.add_p, lax.mul_p, lax.sub_p, lax.div_p, lax.log_p, lax.sin_p, 
             lax.cos_p, lax.tan_p, lax.asin_p, lax.acos_p, lax.atan_p,
             lax.sinh_p, lax.cosh_p, lax.tanh_p, lax.asinh_p, lax.acosh_p,
             lax.atanh_p, lax.exp_p, lax.integer_pow_p, lax.neg_p, lax.eq_p,
-            lax.gt_p, lax.ge_p, lax.lt_p, lax.le_p}
+            lax.gt_p, lax.ge_p, lax.lt_p, lax.le_p, lax.max_p, lax.min_p,
+            jax.ad.add_jaxvals_p, jax._src.ad_util.add_any_p}
 # Accumulation operations
 ACCUMULATION = {lax.reduce_sum_p, lax.reduce_prod_p, lax.reduce_max_p, 
                 lax.reduce_min_p, lax.dot_general_p}
@@ -72,10 +74,23 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Tuple[Array
                 if invar in jaxpr.jaxpr._outvars:
                     is_invar_list.append(invar)
                 if isinstance(invar, Var):
-                    if eqn.primitive in PJIT:
-                        # Needs special treatment
-                        continue
-
+                    if eqn.primitive is jax._src.custom_derivatives.custom_jvp_call_p:
+                        # Custom JVP call is treated as a simple parallel primitive
+                        # call as it would for example happen for ReLU activation 
+                        # functions. The actual computation is not resolved since
+                        # the related edges have a custom Jacobian anyways.
+                        j = variables[str(invar)]
+                        # Set operation type
+                        edges = edges.at[0, 0, i].set(5.)
+                        # Set sparsity type
+                        if invar.aval.size == 1 and outvar.aval.size == 1:
+                            # Singleton operations are not sparse
+                            structure = jnp.array([1., invar.aval.size, outvar.aval.size])
+                            edges = edges.at[:, j+1, i].set(structure) 
+                        else:
+                            # Parallel operations are sparse
+                            structure = jnp.array([2., invar.aval.size, outvar.aval.size])
+                            edges = edges.at[:, j+1, i].set(structure) 
                     elif eqn.primitive in RESHAPING:
                         # Slicing operation is a parallel operation that selects
                         # values from an array and by virtue of this the flow of
@@ -116,11 +131,11 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Tuple[Array
                         # Set operation type
                         edges = edges.at[0, 0, i].set(3.)
                         # Set sparsity type
-                        structure = jnp.array([1., invar.aval.size, outvar.aval.size])
+                        structure = jnp.array([0., invar.aval.size, outvar.aval.size])
                         edges = edges.at[:, j+1, i].set(structure)  
                         
                     else:
-                        print("Primitive not supported")
+                        print("Primitive", eqn.primitive, "not supported!")
                     j += 1
             i += 1
                         
@@ -131,8 +146,12 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Tuple[Array
         if not outvar in is_invar_list:
             idx = variables[str(outvar)]
             vertex_mask = vertex_mask.at[k].set(idx)
+            edges = edges.at[2, 0, idx-num_i].set(1.)
+            
+            # Track which vertices are already masked
+            edges = edges.at[1, 0, k].set(idx-num_i+1)
             k += 1
-                
+    
     # Make attention mask
     attn_mask = jnp.ones((num_v, num_v))
     return edges, info, vertex_mask, attn_mask
@@ -188,17 +207,6 @@ def get_fmas_jacprod(_jac_edges, fmas, col, _col, nonzero, vertex, info):
     return _jac_edges, fmas
 
 
-def scan(f, init, xs, length=None):
-    if xs is None:
-        xs = [None] * length
-    carry = init
-    ys = []
-    for x in xs:
-        carry, y = f(carry, x)
-        ys.append(y)
-    return carry, jnp.stack(ys)
-
-
 def vectorized_vertex_eliminate(vertex: int, mat: Array, info: GraphInfo) -> Tuple[Array, float]:
     """
     Fully JIT-compilable function that implements the vertex-elimination procedure. 
@@ -249,6 +257,72 @@ def vectorized_vertex_eliminate(vertex: int, mat: Array, info: GraphInfo) -> Tup
     return mat, fmas
 
 
+def vectorized_forward(mat: Array, info: GraphInfo):
+    """
+    Fully JIT-compilable function that implements forward-mode AD by 
+    eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
+    the ones that are given by vertex_mask, because these are typically the 
+    output vertices.
+
+    Arguments:
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphInfo): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
+    """
+    num_intermediates = info.num_intermediates
+    
+    def fwd_fn(carry, vertex):
+        _mat, fmas = carry
+        is_masked = jnp.any((vertex == _mat[1, 0, :]))
+        _mat, _fmas = lax.cond(is_masked,
+                                lambda m: (m, 0.),
+                                lambda m: vectorized_vertex_eliminate(vertex, m, info),
+                               _mat)
+        fmas += _fmas
+        carry = (_mat, fmas)
+        return carry, None
+    vertices = jnp.arange(1, num_intermediates+1)
+    output, _ = lax.scan(fwd_fn, (mat, 0.), vertices)
+    return output
+
+
+def vectorized_reverse(mat: Array, info: GraphInfo):
+    """
+    Fully JIT-compilable function that implements reverse-mode AD by 
+    eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
+    the ones that are given by vertex_mask, because these are typically the 
+    output vertices.
+
+    Arguments:
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+        info (GraphInfo): Meta-information about the computational graph.
+
+    Returns:
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
+    """
+    num_intermediates = info.num_intermediates
+    
+    def rev_fn(carry, vertex):
+        _mat, fmas = carry
+        is_masked = jnp.any((vertex == _mat[1, 0, :]))
+        _mat, _fmas = lax.cond(is_masked,
+                                lambda m: (m, 0.),
+                                lambda m: vectorized_vertex_eliminate(vertex, m, info),
+                               _mat)
+        fmas += _fmas
+        carry = (_mat, fmas)
+        return carry, None
+    vertices = jnp.arange(1, num_intermediates+1)[::-1]
+    output, _ = lax.scan(rev_fn, (mat, 0.), vertices)
+    return output
+
+
 def Helmholtz(x):
     e = jnp.sum(x)
     f = 1. + -e
@@ -281,6 +355,10 @@ fmas += _fmas
 # print(edges, _fmas)
 print(fmas)
 
+edges, info, vertex_mask, attn_mask = make_graph(Helmholtz, x)
+edges, fmas = vectorized_forward(edges, info)
+print(fmas)
+
 def f(x, y):
     x = x[1:]
     y = y[:-1]
@@ -293,7 +371,7 @@ x = jnp.ones(4)
 y = jnp.ones(4)
 print(jax.make_jaxpr(f)(x, y))
 edges, info, vertex_mask, attn_mask = make_graph(f, x, y)
-print(edges)
+# print(edges)
 
 edges, fmas = vectorized_vertex_eliminate(1, edges, info)
 # print(edges, fmas)
@@ -317,5 +395,43 @@ fmas += _fmas
 edges, _fmas = vectorized_vertex_eliminate(6, edges, info)
 fmas += _fmas
 # print(edges, _fmas)
+print(fmas)
+
+@jax.custom_jvp
+def heaviside(x):
+    return jnp.heaviside(x, 1)
+
+@heaviside.defjvp
+def f_jvp(primals, tangents):
+    x, = primals
+    x_dot, = tangents
+    primal_out = heaviside(x)
+    tangent_out = 1/(10.*jnp.abs(x)+1) * x_dot
+    return primal_out, tangent_out
+
+
+def lif(U, I, S, a, b, threshold):
+    U_next = a*U + (1.-a)*I
+    I_next = b*I + (1-b)*S
+    S_next = heaviside(U_next - threshold)
+    
+    return U_next, I_next, S_next
+    
+print(jax.make_jaxpr(lif)( .1, .2, 1., .95, .9, 1.))
+edges, info, vertex_mask, attn_mask =  make_graph(lif, .1, .2, 1., .95, .9, 1.)
+edges, fmas = vectorized_reverse(edges, info)
+print(fmas)
+
+
+def ada_lif(U, a, S, alpha, beta, rho, threshold):
+    U_next = alpha*U + S    
+    A_th = threshold + beta*a
+    S_next = heaviside(U_next - A_th)
+    a_next = rho*a - S_next
+    
+    return U_next, a_next, S_next
+
+edges, info, vertex_mask, attn_mask = make_graph(ada_lif, .1, .2, 1., .95, .9, .9, 1.)
+edges, fmas = vectorized_reverse(edges, info)
 print(fmas)
 

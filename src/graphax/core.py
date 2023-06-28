@@ -7,127 +7,163 @@ https://doi.org/10.1137/1.9780898717761
 
 DO NOT TOUCH!
 """
+
 from functools import partial
-from typing import NamedTuple, Tuple
+from typing import Tuple, NamedTuple, Sequence
 
 import jax
+import jax.nn as jnn
 import jax.lax as lax
 import jax.numpy as jnp
 
 from chex import Array
 
 
+# Row idx is incoming edge, col idx is outgoing edge
+# For meaning of the different numbers, "checkout fmas_sparsity_map()" function
+CONTRACTION_MAP =  jnp.array([[[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0]],
+                              
+                              [[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0]],
+                              
+                              [[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
+                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0]],
+                              
+                              [[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
+                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 0]]])    
+
+# Row idx is incoming edge, col idx is outgoing edge
+# Gives the resulting sparsity type if two hyperdimensional Jacobians
+# are multiplied with each other
+# TODO add description of different sparsity types and their behavior
+MUL_SPARSITY_MAP = jnp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                              [0, 1, 1, 1, 1, 1, 1, 1, 1],
+                              [0, 1, 2, 1, 4, 1, 2, 4, 2],
+                              [0, 1, 1, 3, 1, 5, 3, 5, 3],
+                              [0, 1, 1, 4, 1, 2, 4, 2, 4],
+                              [0, 1, 5, 1, 3, 1, 5, 3, 5],
+                              [0, 1, 2, 3, 4, 5, 6, 7, 6],
+                              [0, 1, 5, 4, 3, 2, 7, 6, 7],
+                              [0, 1, 2, 3, 4, 5, 6, 7, 8]])
+
+# Row idx is incoming edge, col idx is outgoing edge
+# Gives the resulting sparsity type if two hyperdimensional Jacobians
+# are added to each other
+ADD_SPARSITY_MAP = jnp.array([[0, 1, 2, 3, 4, 5, 6, 7, 0],
+                              [1, 1, 1, 1, 1, 1, 1, 1, 1],
+                              [2, 1, 2, 1, 1, 1, 2, 1, 2],
+                              [3, 1, 1, 3, 1, 1, 3, 1, 3],
+                              [4, 1, 1, 1, 4, 1, 1, 4, 4],
+                              [5, 1, 1, 1, 1, 5, 1, 5, 5],
+                              [6, 1, 2, 3, 1, 1, 6, 1, 6],
+                              [7, 1, 1, 1, 4, 5, 1, 7, 7],
+                              [0, 1, 2, 3, 4, 5, 6, 7, 8]])
+
+
 Edge = Tuple[int, int]
 
 
-class GraphInfo(NamedTuple):
-    """
-    Meta-information about the computational graph.
-    """
-    num_inputs: int
-    num_intermediates: int
-    num_outputs: int
-    num_edges: int
+def get_info(edges: Array):
+    num_v = edges.shape[2]
+    num_i = edges.shape[1] - num_v - 1
+    return num_i, num_v
 
 
-def make_empty_edges(info: GraphInfo) -> Array:
+def make_empty_edges(info: Array) -> Array:
     """
     Creates an empty matrix fo represent the connectivity of the computational graph.
     """
-    num_i = info.num_inputs
-    num_v = info.num_intermediates
-    return jnp.zeros((num_i+num_v, num_v))
-
-
-def make_graph_info(info: Array) -> GraphInfo:
-    """
-    Create GraphInfo object from input numpy array or list.
-    """
     num_i = info[0]
     num_v = info[1]
-    num_edges = (num_i+num_v)*(num_v) - num_v*(num_v-1)//2
-    num_edges = int(.5*num_edges)
-    return GraphInfo(num_inputs=info[0],
-                    num_intermediates=info[1],
-                    num_outputs=info[2],
-                    num_edges=num_edges)
-    
-    
-def front_eliminate(edge: Edge, edges: Array, info: GraphInfo) -> Tuple[Array, float]:
+    return jnp.zeros((5, num_i+num_v+1, num_v), dtype=jnp.int32)
+
+
+@partial(jax.vmap, in_axes=(0, 0))
+def sparsity_where(in_edge, out_edge):
+    # takes care of the corner cases where there already exists an edge with a 
+    # different sparsity type
+    i = in_edge.astype(jnp.int32)
+    j = out_edge.astype(jnp.int32)
+    return ADD_SPARSITY_MAP[i, j]
+
+
+@partial(jax.vmap, in_axes=(1, None))
+def sparsity_fmas_map(in_edge, out_edge):
     """
-    Fully JIT-compilable function that implements the front-elimination procedure
-    on the edge representation of a computational graph.
-
-    Arguments:
-        edge (Edge): Edge we want to eliminate.
-        edges (Array): Matrix that describes the connectivity of the 
-                        computational graph.
-        info (GraphInfo): Meta-information about the computational graph.
-
-    Returns:
-        A tuple that contains the new edge representation of the computational
-        graph and the number of fmas (fused multiplication-addition ops). 
+    TODO add documentation here!
     """
-    num_inputs = info.num_inputs
+    i = in_edge[0].astype(jnp.int32)
+    j = out_edge[0].astype(jnp.int32)
+    new_sparsity_type = MUL_SPARSITY_MAP[i, j]
+    contraction_map = CONTRACTION_MAP[:, i, j]
     
-    e0 = edge[0] + num_inputs - 1
-    e1 = edge[1] + num_inputs - 1
-    
-    edges = edges.at[e0, e1-num_inputs].set(0.)
-    row = edges.at[e0, :].get()
-    _row = edges.at[e1, :].get()
-    fmas = jnp.sum(_row)
-    
-    new_row = jnp.where(_row > 0., _row, row)
-    edges = edges.at[e0, :].set(new_row)     
-    
-    # Cleanup of unneeded edges
-    edges = lax.cond(jnp.sum(edges.at[:, e1-num_inputs].get()) == 0.,
-                    lambda e: e.at[e1, :].set(0.),
-                    lambda e: e,
-                    edges)
-    
-    return edges, fmas
- 
- 
-def back_eliminate(edge: Edge, edges: Array, info: GraphInfo) -> Tuple[Array, float]:
-    """
-    Fully JIT-compilable function that implements the back-elimination procedure
-    on the edges of a GraphState object.
+    masked_factors = lax.cond(jnp.sum(contraction_map) > 0,
+                                lambda a: jnp.where(contraction_map > 0, a, 1),
+                                lambda a: jnp.zeros(4, dtype=jnp.int32),
+                                out_edge[1:])
 
-    Arguments:
-        edge (Edge): Edge we want to eliminate.
-        edges (Array): Matrix that describes the connectivity of the 
-                        computational graph.
-        info (GraphState): Meta-information about the computational graph.
-
-    Returns:
-        A tuple that contains the new edge representation of the computational
-        graph and the number of fmas (fused multiplication-addition ops).
-    """
-    num_inputs = info.num_inputs
-    
-    e0 = edge[0] - 1
-    e1 = edge[1] - 1
-    
-    edges = edges.at[e0+num_inputs, e1].set(0.)
-    col = edges.at[:, e1].get()
-    _col = edges.at[:, e0].get()
-    fmas = jnp.sum(_col)
-    
-    new_col = jnp.where(_col > 0., _col, col)
-    edges = edges.at[:, e1].set(new_col)   
-    
-    # Cleanup of unneeded edges
-    edges = lax.cond(jnp.sum(edges.at[e0+num_inputs, :].get()) == 0.,
-                    lambda e: e.at[:, e0].set(0.),
-                    lambda e: e,
-                    edges)
-    
-    return edges, fmas
+    fmas = jnp.prod(in_edge[1:3])*jnp.prod(masked_factors)
+    return new_sparsity_type, fmas
 
 
-def vertex_eliminate(vertex: int, edges: Array, info: GraphInfo) -> Tuple[Array, float]:
+def get_fmas_jacprod(_jac_edges, fmas, col, _col, nonzero, vertex, num_i):
+    # Define aliases
+    col_ins = col.at[1:3, :].get()
+    col_outs = col.at[3:, :].get()
+    
+    _col_ins = _col.at[1:3, :].get()
+    _col_outs = _col.at[3:, :].get()
+        
+    # Calculate fmas
+    new_sparsity_col, _fmas = sparsity_fmas_map(col, _col[:, vertex+num_i-1])
+    new_sparsity_col = sparsity_where(_col[0, :], new_sparsity_col)
+    new_sparsity_col = jnp.broadcast_to(new_sparsity_col, (1, *new_sparsity_col.shape))
+    fmas = jnp.sum(_fmas)
+    # print(fmas)
+    # In shape column
+    new_col_ins = jnp.where(col_ins[1] > 0, col_ins, _col_ins)
+    
+    # Out shape column
+    new_col_outs = jnp.broadcast_to(_col_outs[:, vertex+num_i-1, jnp.newaxis], _col_outs.shape)
+    new_col_outs = jnp.where(col_outs[1] > 0, new_col_outs, _col_outs)
+    new_col = jnp.concatenate((new_sparsity_col, new_col_ins, new_col_outs), axis=0)
+        
+    # Set the Jacobian adjacency matrix
+    _jac_edges = lax.dynamic_update_index_in_dim(_jac_edges, new_col, nonzero, -1)
+            
+    return _jac_edges, fmas
+
+
+def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
     """
     Fully JIT-compilable function that implements the vertex-elimination procedure. 
     Vertex elimination means that we front-eliminate all incoming edges and 
@@ -144,34 +180,39 @@ def vertex_eliminate(vertex: int, edges: Array, info: GraphInfo) -> Tuple[Array,
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_inputs = info.num_inputs
-    num_intermediates = info.num_intermediates
-
-    col = edges.at[:, vertex-1].get()
-    _fmas = col.sum()
-    
+    num_i, num_v = get_info(edges)
+    jac_edges = edges.at[:, 1:, :].get()
+    col = jac_edges.at[:, :, vertex-1].get()
+        
     def update_edges_fn(carry, nonzero):
-        _edges, fmas = carry
-
-        _col = _edges.at[:, nonzero].get()
-        new_col = jnp.where(_col > 0., _col, col)
-        _edges = _edges.at[:, nonzero].set(new_col)     
-        
-        fmas = lax.cond(nonzero > -1, lambda x: x+_fmas, lambda x: x, fmas)
-        carry = (_edges, fmas)
+        _jac_edges, fmas = carry
+        # Get the index of the operation and the 
+        _col = _jac_edges.at[:, :, nonzero].get()
+        # Calculate the fma operations and the new shapes of the Jacobians for 
+        # the respective and update the vertex
+        _jac_edges, _fmas = lax.cond(nonzero > -1, 
+                                    lambda _e, f, c, _c, nz, v: get_fmas_jacprod(_e, f, c, _c, nz, v, num_i), 
+                                    lambda _e, f, c, _c, nz, v: (_e, 0), 
+                                    _jac_edges, fmas, col, _col, nonzero, vertex)
+        fmas += _fmas        
+        carry = (_jac_edges, fmas)
         return carry, None
-        
-    nonzeros = jnp.nonzero(edges.at[num_inputs+vertex-1, :].get(),
-                           size=num_intermediates,
+    
+    nonzeros = jnp.nonzero(jac_edges.at[0, num_i+vertex-1, :].get(),
+                           size=num_v,
                            fill_value=-1)[0].T
-    output, _ = lax.scan(update_edges_fn, (edges, 0.), nonzeros)
-    edges, fmas = output
-    edges = edges.at[num_inputs+vertex-1, :].set(0)
-    edges = edges.at[:, vertex-1].set(0)
+        
+    output, _ = lax.scan(update_edges_fn, (jac_edges, 0), nonzeros)
+    jac_edges, fmas = output
+    jac_edges = jac_edges.at[:, num_i+vertex-1, :].set(0)
+    jac_edges = jac_edges.at[:, :, vertex-1].set(0)
+
+    edges = edges.at[1, 0, vertex-1].set(1)
+    edges = edges.at[:, 1:, :].set(jac_edges)
     return edges, fmas
 
 
-def forward(edges: Array, info: GraphInfo, vertex_mask: Array) -> Tuple[Array, float]:
+def forward(edges: Array):
     """
     Fully JIT-compilable function that implements forward-mode AD by 
     eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
@@ -187,27 +228,27 @@ def forward(edges: Array, info: GraphInfo, vertex_mask: Array) -> Tuple[Array, f
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_intermediates = info.num_intermediates
+    num_i, num_v = get_info(edges)
     
     def fwd_fn(carry, vertex):
         _edges, fmas = carry
-        is_masked = jnp.any((vertex == vertex_mask))
+        is_masked = jnp.any((vertex == _edges[1, 0, :]))
         _edges, _fmas = lax.cond(is_masked,
-                                lambda e: (e, 0.),
-                                lambda e: vertex_eliminate(vertex, e, info),
-                               _edges)
+                                lambda e: (e, 0),
+                                lambda e: vertex_eliminate(vertex, e),
+                                _edges)
         fmas += _fmas
         carry = (_edges, fmas)
         return carry, None
-    vertices = jnp.arange(1, num_intermediates+1)
-    output, _ = lax.scan(fwd_fn, (edges, 0.), vertices)
+    vertices = jnp.arange(1, num_v+1)
+    output, _ = lax.scan(fwd_fn, (edges, 0), vertices)
     return output
 
 
-def reverse(edges: Array, info: GraphInfo, vertex_mask: Array) -> Tuple[Array, float]:
+def reverse(edges: Array):
     """
     Fully JIT-compilable function that implements reverse-mode AD by 
-    eliminating the vertices in sequential order n,n-1,...,2,1 and ignores
+    eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
     the ones that are given by vertex_mask, because these are typically the 
     output vertices.
 
@@ -220,19 +261,19 @@ def reverse(edges: Array, info: GraphInfo, vertex_mask: Array) -> Tuple[Array, f
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_intermediates = info.num_intermediates
+    num_i, num_v = get_info(edges)
     
     def rev_fn(carry, vertex):
         _edges, fmas = carry
-        is_masked = jnp.any((vertex == vertex_mask))
+        is_masked = jnp.any((vertex == _edges[1, 0, :]))
         _edges, _fmas = lax.cond(is_masked,
-                                lambda e: (e, 0.),
-                                lambda e: vertex_eliminate(vertex, e, info),
+                                lambda e: (e, 0),
+                                lambda e: vertex_eliminate(vertex, e),
                                _edges)
         fmas += _fmas
         carry = (_edges, fmas)
         return carry, None
-    vertices = jnp.arange(1, num_intermediates+1)[::-1]
-    output, _ = lax.scan(rev_fn, (edges, 0.), vertices)
+    vertices = jnp.arange(1, num_v+1)[::-1]
+    output, _ = lax.scan(rev_fn, (edges, 0), vertices)
     return output
 

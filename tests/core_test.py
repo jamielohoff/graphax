@@ -1,33 +1,107 @@
-import jax
-
-from graphax.core import (front_eliminate, 
-                            back_eliminate, 
-                            vertex_eliminate, 
-                            forward, 
-                            reverse)
+from graphax import vertex_eliminate, forward, reverse, make_graph
 from graphax.examples import make_simple
 from graphax.examples import make_Helmholtz
 
 
-edges, info, vertex_mask, attn_mask = make_simple()
-print(edges, info, vertex_mask)
+# Test on simple example
+edges = make_simple()
+print(edges)
 
-_edges, fmas = jax.jit(front_eliminate, static_argnums=(0, 2))((1, 2), edges, info)
-print(_edges, fmas)
+edges, fmas = forward(edges)
+print(edges)
+print(fmas)
 
-_edges, fmas = jax.jit(back_eliminate, static_argnums=(0, 2))((1, 2), edges, info)
-print(_edges, fmas)
+edges = make_simple()
+edges, fmas = reverse(edges)
+print(fmas)
 
-edges, fmas = jax.jit(vertex_eliminate, static_argnums=(0, 2))(1, edges, info)
+
+# Test on Helmholtz example
+edges = make_Helmholtz()
+print(edges)
+
+# Optimal elimination procedure
+edges, fmas = vertex_eliminate(2, edges)
 print(edges, fmas)
-edges, fmas = jax.jit(vertex_eliminate, static_argnums=(0, 2))(2, edges, info)
-print(edges, fmas)
 
-# edges, info = make_Helmholtz()
-# print(edges, info)
+edges, _fmas = vertex_eliminate(5, edges)
+fmas += _fmas
+print(edges, _fmas)
 
-# edges, nops = jax.jit(forward, static_argnums=(1,))(edges, info)
+edges, _fmas = vertex_eliminate(4, edges)
+fmas += _fmas
+print(edges, _fmas)
 
-# print(edges, nops) # 36 / 56
+edges, _fmas = vertex_eliminate(3, edges)
+fmas += _fmas
+print(edges, _fmas)
+
+edges, _fmas = vertex_eliminate(1, edges)
+fmas += _fmas
+print(edges, _fmas)
+print("Result:")
+print(fmas)
+
+edges = make_Helmholtz()
+edges, fmas = forward(edges)
+print(fmas)
+
+edges = make_Helmholtz()
+edges, fmas = reverse(edges)
+print(fmas)
+
+# Test on neural network
+# def NeuralNetwork(x, W1, b1, W2, b2, y):
+#     y1 = W1 @ x
+#     z1 = y1 + b1
+#     a1 = jnp.tanh(z1)
+    
+#     y2 = W2 @ a1
+#     z2 = y2 + b2
+#     a2 = jnp.tanh(z2)
+#     d = a2 - y
+#     e = d**2
+#     return .5*jnp.sum(e)
+
+# x = jnp.ones(4)
+# y = jnp.ones(4)
+
+# W1 = jnp.ones((3, 4))
+# b1 = jnp.ones(3)
+
+# W2 = jnp.ones((4, 3))
+# b2 = jnp.ones(4)
+# print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
+# edges, info, vertex_mask, attn_mask = make_graph(NeuralNetwork, x, W1, b1, W2, b2, y)
+
+# edges, fmas = tensor_vertex_eliminate(1, edges, info)
+# # print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(2, edges, info)
+# # print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(3, edges, info)
+# # print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(4, edges, info)
+# # print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(5, edges, info)
+# # print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(6, edges, info)
+# # print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(7, edges, info)
+# print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(8, edges, info)
+# print(edges, fmas)
+
+# edges, fmas = tensor_vertex_eliminate(9, edges, info)
+# print(edges, fmas)
+
+# edges, fmas = tensor_reverse(edges, info)
+# print(fmas)
 
 

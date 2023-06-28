@@ -1,15 +1,13 @@
-import copy
-from typing import Tuple
-from functools import partial
+from typing import Tuple, Any
 
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node
 
-import chex
+from chex import Array, Numeric
 
-from .core import GraphInfo, vertex_eliminate
+from .core import vertex_eliminate, get_info
 
 
 class VertexGameState:
@@ -50,17 +48,16 @@ class VertexGameState:
         - state (Array): An array containing the edges which have already been 
                         eliminated.
     """
-    t: chex.Numeric
-    info: GraphInfo
-    edges: chex.Array
-    vertices: chex.Array
-    attn_mask: chex.Array
+    t: Numeric
+    edges: Array
+    vertices: Array
+    attn_mask: Array
     
     def __init__(self,
-                t: int, 
-                edges: chex.Array,
-                vertices: chex.Array,
-                attn_mask: chex.Array) -> None:
+                t: Numeric, 
+                edges: Array,
+                vertices: Array,
+                attn_mask: Array) -> None:
         self.t = t
         self.edges = edges
         self.vertices = vertices
@@ -77,16 +74,16 @@ def gamestate_unflatten(aux_data, children) -> VertexGameState:
     return VertexGameState(*children)
 
 
-# Registering GraphState as a PyTree node so we can use it with vmap and jit
+# Registering VertexGameState as a PyTree node so we can use it with 
+# jax.vmap and jax.jit
 register_pytree_node(VertexGameState,
                     gamestate_flatten,
                     gamestate_unflatten)
 
 
-def make_vertex_game_state(edges: chex.Array, 
-                           info: GraphInfo,
-                           vertices: chex.Array = None,
-                           attn_mask: chex.Array = None) -> VertexGameState:
+def make_vertex_game_state(edges: Array, 
+                           vertices: Array = None,
+                           attn_mask: Array = None) -> VertexGameState:
     """TODO add docstring
 
     Args:
@@ -98,16 +95,20 @@ def make_vertex_game_state(edges: chex.Array,
     Returns:
         VertexGameState: _description_
     """
-    vertices = jnp.zeros(info.num_intermediates) if vertices is None else vertices
-    mask = jnp.ones((info.num_intermediates, info.num_intermediates))
+    num_i, num_v = get_info(edges)
+    vertices = jnp.zeros(num_v) if vertices is None else vertices
+    mask = jnp.ones((num_i, num_i))
     attn_mask = mask if attn_mask is None else attn_mask
-    return VertexGameState(t=jnp.where(vertices > 0., 1, 0).sum(),  
+    return VertexGameState(t=jnp.where(vertices > 0, 1, 0).sum(),  
                             edges=edges, 
                             vertices=vertices,
                             attn_mask=attn_mask)
     
 
-class VertexGame:
+EnvOut = Tuple[VertexGameState, float, bool, Any]
+
+    
+def step(vgs: VertexGameState, action: int) -> EnvOut:  
     """
     OpenAI-like environment for a game where to goal is to find the 
     best vertex elimination order with minimal multiplication count.
@@ -129,37 +130,25 @@ class VertexGame:
     The `termination` of the game is indicated by the is_bipartite feature, i.e.
     the game is over when all intermediate vertices and edges have been eliminated.
     """
-    info: GraphInfo
-    
-    def __init__(self, info: GraphInfo) -> None:
-        super().__init__()
-        self.info = info
-    
-    @partial(jax.jit, static_argnums=(0,))
-    def step(self,
-            vgs: VertexGameState,
-            action: int) -> Tuple[VertexGameState, float, bool]:  
-        # Actions go from 0 to num_intermediates-1 
-        # and vertices go from 1 to num_intermediates      
-        vertex = action + 1
-        t = vgs.t.astype(jnp.int32)
+    # Actions go from 0 to num_intermediates-1 
+    # and vertices go from 1 to num_intermediates      
+    vertex = action + 1
+    t = vgs.t.astype(jnp.int32)
+    num_i, num_v = get_info(vgs.edges)
 
-        edges = vgs.edges
-        new_edges, nops = vertex_eliminate(vertex, edges, self.info)
-        obs = lax.slice_in_dim(new_edges, 0, self.info.num_intermediates, axis=1)
-                
-        vgs.t += 1
-        vgs.edges = vgs.edges.at[:, :].set(new_edges)
-        vgs.vertices = vgs.vertices.at[t].set(vertex)
-        vgs.attn_mask = vgs.attn_mask.at[:, action].set(0.)
-        vgs.attn_mask = vgs.attn_mask.at[action, :].set(0.)
+    edges = vgs.edges
+    new_edges, nops = vertex_eliminate(vertex, edges)
+    obs = lax.slice_in_dim(new_edges, 1, -1, axis=1).astype(jnp.float32)
+            
+    vgs.t += 1
+    vgs.edges = vgs.edges.at[:, :].set(new_edges)
+    vgs.vertices = vgs.vertices.at[t].set(vertex)
+    vgs.attn_mask = vgs.attn_mask.at[:, action].set(0)
+    vgs.attn_mask = vgs.attn_mask.at[action, :].set(0)
 
-        # Reward is the negative of the multiplication count
-        reward = -nops
-        
-        terminated = lax.cond((t == self.info.num_intermediates-1).all(),
-                                lambda: True,
-                                lambda: False)
+    # Reward is the negative of the multiplication count
+    reward = -nops
+    terminated = lax.cond((t == num_v-1).all(), lambda: True, lambda: False)
 
-        return obs, vgs, reward, terminated
+    return obs, vgs, reward, terminated
 
