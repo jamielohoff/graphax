@@ -91,12 +91,12 @@ def _mul(lhs, rhs):
         if type(lhs.aval) is core.ShapedArray and type(rhs.aval) is core.ShapedArray:
             if lhs.aval.ndim == 1:
                 if rhs.aval.ndim == 1:
-                    jnp.einsum("i,m->im", lhs, rhs)
+                    return jnp.einsum("i,m->im", lhs, rhs)
                 elif rhs.aval.ndim == 2:
                     if rhs.aval.shape[0] == 1:
-                        jnp.outer(lhs, rhs)
+                        return jnp.outer(lhs, rhs)
                     else:
-                        jnp.einsum("i,mn->imn", lhs, rhs)
+                        return jnp.einsum("i,mn->imn", lhs, rhs)
                 
             elif lhs.aval.ndim == 2:
                 if rhs.aval.ndim == 1:
@@ -185,7 +185,7 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
     env = {}
     graph = defaultdict(lambda: defaultdict())
     transpose_graph = defaultdict(lambda: defaultdict())
-    
+
     # Reads variable and corresponding traced shaped array
     def read(var):
         if type(var) is core.Literal:
@@ -196,12 +196,17 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
     def write(var, val):
         env[var] = val
         
-    jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
-    ignore_invars = [invar for i, invar in enumerate(jaxpr.invars) if i not in argnums]
+    def write_elemental(invar, outval):
+        if isinstance(invar, core.Var):
+                graph[invar][eqn.outvars[0]] = outval
+                transpose_graph[eqn.outvars[0]][invar] = outval
+                
+    # jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
+    # ignore_invars = [invar for i, invar in enumerate(jaxpr.invars) if i not in argnums]
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
-    # TODO merge the two loops into one
+    # TODO merge the two loops into one?
     # Loop though elemental partials
     for eqn in jaxpr.eqns:
         invals = safe_map(read, eqn.invars)
@@ -212,68 +217,60 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         safe_map(write, eqn.outvars, [primal_outvals])
 
         elemental_outvals = elemental_outvals if type(elemental_outvals) is tuple else [elemental_outvals]
-        for invar, outval in zip(eqn.invars, elemental_outvals):
-            if isinstance(invar, core.Var) and not invar in ignore_invars:
-                graph[invar][eqn.outvars[0]] = outval
-                transpose_graph[eqn.outvars[0]][invar] = outval
-        
+        safe_map(write_elemental, eqn.invars, elemental_outvals)
+
     # Eliminate the vertices
     for vertex in order:
         eqn = jaxpr.eqns[vertex-1]
         for out_edge in graph[eqn.outvars[0]].keys():
+            out_val = graph[eqn.outvars[0]][out_edge]
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 in_val = transpose_graph[eqn.outvars[0]][in_edge]
-                out_val = graph[eqn.outvars[0]][out_edge]
                 edge_outval = _mul(in_val, out_val)
                 if in_edge in transpose_graph[out_edge].keys():
                     _edge = transpose_graph[out_edge][in_edge]
                     edge_outval += _edge
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
-                        
-        # Cleanup eliminated vertices
-        # TODO make a separate function?
-        for out_edge in graph[eqn.outvars[0]].keys():
+                del graph[in_edge][eqn.outvars[0]]
             del transpose_graph[out_edge][eqn.outvars[0]]
-        for in_edge in transpose_graph[eqn.outvars[0]].keys():
-            del graph[in_edge][eqn.outvars[0]]
-            
+        
+        # Cleanup eliminated vertices            
         del graph[eqn.outvars[0]]
         del transpose_graph[eqn.outvars[0]]    
 
     # Collect outputs
     # TODO this can be optimized as well
-    jac_vals = [graph[invar][outvar].T for outvar in jaxpr.outvars for invar in jaxpr_invars]
+    jac_vals = [graph[invar][outvar] for outvar in jaxpr.outvars for invar in jaxpr.invars]
     jacobians = [tuple(jac_vals[i:i+len(jaxpr.invars)]) for i in range(0, len(jac_vals)//len(jaxpr.outvars))]
     return jacobians
 
-
-import time
-
-
-def f(x, y):
-    z = x * y
-    w = z**3
-    return w + z, jnp.log(w)
+import timeit
 
 
-x = jnp.ones(200)
-y = 2.*jnp.ones(200)
-print(jax.make_jaxpr(jacve(f, [2, 1]))(x, y))
-jacve(f, [2, 1])(x, y)
+# def f(x, y):
+#     z = x * y
+#     w = z**3
+#     return w + z, jnp.log(w)
 
-st = time.time()
-for _ in range(1000):
-    jacve(f, [2, 1], argnums=(0, 1))(x, y)
-print(time.time() - st)
 
-jac_f = jax.jacfwd(f, argnums=(0,))
-jac_f(x, y)
+# x = jnp.ones(200)
+# y = 2.*jnp.ones(200)
+# print(jax.make_jaxpr(jacve(f, [2, 1]))(x, y))
+# jacve(f, [2, 1])(x, y)
 
-st = time.time()
-for _ in range(1000):
-    jac_f(x, y)
-print(time.time() - st)
+# st = time.time()
+# for _ in range(1000):
+#     jacve(f, [2, 1], argnums=(0, 1))(x, y)
+# print(time.time() - st)
+
+# jac_f = jax.jacfwd(f, argnums=(0,))
+# jac_f(x, y)
+
+# st = time.time()
+# for _ in range(1000):
+#     jac_f(x, y)
+# print(time.time() - st)
 
 
 def Helmholtz(x):
@@ -282,34 +279,19 @@ def Helmholtz(x):
 
 
 x = jnp.ones(400)/500.
-print(jax.make_jaxpr(jacve(Helmholtz, [2, 5, 4, 3, 1]))(x))
+print(jax.make_jaxpr(jacve(Helmholtz, [1, 2, 3, 4, 5]))(x))
 
-jacve(Helmholtz, [2, 5, 4, 3, 1])(x)
-st = time.time()
-for _ in range(1000):
-    jacve(Helmholtz, [2, 5, 4, 3, 1])(x)
-print(time.time() - st)
+print(jacve(Helmholtz, [1, 2, 3, 4, 5])(x))
+print(timeit.timeit(lambda: jacve(Helmholtz, [2, 5, 4, 3, 1])(x), number=1000))
+print(timeit.timeit(lambda: jacve(Helmholtz, [1, 2, 3, 4, 5])(x), number=1000))
+print(timeit.timeit(lambda: jacve(Helmholtz, [5, 4, 3, 2, 1])(x), number=1000))
 
-jacve(Helmholtz, [1, 2, 3, 4, 5])(x)
-st = time.time()
-for _ in range(1000):
-    jacve(Helmholtz, [1, 2, 3, 4, 5])(x)
-print(time.time() - st)
-
-jacve(Helmholtz, [5, 4, 3, 2, 1])(x)
-st = time.time()
-for _ in range(1000):
-    jacve(Helmholtz, [5, 4, 3, 2, 1])(x)
-print(time.time() - st)
 
 jac_Helmholtz = jax.jacfwd(Helmholtz, argnums=(0,))
 print(jax.make_jaxpr(jac_Helmholtz)(x))
 
-jac_Helmholtz(x)
-st = time.time()
-for _ in range(1000): 
-    jac_Helmholtz(x)
-print(time.time() - st)
+print(jac_Helmholtz(x))
+print(timeit.timeit(lambda: jac_Helmholtz(x), number=1000))
 
 
 # def matmul(x, y):
