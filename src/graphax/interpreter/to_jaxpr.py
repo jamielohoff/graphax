@@ -51,7 +51,7 @@ def add_partials(x, y):
     else:
         return jax._src.ad_util.add_jaxvals(x, y)
    
-# TODO use multiple dispatch here! 
+
 def _eye_like1(val):
     if hasattr(val, "aval"):
         if type(val.aval) is core.ShapedArray:
@@ -75,45 +75,38 @@ def _eye_like(in_val, out_val):
     return 1.
 
 
-def _ones_like(val):
-    if hasattr(val, "aval"):
-        if type(val.aval) is core.ShapedArray:
-            size = val.size
-            if size > 1:
-                return jnp.ones((size, size)).reshape(*val.shape, *val.shape)
-    return 1.
-
-
 # Manages the multiplication of Jacobians
-# TODO this guy needs some serious simplification
-def _mul(lhs, rhs):
-    if hasattr(lhs, "aval") and hasattr(rhs, "aval"):
-        if type(lhs.aval) is core.ShapedArray and type(rhs.aval) is core.ShapedArray:
-            if lhs.aval.ndim == 1:
-                if rhs.aval.ndim == 1:
-                    return jnp.einsum("i,m->im", lhs, rhs)
-                elif rhs.aval.ndim == 2:
-                    if rhs.aval.shape[0] == 1:
-                        return jnp.outer(lhs, rhs)
-                    else:
-                        return jnp.einsum("i,mn->imn", lhs, rhs)
-                
-            elif lhs.aval.ndim == 2:
-                if rhs.aval.ndim == 1:
-                    return jnp.einsum("ik,k->i", lhs, rhs)
-                elif rhs.aval.ndim == 2:
-                    return jnp.einsum("ik,km->im", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("ik,km->im", lhs, rhs)
-                else:
-                    return 0
-            else:
-                return jnp.einsum("ijkl,klmn->ijmn", lhs, rhs)
+def _mul(lhs, rhs, vertex):
+    if vertex.aval.ndim == 1:
+        return jnp.einsum("...ik,km...->im...", lhs, rhs)
+    elif vertex.aval.ndim == 2:
+        return jnp.einsum("...ijkl,klmn...->ijmn...", lhs, rhs)
+    
+    # if lhs.aval.ndim == 1:
+    #     if rhs.aval.ndim == 1:
+    #         return jnp.einsum("i,m->im", lhs, rhs)
+    #     elif rhs.aval.ndim == 2:
+    #         if rhs.aval.shape[0] == 1:
+    #             return jnp.outer(lhs, rhs)
+    #         else:
+    #             return jnp.einsum("i,mn->imn", lhs, rhs)
+        
+    # elif lhs.aval.ndim == 2:
+    #     if rhs.aval.ndim == 1:
+    #         return jnp.einsum("ik,k->i", lhs, rhs)
+    #     elif rhs.aval.ndim == 2:
+    #         return jnp.einsum("ik,km->im", lhs, rhs)
+    #     elif rhs.aval.ndim == 3:
+    #         return jnp.einsum("ik,kmn->imn", lhs, rhs)
+    #     else:
+    #         return 0
+    # else:
+    #     return jnp.einsum("ijkl,klmn->ijmn", lhs, rhs)
     return lhs * rhs
     
 # Define elemental partials
 defpartial(lax.neg_p, lambda x: -_eye_like1(x))
-defpartial(lax.integer_pow_p, lambda x, y: y*x**(y-1))
+defpartial(lax.integer_pow_p, lambda x, y: y*x**(y-1)*_eye_like1(x))
 
 defpartial2(lax.exp_p, lambda x: x*_eye_like1(x))
 defpartial(lax.log_p, lambda x: _eye_like1(x)/x)
@@ -145,7 +138,13 @@ def mul_partial(out, x, y):
         return (y*eye, x*eye)
     else:
         return (y*_eye_like(x, out), x*_eye_like(y, out))
-        # return lambda out, x, y: (y*_eye_like(x, out), x*_eye_like(y, out))
+        
+def sub_partial(out, x, y):
+    if x.shape == y.shape:
+        eye = _eye_like1(x)
+        return (eye, eye)
+    else:
+        return (_eye_like(y, out), -_eye_like(x, out))
     
 def div_partial(out, x, y):
     if x.shape == y.shape:
@@ -156,11 +155,17 @@ def div_partial(out, x, y):
     
 defpartial2(lax.add_p, add_partial)
 defpartial2(lax.mul_p, mul_partial)
-defpartial2(lax.sub_p, lambda out, x, y: (_eye_like(y, out), -_eye_like(x, out)))
+defpartial2(lax.sub_p, sub_partial)
 defpartial2(lax.div_p, div_partial)
 
+# TODO this is incorrect!
+# defpartial(lax.transpose_p, lambda x: jnp.ones_like(x).T)   
+
+def reduce_sum_partial(x, axes):
+    pass
+
 defpartial(lax.reduce_sum_p, lambda x, axes: jnp.ones_like(x))     
-defpartial(lax.transpose_p, lambda x: jnp.ones_like(x).T)        
+     
 # defpartial(lax.dot_general_p, lambda x, y: jnp.ones_like(x).T)
 
 def jacve(fun, order, argnums=(0,)):
@@ -206,7 +211,6 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
-    # TODO merge the two loops into one?
     # Loop though elemental partials
     for eqn in jaxpr.eqns:
         invals = safe_map(read, eqn.invars)
@@ -226,13 +230,17 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             out_val = graph[eqn.outvars[0]][out_edge]
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 in_val = transpose_graph[eqn.outvars[0]][in_edge]
-                edge_outval = _mul(in_val, out_val)
+                edge_outval = _mul(in_val, out_val, eqn.outvars[0])
                 if graph.get(in_edge).get(out_edge) is not None:
                     _edge = transpose_graph[out_edge][in_edge]
                     edge_outval += _edge
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
-                del graph[in_edge][eqn.outvars[0]]
+                
+          
+        for in_edge in transpose_graph[eqn.outvars[0]].keys():
+            del graph[in_edge][eqn.outvars[0]]
+        for out_edge in graph[eqn.outvars[0]].keys():    
             del transpose_graph[out_edge][eqn.outvars[0]]
         
         # Cleanup eliminated vertices            
@@ -245,32 +253,35 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
     jacobians = [tuple(jac_vals[i:i+len(jaxpr.invars)]) for i in range(0, len(jac_vals)//len(jaxpr.outvars))]
     return jacobians
 
+
 import timeit
 
 
-# def f(x, y):
-#     z = x * y
-#     w = z**3
-#     return w + z, jnp.log(w)
+def f(x, y):
+    z = x * y
+    w = z**3
+    return w + z, jnp.log(w)
 
 
-# x = jnp.ones(200)
-# y = 2.*jnp.ones(200)
-# print(jax.make_jaxpr(jacve(f, [2, 1]))(x, y))
-# jacve(f, [2, 1])(x, y)
+x = jnp.ones(20)
+y = 2.*jnp.ones(20)
+jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
+print(jaxpr)
 
-# st = time.time()
-# for _ in range(1000):
-#     jacve(f, [2, 1], argnums=(0, 1))(x, y)
-# print(time.time() - st)
+# print(jacve(f, [2, 1])(x, y))
+jacfwd_f = jacve(f, [1, 2])
+jacrev_f = jacve(f, [2, 1])
+print(timeit.timeit(lambda: jacfwd_f(x, y), number=1000))
+print(timeit.timeit(lambda: jacrev_f(x, y), number=1000))
 
-# jac_f = jax.jacfwd(f, argnums=(0,))
-# jac_f(x, y)
 
-# st = time.time()
-# for _ in range(1000):
-#     jac_f(x, y)
-# print(time.time() - st)
+jac_f = jax.jacfwd(f, argnums=(0,1))
+# print(jac_f(x, y))
+print(timeit.timeit(lambda: jac_f(x, y), number=1000))
+
+jac_f = jax.jacrev(f, argnums=(0, 1))
+jac_f(x, y)
+print(timeit.timeit(lambda: jac_f(x, y), number=1000))
 
 
 def Helmholtz(x):
@@ -278,7 +289,7 @@ def Helmholtz(x):
     return x * z
 
 
-x = jnp.ones(1000)/2000.
+x = jnp.ones(300)/2000. # jnp.array([0.1, 0.2, 0.3, 0.3]) # 
 print(jax.make_jaxpr(jacve(Helmholtz, [1, 2, 3, 4, 5]))(x))
 
 print(jacve(Helmholtz, [1, 2, 3, 4, 5])(x))
