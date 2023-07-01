@@ -1,217 +1,354 @@
-from typing import Dict, Sequence, Tuple
+from functools import wraps, partial, reduce
 from collections import defaultdict
 
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
-from jax.core import (ClosedJaxpr, 
-                    Jaxpr, 
-                    JaxprEqn, 
-                    Primitive, 
-                    eval_jaxpr, 
-                    new_jaxpr_eqn, 
-                    Var, 
-                    Atom, 
-                    Literal, 
-                    ShapedArray)
+from jax._src.util import safe_map
+from jax._src.ad_util import Zero
+import jax._src.core as core
+
+from jax.tree_util import tree_flatten, tree_unflatten
 
 
-class ElementalPartial:
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        pass
-    
-class ElementalExp(ElementalPartial):
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        return eqn.outvars, None
-    
-class ElementalSin(ElementalPartial):
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        outvars = [Var(count, "_d", ShapedArray((), jnp.float32))]
-        return outvars, new_jaxpr_eqn(eqn.invars, outvars, lax.cos_p, {}, set(), source_info=None)
-    
-class ElementalAdd(ElementalPartial):
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        # TODO improve this for vectorized edges
-        return [Literal(1., ShapedArray((), jnp.float32))], None
-    
-class ElementalMul(ElementalPartial):
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        # swap invars and outvars here
-        outvars = list(set(eqn.invars) - set([invar]))
-        return outvars, None
-    
-class ElementalTan(ElementalPartial):
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        # swap invars and outvars here
-        outvars = list(set(eqn.invars) - set([invar]))
-        return outvars, None
-    
-class ElementalDiv(ElementalPartial):
-    def get_jaxpr(self, invar, eqn, count) -> Sequence[JaxprEqn]:
-        # swap invars and outvars here
-        outvars = list(set(eqn.invars) - set([invar]))
-        return outvars, None
-    
 elemental_registry = {}
 
-elemental_registry[lax.exp_p] = ElementalExp()
-elemental_registry[lax.sin_p] = ElementalSin()
-elemental_registry[lax.add_p] = ElementalAdd()
-elemental_registry[lax.mul_p] = ElementalMul()
 
-# def f(x, y):
-#     z = x * y
-#     w = jnp.sin(z)
-#     return w + z, jnp.exp(z)
+def defpartial(primitive, *partialrules):
+    assert isinstance(primitive, core.Primitive)
+    assert not primitive.multiple_results
+    elemental_registry[primitive] = partial(standard_partial, partialrules, primitive)
 
-def f(nu, gamma, omega, t):
-        y1 = nu*jnp.tan(omega*t)/(gamma-jnp.tan(omega*t))
-        y2 = gamma*y1
-        return y1, y2
 
-jaxpr = jax.make_jaxpr(f)(2., 2., 2., 2.)
-jac_f = jax.jacrev(f, argnums=(0, 1, 2, 3))
-print(jac_f(2., 2., 2., 2.))
-jac_jaxpr = jax.make_jaxpr(jac_f)(2., 2., 2., 2.)
-print(jac_jaxpr)
-
-class ComputationalGraph:
-    edges: Dict
-    jaxpr: ClosedJaxpr
-    count: int
-    num_invars: int
-    derivative_code: Sequence[JaxprEqn]
+def standard_partial(partialrules, primitive, primals, **params):
+    val_out = primitive.bind(*primals, **params)
     
-    def __init__(self, jaxpr: ClosedJaxpr) -> None:
-        self.jaxpr = jaxpr
-        self.count = len([eqn.outvars[0] for eqn in jaxpr.jaxpr._eqns]) + len(jaxpr.jaxpr._invars)
-        self.num_invars = len(self.jaxpr.jaxpr._invars)
-        self.in_edges = {i: {} for i in range(-self.num_invars+1, len(jaxpr.eqns)+1)}
-        self.out_edges = {i: {} for i in range(-self.num_invars+1, len(jaxpr.eqns)+1)}
-        self.derivative_code = []
-        
-        for j, eqn in enumerate(self.jaxpr.eqns, 1):
-            # Add "global" incoming edges to the vertex if the exist
-            for i, invar in enumerate(self.jaxpr.jaxpr._invars, -self.num_invars+1):
-                if invar in eqn.invars:
-                    if j in self.out_edges[i]:
-                        self.in_edges[j][i] = self.out_edges[i][j]
-                    else: 
-                        derivative = elemental_registry[eqn.primitive]
-                        partials, jaxpreqn = derivative.get_jaxpr(invar, eqn, self.count)
-                        self.in_edges[j][i] = partials
-                        self.out_edges[i][j] = partials
-                        if jaxpreqn is not None :
-                            self.derivative_code.append(jaxpreqn)
-                            self.count += 1
-            
-            # Add incoming edges to the vertex
-            for i, _eqn in enumerate(self.jaxpr.eqns[:j], 1):
-                if len(set(eqn.invars) & set(_eqn.outvars)) != 0:
-                    if j in self.out_edges[i]:
-                        self.in_edges[j][i] = self.out_edges[i][j]
-                    else: 
-                        derivative = elemental_registry[eqn.primitive]
-                        partials, jaxpreqn = derivative.get_jaxpr(_eqn.outvars[0], eqn, self.count)
-                        self.in_edges[j][i] = partials
-                        self.out_edges[i][j] = partials
-                        if jaxpreqn is not None :
-                            self.derivative_code.append(jaxpreqn)
-                            self.count += 1
-                       
-            # Add outgoing edges to the vertex
-            for k, _eqn in enumerate(self.jaxpr.eqns[j+1:], j+1):
-                if len(set(eqn.invars) & set(_eqn.outvars)) != 0:
-                    if j in self.in_edges[k]:
-                        self.out_edges[j][k] = self.in_edges[k][j] 
+    partials_out = [rule(*primals, **params) for rule in partialrules 
+                    if rule is not None]
+    return val_out, reduce(add_partials, partials_out, Zero.from_value(val_out))
+
+
+# Useful for stuff such as exp_p
+def defpartial2(primitive, *partialrules):
+    assert isinstance(primitive, core.Primitive)
+    assert not primitive.multiple_results
+    elemental_registry[primitive] = partial(standard_partial2, partialrules, primitive)
+
+
+def standard_partial2(partialrules, primitive, primals, **params):
+    val_out = primitive.bind(*primals, **params)
+    
+    partials_out = [rule(val_out, *primals, **params) for rule in partialrules 
+                    if rule is not None]
+    return val_out, reduce(add_partials, partials_out, Zero.from_value(val_out))
+
+
+def add_partials(x, y):
+    if type(x) is Zero:
+        return y
+    elif type(y) is Zero:
+        return x
+    else:
+        return jax._src.ad_util.add_jaxvals(x, y)
+   
+# TODO use multiple dispatch here! 
+def _eye_like1(val):
+    if hasattr(val, "aval"):
+        if type(val.aval) is core.ShapedArray:
+            size = val.size
+            if size > 1:
+                return jnp.eye(size, size).reshape(*val.shape, *val.shape)
+    return 1.
+
+
+def _eye_like(in_val, out_val):
+    if hasattr(in_val, "aval") and hasattr(out_val, "aval"):
+        if type(in_val.aval) is core.ShapedArray and type(out_val.aval) is core.ShapedArray:
+            in_size = in_val.size
+            out_size = out_val.size
+            if in_size > 1 and out_size > 1:
+                return jnp.eye(in_size, out_size).reshape(*in_val.shape, *out_val.shape)
+            elif in_size > 1 and out_size == 1:
+                return jnp.ones(in_size)
+            elif in_size == 1 and out_size > 1:
+                return jnp.ones((1, out_size))
+    return 1.
+
+
+def _ones_like(val):
+    if hasattr(val, "aval"):
+        if type(val.aval) is core.ShapedArray:
+            size = val.size
+            if size > 1:
+                return jnp.ones((size, size)).reshape(*val.shape, *val.shape)
+    return 1.
+
+
+# Manages the multiplication of Jacobians
+# TODO this guy needs some serious simplification
+def _mul(lhs, rhs):
+    if hasattr(lhs, "aval") and hasattr(rhs, "aval"):
+        if type(lhs.aval) is core.ShapedArray and type(rhs.aval) is core.ShapedArray:
+            if lhs.aval.ndim == 1:
+                if rhs.aval.ndim == 1:
+                    jnp.einsum("i,m->im", lhs, rhs)
+                elif rhs.aval.ndim == 2:
+                    if rhs.aval.shape[0] == 1:
+                        jnp.outer(lhs, rhs)
                     else:
-                        derivative = elemental_registry[_eqn.primitive]
-                        partials, jaxpreqn = derivative.get_jaxpr(eqn.outvars[0], _eqn, self.count)
-                        self.in_edges[k][j] = partials
-                        self.out_edges[j][k] = partials
-                        if jaxpreqn is not None:
-                            self.derivative_code.append(jaxpreqn)
-                            self.count += 1 
-    
-    def build(self):
-        self.jaxpr.jaxpr._outvars = []
-        # Package the components of the Jacobian
-        for i in range(-self.num_invars+1, 1):
-            invars = []
-            for j in self.out_edges[i].keys():
-                invar = self.out_edges[i][j]
-                if invar[0].aval.shape == ():
-                    _invars = [Var(self.count, "_d", ShapedArray((1,), jnp.float32))]
-                    eqn = new_jaxpr_eqn(invar, _invars, lax.broadcast_in_dim_p, {"broadcast_dimensions":(), "shape":(1,)}, set(), source_info=None)
-                    invars.extend(_invars)
-                    self.derivative_code.append(eqn)
-                    self.count += 1
-                else: 
-                    invars.extend(invar)
-            l = len(self.out_edges[i].keys())
-            outvars = [Var(self.count, "_d", ShapedArray((l,), jnp.float32))]
-            eqn = new_jaxpr_eqn(invars, outvars, lax.concatenate_p, {"dimension": 0}, set(), source_info=None)
-            self.derivative_code.append(eqn)
-            self.jaxpr.jaxpr._outvars.extend(outvars)
-            self.count += 1
-
-        # Add the derivative code
-        self.jaxpr.jaxpr._eqns.extend(self.derivative_code)
-        return jaxpr 
-    
-    def vertex_eliminate(self, j: int):
-        del_in_idxs = set()
-        del_out_idxs = set()
-        for i in self.in_edges[j].keys():
-            for k in self.out_edges[j].keys():
-                # Multiply the pre-partial and post-partial results
-                outvars = [Var(self.count, "_d", ShapedArray((), jnp.float32))]
-                invars = self.in_edges[j][i] + self.out_edges[j][k]
-                multiplication = new_jaxpr_eqn(invars, outvars, lax.mul_p, {}, set(), source_info=None)
-                self.derivative_code.append(multiplication)
-                self.count += 1
+                        jnp.einsum("i,mn->imn", lhs, rhs)
                 
-                # Check if we have an additional addition because there already exists a direct edge
-                if i in self.in_edges[k].keys():
-                    invars = self.in_edges[k][i] + outvars
-                    outvars = [Var(self.count, "_d", ShapedArray((), jnp.float32))]
-                    addition = new_jaxpr_eqn(invars, outvars, lax.add_p, {}, set(), source_info=None)
-                    self.derivative_code.append(addition)
-                    self.count += 1
-                    
-                self.out_edges[i][k] = outvars
-                self.in_edges[k][i] = outvars
-                del_in_idxs.add((k, j))
-                del_out_idxs.add((i, j))
-        # Delete all the edges of the respective vertex
-        for iidx in del_in_idxs:
-            del self.in_edges[iidx[0]][iidx[1]]
-        for oidx in del_out_idxs:
-            del self.out_edges[oidx[0]][oidx[1]]
-        del self.in_edges[j]
-        del self.out_edges[j]
-        
-    def front_eliminate(self):
-        pass
+            elif lhs.aval.ndim == 2:
+                if rhs.aval.ndim == 1:
+                    return jnp.einsum("ik,k->i", lhs, rhs)
+                elif rhs.aval.ndim == 2:
+                    return jnp.einsum("ik,km->im", lhs, rhs)
+                elif rhs.aval.ndim == 3:
+                    return jnp.einsum("ik,km->im", lhs, rhs)
+                else:
+                    return 0
+            else:
+                return jnp.einsum("ijkl,klmn->ijmn", lhs, rhs)
+    return lhs * rhs
     
-    def back_eliminate(self):
-        pass
+# Define elemental partials
+defpartial(lax.neg_p, lambda x: -_eye_like1(x))
+defpartial(lax.integer_pow_p, lambda x, y: y*x**(y-1))
+
+defpartial2(lax.exp_p, lambda x: x*_eye_like1(x))
+defpartial(lax.log_p, lambda x: _eye_like1(x)/x)
+
+defpartial(lax.sin_p, lambda x: jnp.cos(x)*_eye_like1(x))
+defpartial(lax.asin_p, lambda x: _eye_like1(x)/jnp.sqrt(1.0 - x**2))
+defpartial(lax.cos_p, lambda x: -jnp.sin(x)*_eye_like1(x))
+defpartial(lax.acos_p, lambda x: -_eye_like1(x)/jnp.sqrt(1.0 - x**2))
+defpartial(lax.tan_p, lambda x: _eye_like1(x) + _eye_like1(x)*jnp.tan(x)**2)
+defpartial(lax.atan_p, lambda x: _eye_like1(x)/(1.0 + x**2))
+
+defpartial(lax.sinh_p, lambda x: _eye_like1(x)*jnp.cosh(x))
+defpartial(lax.asinh_p, lambda x: _eye_like1(x)/jnp.sqrt(1.0 + x**2))
+defpartial(lax.cosh_p, lambda x: _eye_like1(x)*jnp.sinh(x))
+defpartial(lax.acosh_p, lambda x: _eye_like1(x)/jnp.sqrt(x**2 - 1.0))
+defpartial(lax.tanh_p, lambda x: _eye_like1(x) - _eye_like1(x)*jnp.tanh(x)**2)
+defpartial(lax.atanh_p, lambda x: _eye_like1(x)/(1.0 - x**2))
+
+def add_partial(out, x, y):
+    if x.shape == y.shape:
+        eye = _eye_like1(x)
+        return (eye, eye)
+    else:
+        return (_eye_like(y, out), _eye_like(x, out))
+    
+def mul_partial(out, x, y):
+    if x.shape == y.shape:
+        eye = _eye_like1(x)
+        return (y*eye, x*eye)
+    else:
+        return (y*_eye_like(x, out), x*_eye_like(y, out))
+        # return lambda out, x, y: (y*_eye_like(x, out), x*_eye_like(y, out))
+    
+def div_partial(out, x, y):
+    if x.shape == y.shape:
+        eye = _eye_like1(x)
+        return (eye/y, -eye*x/y**2)
+    else:
+        return (_eye_like(x, out)/y, -_eye_like(y, out)*x/y**2)
+    
+defpartial2(lax.add_p, add_partial)
+defpartial2(lax.mul_p, mul_partial)
+defpartial2(lax.sub_p, lambda out, x, y: (_eye_like(y, out), -_eye_like(x, out)))
+defpartial2(lax.div_p, div_partial)
+
+defpartial(lax.reduce_sum_p, lambda x, axes: jnp.ones_like(x))     
+defpartial(lax.transpose_p, lambda x: jnp.ones_like(x).T)        
+# defpartial(lax.dot_general_p, lambda x, y: jnp.ones_like(x).T)
+
+def jacve(fun, order, argnums=(0,)):
+    @wraps(fun)
+    def wrapped(*args, **kwargs):
+        # Make repackaging work properly with one input value only
+        flattened_args, in_tree = tree_flatten(args)
+        closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
+        out = vertex_elimination_jaxpr(closed_jaxpr.jaxpr, order, closed_jaxpr.literals, *args, argnums=argnums)
+        # out = tree_unflatten(in_tree, out)
+        return out
+    return wrapped
 
 
-graph = ComputationalGraph(jaxpr)
-for i in range(1, 9):
-    graph.vertex_eliminate(i)
-print(graph.out_edges)
-new_jaxpr = graph.build()
-print(new_jaxpr)
+def _get_shape_dtype(val):
+    if type(val) is core.ShapedArray:
+        return val.shape, val.dtype
+    return (), type(val)    
+
+
+def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
+    env = {}
+    graph = defaultdict(lambda: defaultdict())
+    transpose_graph = defaultdict(lambda: defaultdict())
+    
+    # Reads variable and corresponding traced shaped array
+    def read(var):
+        if type(var) is core.Literal:
+            return var.val
+        return env[var]
+
+    # Adds new variable and corresponding traced shaped array
+    def write(var, val):
+        env[var] = val
+        
+    jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
+    ignore_invars = [invar for i, invar in enumerate(jaxpr.invars) if i not in argnums]
+    safe_map(write, jaxpr.invars, args)
+    safe_map(write, jaxpr.constvars, consts)
+
+    # TODO merge the two loops into one
+    # Loop though elemental partials
+    for eqn in jaxpr.eqns:
+        invals = safe_map(read, eqn.invars)
+        if eqn.primitive not in elemental_registry:
+            raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
+        
+        primal_outvals, elemental_outvals = elemental_registry[eqn.primitive](invals, **eqn.params)
+        safe_map(write, eqn.outvars, [primal_outvals])
+
+        elemental_outvals = elemental_outvals if type(elemental_outvals) is tuple else [elemental_outvals]
+        for invar, outval in zip(eqn.invars, elemental_outvals):
+            if isinstance(invar, core.Var) and not invar in ignore_invars:
+                graph[invar][eqn.outvars[0]] = outval
+                transpose_graph[eqn.outvars[0]][invar] = outval
+        
+    # Eliminate the vertices
+    for vertex in order:
+        eqn = jaxpr.eqns[vertex-1]
+        for out_edge in graph[eqn.outvars[0]].keys():
+            for in_edge in transpose_graph[eqn.outvars[0]].keys():
+                in_val = transpose_graph[eqn.outvars[0]][in_edge]
+                out_val = graph[eqn.outvars[0]][out_edge]
+                edge_outval = _mul(in_val, out_val)
+                if in_edge in transpose_graph[out_edge].keys():
+                    _edge = transpose_graph[out_edge][in_edge]
+                    edge_outval += _edge
+                graph[in_edge][out_edge] = edge_outval
+                transpose_graph[out_edge][in_edge] = edge_outval
+                        
+        # Cleanup eliminated vertices
+        # TODO make a separate function?
+        for out_edge in graph[eqn.outvars[0]].keys():
+            del transpose_graph[out_edge][eqn.outvars[0]]
+        for in_edge in transpose_graph[eqn.outvars[0]].keys():
+            del graph[in_edge][eqn.outvars[0]]
+            
+        del graph[eqn.outvars[0]]
+        del transpose_graph[eqn.outvars[0]]    
+
+    # Collect outputs
+    # TODO this can be optimized as well
+    jac_vals = [graph[invar][outvar].T for outvar in jaxpr.outvars for invar in jaxpr_invars]
+    jacobians = [tuple(jac_vals[i:i+len(jaxpr.invars)]) for i in range(0, len(jac_vals)//len(jaxpr.outvars))]
+    return jacobians
+
 
 import time
 
-f = lambda x, y: eval_jaxpr(new_jaxpr.jaxpr, new_jaxpr.literals, x, y)
-f_jit = jax.jit(f)
-print(f_jit(2., 2., 2., 2.))
+
+def f(x, y):
+    z = x * y
+    w = z**3
+    return w + z, jnp.log(w)
+
+
+x = jnp.ones(200)
+y = 2.*jnp.ones(200)
+print(jax.make_jaxpr(jacve(f, [2, 1]))(x, y))
+jacve(f, [2, 1])(x, y)
+
 st = time.time()
-for _ in range(100000):
-    f_jit(2., 2., 2., 2.)
+for _ in range(1000):
+    jacve(f, [2, 1], argnums=(0, 1))(x, y)
 print(time.time() - st)
+
+jac_f = jax.jacfwd(f, argnums=(0,))
+jac_f(x, y)
+
+st = time.time()
+for _ in range(1000):
+    jac_f(x, y)
+print(time.time() - st)
+
+
+def Helmholtz(x):
+    z = jnp.log(x / (1. + -jnp.sum(x)))
+    return x * z
+
+
+x = jnp.ones(400)/500.
+print(jax.make_jaxpr(jacve(Helmholtz, [2, 5, 4, 3, 1]))(x))
+
+jacve(Helmholtz, [2, 5, 4, 3, 1])(x)
+st = time.time()
+for _ in range(1000):
+    jacve(Helmholtz, [2, 5, 4, 3, 1])(x)
+print(time.time() - st)
+
+jacve(Helmholtz, [1, 2, 3, 4, 5])(x)
+st = time.time()
+for _ in range(1000):
+    jacve(Helmholtz, [1, 2, 3, 4, 5])(x)
+print(time.time() - st)
+
+jacve(Helmholtz, [5, 4, 3, 2, 1])(x)
+st = time.time()
+for _ in range(1000):
+    jacve(Helmholtz, [5, 4, 3, 2, 1])(x)
+print(time.time() - st)
+
+jac_Helmholtz = jax.jacfwd(Helmholtz, argnums=(0,))
+print(jax.make_jaxpr(jac_Helmholtz)(x))
+
+jac_Helmholtz(x)
+st = time.time()
+for _ in range(1000): 
+    jac_Helmholtz(x)
+print(time.time() - st)
+
+
+# def matmul(x, y):
+#     z = x @ y
+#     w = x.T + y
+#     return z, w
+
+# x = jnp.ones((2, 3))
+# y = jnp.ones((3, 2))
+# print(jax.make_jaxpr(vertex_elimination_jacobian(matmul, [3, 2, 1]))(x, y))
+# print("Result:", vertex_elimination_jacobian(matmul, [3, 2, 1])(x, y))
+
+# jac_matmul = jax.jacfwd(matmul, argnums=(0, 1))
+# print(jax.make_jaxpr(jac_matmul)(x, y))
+# print(jac_matmul(x, y))
+
+
+# def NeuralNetwork(x, W1, b1, W2, b2, y):
+#     y1 = W1 @ x
+#     z1 = y1 + b1
+#     a1 = jnp.tanh(z1)
+    
+#     y2 = W2 @ a1
+#     z2 = y2 + b2
+#     a2 = jnp.tanh(z2)
+#     d = a2 - y
+#     e = d**2
+#     return .5*jnp.sum(e)
+
+# x = jnp.ones(4)
+# y = jnp.ones(4)
+
+# W1 = jnp.ones((3, 4))
+# b1 = jnp.ones(3)
+
+# W2 = jnp.ones((4, 3))
+# b2 = jnp.ones(4)
+# print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
+# jac_Helmholtz = jax.jacrev(Helmholtz, argnums=(1,))
+# print(jax.make_jaxpr(jac_Helmholtz)(x))
+# print(jac_Helmholtz(x))
 

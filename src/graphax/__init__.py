@@ -4,7 +4,7 @@ from .core import (make_empty_edges,
                     vertex_eliminate, 
                     forward, 
                     reverse)
-from .vertex_game import VertexGameState, VertexGame, make_vertex_game_state
+from .vertex_game import VertexGameState, make_vertex_game_state, step
 from .transforms.embedding import embed
 
 if sys.version_info[:2] >= (3, 8):

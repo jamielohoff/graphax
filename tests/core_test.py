@@ -1,3 +1,5 @@
+import jax
+
 from graphax import vertex_eliminate, forward, reverse, make_graph
 from graphax.examples import make_simple
 from graphax.examples import make_Helmholtz
@@ -5,50 +7,46 @@ from graphax.examples import make_Helmholtz
 
 # Test on simple example
 edges = make_simple()
-print(edges)
-
-edges, fmas = forward(edges)
-print(edges)
-print(fmas)
+edges, fmas = jax.jit(forward)(edges)
+print(fmas, "8")
 
 edges = make_simple()
-edges, fmas = reverse(edges)
-print(fmas)
+edges, fmas = jax.jit(reverse)(edges)
+print(fmas, "6")
 
 
 # Test on Helmholtz example
 edges = make_Helmholtz()
-print(edges)
 
 # Optimal elimination procedure
-edges, fmas = vertex_eliminate(2, edges)
-print(edges, fmas)
+edges, fmas = jax.jit(vertex_eliminate)(2, edges)
+print(fmas, "1")
 
-edges, _fmas = vertex_eliminate(5, edges)
+edges, _fmas = jax.jit(vertex_eliminate)(5, edges)
 fmas += _fmas
-print(edges, _fmas)
+print(_fmas, "4")
 
-edges, _fmas = vertex_eliminate(4, edges)
+edges, _fmas = jax.jit(vertex_eliminate)(4, edges)
 fmas += _fmas
-print(edges, _fmas)
+print(_fmas, "8")
 
-edges, _fmas = vertex_eliminate(3, edges)
+edges, _fmas = jax.jit(vertex_eliminate)(3, edges)
 fmas += _fmas
-print(edges, _fmas)
+print(_fmas, "4")
 
-edges, _fmas = vertex_eliminate(1, edges)
+edges, _fmas = jax.jit(vertex_eliminate)(1, edges)
 fmas += _fmas
-print(edges, _fmas)
+print(_fmas, "16")
 print("Result:")
-print(fmas)
+print(fmas, "33")
 
 edges = make_Helmholtz()
-edges, fmas = forward(edges)
-print(fmas)
+edges, fmas = jax.jit(forward)(edges)
+print(fmas, "56")
 
 edges = make_Helmholtz()
-edges, fmas = reverse(edges)
-print(fmas)
+edges, fmas = jax.jit(reverse)(edges)
+print(fmas, "36")
 
 # Test on neural network
 # def NeuralNetwork(x, W1, b1, W2, b2, y):

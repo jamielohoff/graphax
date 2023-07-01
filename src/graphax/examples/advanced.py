@@ -56,22 +56,15 @@ def make_hessian():
     return make_graph(grad_f, 1., 1., 1., 1.)
 
 
-def make_softmax_attention():
-    def softmax(x):
-        exp = jnp.exp(x)
-        norm = jnp.sum(exp, axis=-1)
-        return exp / norm
-    
+def make_softmax_attention():    
     def attn(q, k, v):
-        a1 = q[0] * k
-        a2 = q[1] * k
-        b1 = jnp.dot(softmax(a1), v)
-        b2 = jnp.dot(softmax(a2), v)
-        return jnp.array([b1, b2])
+        a = q.T @ k
+        z = jnn.softmax(a, axis=1)
+        return z @ v
     
-    q = jnp.ones(2)
-    k = jnp.ones(2)
-    v = jnp.ones(2)
+    q = jnp.ones((4, 4))
+    k = jnp.ones((4, 4))
+    v = jnp.ones((4, 4))
     
     print(jax.make_jaxpr(attn)(q, k, v))
     

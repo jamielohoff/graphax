@@ -72,6 +72,7 @@ vertex_registry[lax.tan_p] = add_mono_vertex
 vertex_registry[lax.asin_p] = add_mono_vertex
 vertex_registry[lax.acos_p] = add_mono_vertex
 vertex_registry[lax.atan_p] = add_mono_vertex
+vertex_registry[lax.atan2_p] = add_mono_vertex
 
 vertex_registry[lax.sinh_p] = add_mono_vertex
 vertex_registry[lax.cosh_p] = add_mono_vertex
@@ -84,7 +85,7 @@ vertex_registry[lax.atanh_p] = add_mono_vertex
 vertex_registry[lax.integer_pow_p] = add_mono_vertex
 
 vertex_registry[lax.convert_element_type_p] = add_mono_vertex
-# We currentlu included the custom derivative operator here 
+# We currently included the custom derivative operator here 
 # to enable spiking functions
 vertex_registry[jax._src.custom_derivatives.custom_jvp_call_p] = add_mono_vertex
 

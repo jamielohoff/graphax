@@ -229,13 +229,14 @@ def forward(edges: Array):
         graph and the number of fmas (fused multiplication-addition ops).
     """
     num_i, num_v = get_info(edges)
+    vertex_mask = 1 + jnp.nonzero(1 - edges.at[1, 0, :].get(), size=num_v, fill_value=-2)[0]
     
     def fwd_fn(carry, vertex):
         _edges, fmas = carry
-        is_masked = jnp.any((vertex == _edges[1, 0, :]))
-        _edges, _fmas = lax.cond(is_masked,
-                                lambda e: (e, 0),
+        not_masked = jnp.any(vertex == vertex_mask)
+        _edges, _fmas = lax.cond(not_masked,
                                 lambda e: vertex_eliminate(vertex, e),
+                                lambda e: (e, 0),
                                 _edges)
         fmas += _fmas
         carry = (_edges, fmas)
@@ -262,13 +263,13 @@ def reverse(edges: Array):
         graph and the number of fmas (fused multiplication-addition ops).
     """
     num_i, num_v = get_info(edges)
-    
+    vertex_mask = 1 + jnp.nonzero(1 - edges.at[1, 0, :].get(), size=num_v, fill_value=-2)[0]
     def rev_fn(carry, vertex):
         _edges, fmas = carry
-        is_masked = jnp.any((vertex == _edges[1, 0, :]))
-        _edges, _fmas = lax.cond(is_masked,
-                                lambda e: (e, 0),
+        not_masked = jnp.any(vertex == vertex_mask)
+        _edges, _fmas = lax.cond(not_masked,
                                 lambda e: vertex_eliminate(vertex, e),
+                                lambda e: (e, 0),
                                _edges)
         fmas += _fmas
         carry = (_edges, fmas)

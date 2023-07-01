@@ -72,7 +72,8 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
         if not outvar in is_invar_list:
             # Track which vertices are output vertices
             idx = variables[str(outvar)]
+            edges = edges.at[1, 0, idx-num_i-1].set(1)
             edges = edges.at[2, 0, idx-num_i-1].set(1)
-    
+
     return edges
 

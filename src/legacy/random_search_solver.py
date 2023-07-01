@@ -8,7 +8,7 @@ import jax.random as jrand
 
 import chex
 
-from .core import GraphInfo, vertex_eliminate_gpu
+from ..core import GraphInfo, vertex_eliminate_gpu
 
 
 def random_solver(edges: chex.Array,
