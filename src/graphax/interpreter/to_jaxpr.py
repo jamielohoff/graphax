@@ -227,7 +227,7 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 in_val = transpose_graph[eqn.outvars[0]][in_edge]
                 edge_outval = _mul(in_val, out_val)
-                if in_edge in transpose_graph[out_edge].keys():
+                if graph.get(in_edge).get(out_edge) is not None:
                     _edge = transpose_graph[out_edge][in_edge]
                     edge_outval += _edge
                 graph[in_edge][out_edge] = edge_outval
@@ -241,7 +241,7 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
 
     # Collect outputs
     # TODO this can be optimized as well
-    jac_vals = [graph[invar][outvar] for outvar in jaxpr.outvars for invar in jaxpr.invars]
+    jac_vals = [graph[invar][outvar].T for outvar in jaxpr.outvars for invar in jaxpr.invars]
     jacobians = [tuple(jac_vals[i:i+len(jaxpr.invars)]) for i in range(0, len(jac_vals)//len(jaxpr.outvars))]
     return jacobians
 
@@ -278,7 +278,7 @@ def Helmholtz(x):
     return x * z
 
 
-x = jnp.ones(400)/500.
+x = jnp.ones(1000)/2000.
 print(jax.make_jaxpr(jacve(Helmholtz, [1, 2, 3, 4, 5]))(x))
 
 print(jacve(Helmholtz, [1, 2, 3, 4, 5])(x))
