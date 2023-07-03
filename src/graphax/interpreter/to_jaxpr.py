@@ -415,14 +415,14 @@ def NeuralNetwork(x, W1, b1, W2, b2, y):
     d = a2 - y
     return .5*jnp.sum(d**2)
 
-x = jnp.ones(4)
-y = jnp.ones(4)
+x = jnp.ones(40)
+y = jnp.ones(40)
 
-W1 = jnp.ones((3, 4))
-b1 = jnp.ones(3)
+W1 = jnp.ones((30, 40))
+b1 = jnp.ones(30)
 
-W2 = jnp.ones((4, 3))
-b2 = jnp.ones(4)
+W2 = jnp.ones((40, 30))
+b2 = jnp.ones(40)
 print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
 
 jac_NN = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
