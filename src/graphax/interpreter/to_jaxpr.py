@@ -425,12 +425,12 @@ W2 = jnp.ones((4, 3))
 b2 = jnp.ones(4)
 print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
 
-jac_NN = jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5))
+jac_NN = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
 revres = jac_NN(x, W1, b1, W2, b2, y)[0]
 print(timeit.timeit(lambda: jac_NN(x, W1, b1, W2, b2, y), number=10000))
 
 print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
-jacrev = jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1])
+jacrev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
 veres = jacrev(x, W1, b1, W2, b2, y)[0]
 print(timeit.timeit(lambda: jacrev(x, W1, b1, W2, b2, y), number=10000))
 
