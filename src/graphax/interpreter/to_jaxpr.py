@@ -1,4 +1,4 @@
-from functools import wraps, partial, reduce
+from functools import wraps, partial
 from collections import defaultdict
 
 import timeit
@@ -6,234 +6,198 @@ import timeit
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
+import jax.random as jrand
 from jax._src.util import safe_map
-from jax._src.ad_util import Zero
 import jax._src.core as core
 
 from jax.tree_util import tree_flatten, tree_unflatten
+from graphax.interpreter.sparse_tensor import SparseTensor, DenseDimension, SparseDimension
+
+
+def make_parallel_jacobian(primal, out, elemental):
+    size = len(primal.aval.shape)
+    out_dims = [SparseDimension(i, elemental.aval.shape[i], i, size+i) 
+                for i, e in enumerate(elemental.aval.shape)]
+    primal_dims = [SparseDimension(size+i, elemental.aval.shape[i], i, i) 
+                for i, e in enumerate(elemental.aval.shape)]
+    return SparseTensor(out_dims, primal_dims, elemental)
 
 
 elemental_rules = {}
 
 
-def defelemental(primitive, *elementalrules):
+def defelemental(primitive, elementalrule):
     assert isinstance(primitive, core.Primitive)
     assert not primitive.multiple_results
-    elemental_rules[primitive] = partial(standard_elemental, elementalrules, primitive)
+    elemental_rules[primitive] = partial(standard_elemental, elementalrule, primitive)
 
 
-def standard_elemental(elementalrules, primitive, primals, **params):
+def standard_elemental(elementalrule, primitive, primals, **params):
+    assert elementalrule is not None
     val_out = primitive.bind(*primals, **params)
-    
-    elementals_out = [rule(*primals, **params) for rule in elementalrules 
-                    if rule is not None]
-    return val_out, reduce(add_elementals, elementals_out, Zero.from_value(val_out))
+    elementals = elementalrule(*primals, **params)
+    elementals = elementals if type(elementals) is tuple else (elementals,)
+    elementals_out = [make_parallel_jacobian(primal, val_out, elemental) 
+                        for primal, elemental in zip(primals, elementals)]
+    return val_out, elementals_out
 
 
 # Useful for stuff such as exp_p
-def defelemental2(primitive, *elementalrules):
+def defelemental2(primitive, elementalrule):
     assert isinstance(primitive, core.Primitive)
     assert not primitive.multiple_results
-    elemental_rules[primitive] = partial(standard_elemental2, elementalrules, primitive)
+    elemental_rules[primitive] = partial(standard_elemental2, elementalrule, primitive)
 
 
-def standard_elemental2(partialrules, primitive, primals, **params):
+def standard_elemental2(elementalrule, primitive, primals, **params):
+    assert elementalrule is not None
     val_out = primitive.bind(*primals, **params)
-    
-    elementals_out = [rule(val_out, *primals, **params) for rule in partialrules 
-                    if rule is not None]
-    return val_out, reduce(add_elementals, elementals_out, Zero.from_value(val_out))
+    elementals = elementalrule(val_out, *primals, **params)
+    elementals = elementals if type(elementals) is tuple else (elementals,)
+    elementals_out = [make_parallel_jacobian(primal, val_out, elemental) 
+                        for primal, elemental in zip(primals, elementals)]
+    return val_out, elementals_out
 
 
-def add_elementals(x, y):
-    if type(x) is Zero:
-        return y
-    elif type(y) is Zero:
-        return x
-    else:
-        return jax._src.ad_util.add_jaxvals(x, y)
-   
+def _eye_like(invar, outvar):
+    # if hasattr(invar, "aval") and hasattr(outvar, "aval"):
+    if type(invar.aval) is core.ShapedArray and type(outvar.aval) is core.ShapedArray:
+        in_size = invar.aval.size
+        out_size = outvar.aval.size
+        if in_size > 1 and out_size > 1:
+            return jnp.eye(out_size, in_size).reshape(*outvar.aval.shape, *invar.aval.shape)
+        elif in_size > 1 and out_size == 1:
+            return jnp.ones((1, in_size))
+        elif in_size == 1 and out_size > 1:
+            return jnp.ones(out_size)
 
-def _eye_like1(val):
-    if hasattr(val, "aval"):
-        if type(val.aval) is core.ShapedArray:
-            size = val.size
-            if size > 1:
-                return jnp.eye(size, size).reshape(*val.shape, *val.shape)
-    return 1.
-
-
-def _eye_like(in_val, out_val):
-    if hasattr(in_val, "aval") and hasattr(out_val, "aval"):
-        if type(in_val.aval) is core.ShapedArray and type(out_val.aval) is core.ShapedArray:
-            in_size = in_val.size
-            out_size = out_val.size
-            if in_size > 1 and out_size > 1:
-                return jnp.eye(out_size, in_size).reshape(*out_val.shape, *in_val.shape)
-            elif in_size > 1 and out_size == 1:
-                return jnp.ones((1, in_size))
-            elif in_size == 1 and out_size > 1:
-                return jnp.ones(out_size)
-    return 1.
-
-
-# Manages the multiplication of Jacobians
-# TODO This guy needs an ungodly amount of optimization
-def _mul(lhs, rhs, vertex):
-    if vertex.aval.ndim > 0 and hasattr(lhs, "aval") and hasattr(rhs, "aval"):
-        if vertex.aval.ndim == 1:
-            if lhs.aval.ndim == 1:
-                if rhs.aval.ndim == 1:
-                    return jnp.einsum("k,k->", lhs, rhs)
-                elif rhs.aval.ndim == 2:
-                    return jnp.einsum("k,km->m", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("k,kmn->mn", lhs, rhs)
-            elif lhs.aval.ndim == 2:
-                if rhs.aval.ndim == 1:
-                    return jnp.einsum("ik,k->i", lhs, rhs)
-                elif rhs.aval.ndim == 2:
-                    return jnp.einsum("ik,km->im", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("ik,kmn->imn", lhs, rhs)
-            elif lhs.aval.ndim == 3:
-                if rhs.aval.ndim == 1:
-                    return jnp.einsum("ijk,k->ij", lhs, rhs)
-                elif rhs.aval.ndim == 2:
-                    return jnp.einsum("ijk,km->ijm", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("ijk,kmn->ijmn", lhs, rhs)
-            
-        elif vertex.aval.ndim == 2:
-            if lhs.aval.ndim == 2:
-                if rhs.aval.ndim == 2:
-                    return jnp.einsum("kl,kl->", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("kl,klm->m", lhs, rhs)
-                elif rhs.aval.ndim == 4:
-                    return jnp.einsum("kl,klmn->mn", lhs, rhs)
-            elif lhs.aval.ndim == 3:
-                if rhs.aval.ndim == 2:
-                    return jnp.einsum("ikl,kl->i", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("ikl,klm->im", lhs, rhs)
-                elif rhs.aval.ndim == 4:
-                    return jnp.einsum("ikl,klmn->imn", lhs, rhs)
-            elif lhs.aval.ndim == 4:
-                if rhs.aval.ndim == 2:
-                    return jnp.einsum("ijkl,kl->ij", lhs, rhs)
-                elif rhs.aval.ndim == 3:
-                    return jnp.einsum("ijkl,klm->ijm", lhs, rhs)
-                elif rhs.aval.ndim == 4:
-                    return jnp.einsum("ijkl,klmn->ijmn", lhs, rhs)
-    elif hasattr(lhs, "aval") and hasattr(rhs, "aval"):
-        if lhs.aval.ndim == 1:
-            if rhs.aval.ndim == 1:
-                return jnp.einsum("i,j->ij", lhs, rhs)
-            if rhs.aval.ndim == 2:
-                return (lhs*rhs).T
-        elif lhs.aval.ndim == 2:
-            if rhs.aval.ndim == 1:
-                return (lhs*rhs).T
-            if rhs.aval.ndim == 2:
-                return jnp.einsum("ij,kl->ijkl", lhs, rhs)
-    return lhs*rhs
     
 # Define elemental partials
-defelemental(lax.neg_p, lambda x: -_eye_like1(x))
-defelemental(lax.integer_pow_p, lambda x, y: _eye_like1(x)*y*x**(y-1))
+# TODO Do these guys with broadcasting where possible
+defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
+defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 
-defelemental2(lax.exp_p, lambda x: _eye_like1(x)*x)
-defelemental(lax.log_p, lambda x: _eye_like1(x)/x)
+defelemental2(lax.exp_p, lambda x: x)
+defelemental(lax.log_p, lambda x: 1./x)
 
-defelemental(lax.sin_p, lambda x: _eye_like1(x)*jnp.cos(x))
-defelemental(lax.asin_p, lambda x: _eye_like1(x)/jnp.sqrt(1.0 - x**2))
-defelemental(lax.cos_p, lambda x: -_eye_like1(x)*jnp.sin(x))
-defelemental(lax.acos_p, lambda x: -_eye_like1(x)/jnp.sqrt(1.0 - x**2))
-defelemental(lax.tan_p, lambda x: _eye_like1(x) + _eye_like1(x)*jnp.tan(x)**2)
-defelemental(lax.atan_p, lambda x: _eye_like1(x)/(1.0 + x**2))
+defelemental(lax.sin_p, lambda x: jnp.cos(x))
+defelemental(lax.asin_p, lambda x: 1./jnp.sqrt(1.0 - x**2))
+defelemental(lax.cos_p, lambda x: -jnp.sin(x))
+defelemental(lax.acos_p, lambda x: -1./jnp.sqrt(1.0 - x**2))
+defelemental(lax.tan_p, lambda x: 1.+jnp.tan(x)**2)
+defelemental(lax.atan_p, lambda x: 1./(1. + x**2))
 
-defelemental(lax.sinh_p, lambda x: _eye_like1(x)*jnp.cosh(x))
-defelemental(lax.asinh_p, lambda x: _eye_like1(x)/jnp.sqrt(1.0 + x**2))
-defelemental(lax.cosh_p, lambda x: _eye_like1(x)*jnp.sinh(x))
-defelemental(lax.acosh_p, lambda x: _eye_like1(x)/jnp.sqrt(x**2 - 1.0))
-defelemental(lax.tanh_p, lambda x: _eye_like1(x) - _eye_like1(x)*jnp.tanh(x)**2)
-defelemental(lax.atanh_p, lambda x: _eye_like1(x)/(1.0 - x**2))
+defelemental(lax.sinh_p, lambda x: jnp.cosh(x))
+defelemental(lax.asinh_p, lambda x: jnp.sqrt(1. + x**2))
+defelemental(lax.cosh_p, lambda x: jnp.sinh(x))
+defelemental(lax.acosh_p, lambda x: 1./jnp.sqrt(x**2 - 1.))
+defelemental(lax.tanh_p, lambda x: 1.-jnp.tanh(x)**2)
+defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
 
-def add_elemental_rule(out, x, y):
-    if x.shape == y.shape:
-        eye = _eye_like1(x)
-        return (eye, eye)
-    else:
-        return (_eye_like(y, out), _eye_like(x, out))
+
+def add_elemental_rule(x, y):
+    return (jnp.ones_like(y), jnp.ones_like(x))
     
-defelemental2(lax.add_p, add_elemental_rule)
+defelemental(lax.add_p, add_elemental_rule)
     
     
-def mul_elemental_rule(out, x, y):
-    if x.shape == y.shape:
-        eye = _eye_like1(x)
-        return (y*eye, x*eye)
-    else:
-        return (y*_eye_like(x, out), x*_eye_like(y, out))
+def mul_elemental_rule(x, y):
+    return (y, x)
     
-defelemental2(lax.mul_p, mul_elemental_rule)
+defelemental(lax.mul_p, mul_elemental_rule)
    
         
-def sub_elemental_rule(out, x, y):
-    if x.shape == y.shape:
-        eye = _eye_like1(x)
-        return (eye, eye)
-    else:
-        return (_eye_like(y, out), -_eye_like(x, out))
+def sub_elemental_rule(x, y):
+    return (jnp.ones_like(y), -jnp.ones_like(x))
     
-defelemental2(lax.sub_p, sub_elemental_rule)
+defelemental(lax.sub_p, sub_elemental_rule)
     
     
-def div_elemental_rule(out, x, y, dimension_numbers):
-    if x.shape == y.shape:
-        eye = _eye_like1(x)
-        return (eye/y, -eye*x/y**2)
-    else:
-        return (_eye_like(x, out)/y, -_eye_like(y, out)*x/y**2)
+def div_elemental_rule(x, y):
+    return (1./y, -x/y**2)
 
-defelemental2(lax.div_p, div_elemental_rule)
+defelemental(lax.div_p, div_elemental_rule)
 
-# TODO This guy needs some optimization
-def transpose_elemental_rule(inval, permutation):
-    if inval.ndim == 2:
-        shape0 = inval.shape[0]
-        shape1 = inval.shape[1]
-        eye0 = jnp.eye(shape0, shape0)
-        eye1 = jnp.eye(shape1, shape1)
-        return jnp.einsum("ik,jl->ijlk", eye1, eye0)
-    return jnp.ones((1, inval.ndim))
+# TODO check for correctness
+def transpose_elemental_rule(val_out, primals, **params):
+    permutation = params["permutation"]
+    elemental = jnp.ones_like(val_out)
+    
+    new_out_dims, new_primal_dims = [], []
+    
+    for i, p in enumerate(permutation):
+        new_out_dims.append(i, elemental.aval.shape[i], i, p)
+        new_primal_dims.append(p, elemental.aval.shape[i], i, i)
+    
+    return SparseTensor(new_out_dims, new_primal_dims, elemental)
 
-defelemental(lax.transpose_p, transpose_elemental_rule) 
+defelemental2(lax.transpose_p, transpose_elemental_rule) 
 
 
-defelemental2(lax.reduce_sum_p, lambda out, x, axes: jnp.outer(_eye_like1(out), jnp.ones_like(x)))
+def reduce_sum_elemental_rule(val_out, primals, **params):
+    return 0
 
-  
+defelemental2(lax.reduce_sum_p, reduce_sum_elemental_rule)
+
+
 # TODO most important bit!
-def dot_general_elemental_rule(out, lhs, rhs, 
-                                dimension_numbers, 
-                                precision, 
-                                preferred_element_type):
-    if out.ndim == 1:
-        lhs_eye = jnp.eye(out.shape[0], out.shape[0])
-        jac_lhs = jnp.einsum("ik,j->kij", lhs_eye, rhs)
-        
-        return jac_lhs, lhs
-    else:
-        lhs_eye = jnp.eye(out.shape[0], out.shape[0])
-        jac_lhs = jnp.einsum("ik,jl->klij", lhs_eye, rhs)
-        
-        rhs_eye = jnp.eye(out.shape[1], out.shape[1])
-        jac_rhs = jnp.einsum("ik,jl->ilkj", lhs, rhs_eye, )
-        return jac_lhs, jac_rhs
+def dot_general_elemental_rule(primals, **params):
+    val_out = lax.dot_general_p.bind(*primals, **params)
+    lhs, rhs = primals
+    
+    # TODO properly treat the transpose
+    transpose_rhs = rhs.T
+    
+    # Which dimensions of the tensors are contracted
+    dimension_numbers = params["dimension_numbers"][0]
+    
+    lhs_contracting_dims = dimension_numbers[0]
+    rhs_contracting_dims = dimension_numbers[1]
+    # TODO this needs generalization to higher-dimensional tensors
+    transpose_rhs_dims = [1-d for d in dimension_numbers[1]]
 
-defelemental2(lax.dot_general_p, dot_general_elemental_rule)
+    lhs_shape = list(lhs.aval.shape)
+    rhs_shape = list(rhs.aval.shape)
+    out_shape = list(val_out.aval.shape)
+    
+    lhs_jac_shape = out_shape + lhs_shape
+    rhs_jac_shape = out_shape + rhs_shape
+    
+    lhs_primal_dims, rhs_primal_dims = [], []
+    lhs_out_dims, rhs_out_dims = [], []
+    
+    i = 0
+    for l, ld in enumerate(lhs_shape):
+        _l = l + len(val_out.aval.shape)
+        if l in lhs_contracting_dims:
+            # Contracting dimension
+            dim = transpose_rhs_dims[i] # TODO take account of the transpose
+            lhs_primal_dims.append(DenseDimension(_l, transpose_rhs.aval.shape[dim], dim))
+            i += 1
+        else:
+            lhs_primal_dims.append(SparseDimension(_l, lhs_jac_shape[i], None, l))
+            lhs_out_dims.append(SparseDimension(l, lhs_jac_shape[i], None, _l))
+            rhs_out_dims.append(DenseDimension(i, ld, l))
+          
+    j = 0   
+    for r, rd in enumerate(rhs_shape):
+        _r = r + len(val_out.aval.shape)
+        if r in rhs_contracting_dims:
+            # Contracting dimension
+            dim = lhs_contracting_dims[j]
+            rhs_primal_dims.append(DenseDimension(_r, lhs.aval.shape[dim], dim))
+            j += 1
+        else:
+            rhs_primal_dims.append(SparseDimension(_r, rhs_jac_shape[j], None, r))
+            rhs_out_dims.append(SparseDimension(r, rhs_jac_shape[j], None, _r))
+            lhs_out_dims.append(DenseDimension(j, rd, transpose_rhs_dims.index(r)))
+        
+    lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, transpose_rhs)
+    rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)   
+    
+    return val_out, (lhs_tensor, rhs_tensor)
+
+elemental_rules[lax.dot_general_p] = dot_general_elemental_rule
 
 
 def jacve(fun, order, argnums=(0,)):
@@ -282,7 +246,6 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
         safe_map(write, eqn.outvars, [primal_outvals])
 
-        elemental_outvals = elemental_outvals if type(elemental_outvals) is tuple else [elemental_outvals]
         safe_map(write_elemental, eqn.invars, elemental_outvals)
 
     # Eliminate the vertices
@@ -293,12 +256,14 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 in_val = transpose_graph[eqn.outvars[0]][in_edge]
                 # print(eqn.outvars[0], out_edge, out_val.shape)
-                # print(in_edge, eqn.outvars[0], in_val.shape)
-                edge_outval = _mul(out_val, in_val, eqn.outvars[0])
+                # print(in_edge, eqn.outvars[0], out_edge)
+                edge_outval = out_val * in_val
+                print("mul shape", edge_outval)
 
                 if graph.get(in_edge).get(out_edge) is not None:
                     _edge = transpose_graph[out_edge][in_edge]
                     edge_outval += _edge
+                    # print("add shape", edge_outval)
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
                 
@@ -312,8 +277,11 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         del transpose_graph[eqn.outvars[0]]    
 
     # Collect outputs
-    # TODO this can be optimized as well
-    jac_vals = [graph[invar][outvar] for outvar in jaxpr.outvars for invar in jaxpr.invars]
+    # TODO this can be optimized as well, i.e. _eye_like can be called only
+    # once for every output variable
+    # TODO the _eye_like call needs to be optimized for all possible shapes
+    jac_vals = [graph[invar][outvar].materialize_actual_shape()*_eye_like(invar, outvar) 
+                for outvar in jaxpr.outvars for invar in jaxpr.invars]
     
     # Restructure Jacobians for more complicated pytrees
     n = len(jaxpr.outvars)
@@ -323,31 +291,60 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
 
     return jac_vals
 
+key = jrand.PRNGKey(42)
+
+def f(x, y):
+    z = x @ y
+    return jnp.sin(z)
+
+xkey, ykey = jrand.split(key, 2)
+x = jrand.normal(xkey, (2, 3))
+y = jrand.normal(ykey, (3, 4))
+jaxpr = jax.make_jaxpr(jacve(f, [1]))(x, y)
+print(jaxpr)
+
+jacs = jacve(f, [1])(x, y)
+
+jax_jacs = jax.jacrev(f, argnums=(0, 1))(x, y)
+
+print((jacs[0] == jax_jacs[0]).all())
+print((jacs[1] == jax_jacs[1]).all())
+
+print("ve",jacs[0])
+print("rev", jax_jacs[0])
 
 # def f(x, y):
 #     z = x * y
 #     w = z**3
 #     return w + z, jnp.log(w)
 
-# x = jnp.ones(2)
-# y = 2.*jnp.ones(2)
+# x = jnp.ones((50, 50))
+# y = 2.*jnp.ones((50, 50))
 # jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
 # print(jaxpr)
 
-# print(jacve(f, [2, 1])(x, y))
-# jacfwd_f = jacve(f, [1, 2])
-# jacrev_f = jacve(f, [2, 1])
+# jacs = jacve(f, [2, 1])(x, y)
+# jacfwd_f = jax.jit(jacve(f, [1, 2]))
+# jacrev_f = jax.jit(jacve(f, [2, 1]))
 # print(timeit.timeit(lambda: jacfwd_f(x, y), number=1000))
 # print(timeit.timeit(lambda: jacrev_f(x, y), number=1000))
 
 
-# jac_f = jax.jacfwd(f, argnums=(0, 1))
-# print(jac_f(x, y))
+# jac_f = jax.jit(jax.jacfwd(f, argnums=(0, 1)))
+# print(timeit.timeit(lambda: jac_f(x, y), number=1000))
+# jac_f = jax.jit(jax.jacrev(f, argnums=(0, 1)))
+# # print(jax.make_jaxpr(jax.jacrev(f, argnums=(0, 1)))(x, y))
+# jax_jacs = jac_f(x, y)
 # print(timeit.timeit(lambda: jac_f(x, y), number=1000))
 
 # jac_f = jax.jacrev(f, argnums=(0, 1))
 # jac_f(x, y)
-# print(timeit.timeit(lambda: jac_f(x, y), number=1000))
+# print(
+    # timeit.timeit(lambda: jac_f(x, y), number=1000))
+
+
+# print((jacs[0][0] == jax_jacs[0][0]).all())
+# print((jacs[1][0] == jax_jacs[1][0]).all())
 
 
 # def Helmholtz(x):
@@ -386,53 +383,76 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
 # print(jnp.allclose(veres, revres))
 
 
-def matmul(x, y, z):
-    return x@y + z
+# def matmul(x, y, z):
+#     return x@y + z
 
-x = jnp.ones((2, 3))
-y = jnp.ones((3,))
-z = jnp.ones((2,))
-print(jax.make_jaxpr(jacve(matmul, [1]))(x, y, z))
-veres = jacve(matmul, [1])(x, y, z)[0]
-print(veres)
+# x = jnp.ones((2, 3))
+# y = jnp.ones((3,))
+# z = jnp.ones((2,))
+# print(jax.make_jaxpr(jacve(matmul, [1]))(x, y, z))
+# veres = jacve(matmul, [1])(x, y, z)[0]
+# print(veres)
 
-jac_matmul = jax.jacfwd(matmul, argnums=(0, 1))
-print(jax.make_jaxpr(jac_matmul)(x, y, z))
-revres = jac_matmul(x, y, z)[0]
-print(revres)
+# jac_matmul = jax.jacfwd(matmul, argnums=(0, 1))
+# print(jax.make_jaxpr(jac_matmul)(x, y, z))
+# revres = jac_matmul(x, y, z)[0]
+# print(revres)
 
-print(jnp.allclose(veres, revres))
+# print(jnp.allclose(veres, revres))
 
 
-def NeuralNetwork(x, W1, b1, W2, b2, y):
-    y1 = W1 @ x
-    z1 = y1 + b1
-    a1 = jnp.tanh(z1)
+# def NeuralNetwork(x, W1, b1, W2, b2, y):
+#     y1 = W1 @ x
+#     z1 = y1 + b1
+#     a1 = jnp.tanh(z1)
     
-    y2 = W2 @ a1
-    z2 = y2 + b2
-    a2 = jnp.tanh(z2)
-    d = a2 - y
-    return .5*jnp.sum(d**2)
+#     y2 = W2 @ a1
+#     z2 = y2 + b2
+#     a2 = jnp.tanh(z2)
+#     d = a2 - y
+#     return .5*jnp.sum(d**2)
 
-x = jnp.ones(40)
-y = jnp.ones(40)
+# import time
+# import jax.random as jrand
 
-W1 = jnp.ones((30, 40))
-b1 = jnp.ones(30)
+# key = jrand.PRNGKey(42)
 
-W2 = jnp.ones((40, 30))
-b2 = jnp.ones(40)
-print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
+# x = jnp.ones(40)
+# y = jrand.normal(key, (40,))
 
-jac_NN = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
-revres = jac_NN(x, W1, b1, W2, b2, y)[0]
-print(timeit.timeit(lambda: jac_NN(x, W1, b1, W2, b2, y), number=10000))
+# w1key, b1key, key = jrand.split(key, 3)
+# W1 = jrand.normal(w1key, (30, 40))
+# b1 = jrand.normal(b1key, (30,))
 
-print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
-jacrev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
-veres = jacrev(x, W1, b1, W2, b2, y)[0]
-print(timeit.timeit(lambda: jacrev(x, W1, b1, W2, b2, y), number=10000))
+# W2 = jnp.ones((40, 30))
+# b2 = jnp.ones(40)
+# print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
 
-print(jnp.allclose(veres, revres))
+# print(jax.make_jaxpr(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))(x, W1, b1, W2, b2, y))
+# jac_NN = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
+# revres = jac_NN(x, W1, b1, W2, b2, y)[1]
+# print(timeit.timeit(lambda: jac_NN(x, W1, b1, W2, b2, y), number=10000))
+
+# print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
+# jacrev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
+# veres = jacrev(x, W1, b1, W2, b2, y)[1]
+# print(timeit.timeit(lambda: jacrev(x, W1, b1, W2, b2, y), number=10000))
+
+# print(jnp.allclose(veres, revres))
+
+# keys = jrand.split(key, 10000)
+
+# st = time.time()
+# for _ in range(1000):
+#     key, subkey = jrand.split(key, 2)
+#     x = jrand.normal(subkey, (40,))
+#     grad = jacrev(x, W1, b1, W2, b2, y)[1]
+# print(time.time() - st)
+
+# st = time.time()
+# for _ in range(1000):
+#     key, subkey = jrand.split(key, 2)
+#     x = jrand.normal(subkey, (40,))
+#     grad = jac_NN(x, W1, b1, W2, b2, y)[1]
+# print(time.time() - st)
 
