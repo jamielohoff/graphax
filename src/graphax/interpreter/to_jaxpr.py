@@ -11,15 +11,30 @@ from jax._src.util import safe_map
 import jax._src.core as core
 
 from jax.tree_util import tree_flatten, tree_unflatten
-from graphax.interpreter.sparse_tensor import SparseTensor, DenseDimension, SparseDimension
+from graphax.interpreter.sparse_tensor import (SparseTensor, 
+                                                DenseDimension, 
+                                                SparseDimension)
 
 
-def make_parallel_jacobian(primal, out, elemental):
-    size = len(primal.aval.shape)
-    out_dims = [SparseDimension(i, elemental.aval.shape[i], i, size+i) 
-                for i, e in enumerate(elemental.aval.shape)]
-    primal_dims = [SparseDimension(size+i, elemental.aval.shape[i], i, i) 
-                for i, e in enumerate(elemental.aval.shape)]
+def make_parallel_jacobian(primal, val_out, elemental):
+    primal_size = len(primal.shape)
+    out_size = len(val_out.shape)
+        
+    if primal_size == out_size:
+        out_dims = [SparseDimension(i, val_out.aval.shape[i], i, out_size+i) 
+                    for i, e in enumerate(val_out.aval.shape)]
+        primal_dims = [SparseDimension(out_size+i, val_out.aval.shape[i], i, i) 
+                    for i, e in enumerate(val_out.aval.shape)]
+        # TODO add _eye_like here! - is a quick fix but does not tackle the core issue
+        
+    elif primal_size == 0:
+        # Handling broadcast
+        out_dims = [DenseDimension(i, val_out.aval.shape[i], i) 
+                    for i, e in enumerate(val_out.aval.shape)]
+        primal_dims = []
+    else:
+        out_dims = []
+        primal_dims = []
     return SparseTensor(out_dims, primal_dims, elemental)
 
 
@@ -57,23 +72,8 @@ def standard_elemental2(elementalrule, primitive, primals, **params):
     elementals_out = [make_parallel_jacobian(primal, val_out, elemental) 
                         for primal, elemental in zip(primals, elementals)]
     return val_out, elementals_out
-
-
-def _eye_like(invar, outvar):
-    # if hasattr(invar, "aval") and hasattr(outvar, "aval"):
-    if type(invar.aval) is core.ShapedArray and type(outvar.aval) is core.ShapedArray:
-        in_size = invar.aval.size
-        out_size = outvar.aval.size
-        if in_size > 1 and out_size > 1:
-            return jnp.eye(out_size, in_size).reshape(*outvar.aval.shape, *invar.aval.shape)
-        elif in_size > 1 and out_size == 1:
-            return jnp.ones((1, in_size))
-        elif in_size == 1 and out_size > 1:
-            return jnp.ones(out_size)
-
     
 # Define elemental partials
-# TODO Do these guys with broadcasting where possible
 defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
 defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 
@@ -118,8 +118,10 @@ def div_elemental_rule(x, y):
 
 defelemental(lax.div_p, div_elemental_rule)
 
-# TODO check for correctness
-def transpose_elemental_rule(val_out, primals, **params):
+
+def transpose_elemental_rule(primals, **params):
+    val_out = lax.transpose_p.bind(*primals, **params)
+    
     permutation = params["permutation"]
     elemental = jnp.ones_like(val_out)
     
@@ -129,15 +131,39 @@ def transpose_elemental_rule(val_out, primals, **params):
         new_out_dims.append(i, elemental.aval.shape[i], i, p)
         new_primal_dims.append(p, elemental.aval.shape[i], i, i)
     
-    return SparseTensor(new_out_dims, new_primal_dims, elemental)
+    return val_out, [SparseTensor(new_out_dims, new_primal_dims, elemental)]
 
-defelemental2(lax.transpose_p, transpose_elemental_rule) 
+elemental_rules[lax.transpose_p] = transpose_elemental_rule
 
 
-def reduce_sum_elemental_rule(val_out, primals, **params):
-    return 0
-
-defelemental2(lax.reduce_sum_p, reduce_sum_elemental_rule)
+def reduce_sum_elemental_rule(primals, **params):
+    val_out = lax.reduce_sum_p.bind(*primals, **params)
+    
+    primal = primals[0]
+    axes = params["axes"]
+    if axes is None:
+        axes = tuple(range(len(primal.shape)))
+        new_out_dims.append(DenseDimension(0, 1, 0, True))
+    elif type(axes) is int:
+        axes = (axes,)
+    new_out_dims, new_primal_dims = [], []
+    _shape = []
+    
+    l = len(val_out.aval.shape)
+    count = 0
+    for i, size in enumerate(primal.aval.shape):
+        if i in axes:
+            new_primal_dims.append(DenseDimension(i, size, count))
+            _shape.append(size)
+            count += 1
+        else:
+            new_out_dims.append(SparseDimension(i, size, None, l+i))
+            new_primal_dims.append(SparseDimension(l+i, size, None, i))
+            
+    val = jnp.ones(_shape)
+    return val_out, [SparseTensor(new_out_dims, new_primal_dims, val)]
+    
+elemental_rules[lax.reduce_sum_p] = reduce_sum_elemental_rule
 
 
 # TODO most important bit!
@@ -195,7 +221,7 @@ def dot_general_elemental_rule(primals, **params):
     lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, transpose_rhs)
     rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)   
     
-    return val_out, (lhs_tensor, rhs_tensor)
+    return val_out, [lhs_tensor, rhs_tensor]
 
 elemental_rules[lax.dot_general_p] = dot_general_elemental_rule
 
@@ -212,7 +238,7 @@ def jacve(fun, order, argnums=(0,)):
     return wrapped
 
 
-def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
+def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):    
     env = {}
     graph = defaultdict(lambda: defaultdict())
     transpose_graph = defaultdict(lambda: defaultdict())
@@ -229,11 +255,11 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         
     def write_elemental(invar, outval):
         if isinstance(invar, core.Var):
-                graph[invar][eqn.outvars[0]] = outval
-                transpose_graph[eqn.outvars[0]][invar] = outval
+            graph[invar][eqn.outvars[0]] = outval
+            transpose_graph[eqn.outvars[0]][invar] = outval
                 
-    # jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
-    # ignore_invars = [invar for i, invar in enumerate(jaxpr.invars) if i not in argnums]
+    jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
+    ignore_invars = [invar for i, invar in enumerate(jaxpr.invars) if i not in argnums]
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
@@ -242,28 +268,39 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         invals = safe_map(read, eqn.invars)
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
-        
+
         primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
         safe_map(write, eqn.outvars, [primal_outvals])
 
         safe_map(write_elemental, eqn.invars, elemental_outvals)
+        
+    if type(order) is str:
+        if order == "forward" or order == "fwd":
+            order = [i for i, eqn in enumerate(jaxpr.eqns) 
+                    if eqn.outvars[0] not in jaxpr.outvars]
+        elif order == "reverse" or order == "rev":
+            # TODO reverse the order here!
+            order = [i for i, eqn in enumerate(jaxpr.eqns) 
+                    if eqn.outvars[0] not in jaxpr.outvars]
+        else:
+            raise ValueError(order + " is not a valid order identifier!")
 
     # Eliminate the vertices
     for vertex in order:
+        # print(vertex)
         eqn = jaxpr.eqns[vertex-1]
         for out_edge in graph[eqn.outvars[0]].keys():
             out_val = graph[eqn.outvars[0]][out_edge]
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 in_val = transpose_graph[eqn.outvars[0]][in_edge]
-                # print(eqn.outvars[0], out_edge, out_val.shape)
                 # print(in_edge, eqn.outvars[0], out_edge)
                 edge_outval = out_val * in_val
-                print("mul shape", edge_outval)
+                # print("mul shape", edge_outval)
 
                 if graph.get(in_edge).get(out_edge) is not None:
                     _edge = transpose_graph[out_edge][in_edge]
+                    # print("add shape", _edge)
                     edge_outval += _edge
-                    # print("add shape", edge_outval)
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
                 
@@ -276,11 +313,8 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         del graph[eqn.outvars[0]]
         del transpose_graph[eqn.outvars[0]]    
 
-    # Collect outputs
-    # TODO this can be optimized as well, i.e. _eye_like can be called only
-    # once for every output variable
-    # TODO the _eye_like call needs to be optimized for all possible shapes
-    jac_vals = [graph[invar][outvar].materialize_actual_shape()*_eye_like(invar, outvar) 
+    # Collect outputs TODO replace excluded argnums with Nones in pytree
+    jac_vals = [graph[invar][outvar].materialize_actual_shape() 
                 for outvar in jaxpr.outvars for invar in jaxpr.invars]
     
     # Restructure Jacobians for more complicated pytrees
@@ -293,37 +327,39 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
 
 key = jrand.PRNGKey(42)
 
-def f(x, y):
-    z = x @ y
-    return jnp.sin(z)
-
-xkey, ykey = jrand.split(key, 2)
-x = jrand.normal(xkey, (2, 3))
-y = jrand.normal(ykey, (3, 4))
-jaxpr = jax.make_jaxpr(jacve(f, [1]))(x, y)
-print(jaxpr)
-
-jacs = jacve(f, [1])(x, y)
-
-jax_jacs = jax.jacrev(f, argnums=(0, 1))(x, y)
-
-print((jacs[0] == jax_jacs[0]).all())
-print((jacs[1] == jax_jacs[1]).all())
-
-print("ve",jacs[0])
-print("rev", jax_jacs[0])
-
 # def f(x, y):
-#     z = x * y
-#     w = z**3
-#     return w + z, jnp.log(w)
+#     z = x @ y
+#     return jnp.sin(z)
 
-# x = jnp.ones((50, 50))
-# y = 2.*jnp.ones((50, 50))
-# jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
+# xkey, ykey = jrand.split(key, 2)
+# x = jrand.normal(xkey, (2, 3))
+# y = jrand.normal(ykey, (3, 4))
+# jaxpr = jax.make_jaxpr(jacve(f, [1]))(x, y)
 # print(jaxpr)
 
-# jacs = jacve(f, [2, 1])(x, y)
+# jacs = jacve(f, [1])(x, y)
+
+# jax_jacs = jax.jacrev(f, argnums=(0, 1))(x, y)
+
+# print((jacs[0] == jax_jacs[0]).all())
+# print((jacs[1] == jax_jacs[1]).all())
+
+# print("ve",jacs[0])
+# print("rev", jax_jacs[0])
+
+def f(x, y):
+    z = x * y
+    w = z**3
+    return w + z, jnp.log(w)
+
+x = 1. # jnp.ones((50, 50))
+y = 2. # *jnp.ones((50, 50))
+jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
+print(jaxpr)
+
+jacs = jax.jit(jacve(f, [2, 1]))
+print(jacs(x, y))
+
 # jacfwd_f = jax.jit(jacve(f, [1, 2]))
 # jacrev_f = jax.jit(jacve(f, [2, 1]))
 # print(timeit.timeit(lambda: jacfwd_f(x, y), number=1000))
@@ -347,23 +383,28 @@ print("rev", jax_jacs[0])
 # print((jacs[1][0] == jax_jacs[1][0]).all())
 
 
-# def Helmholtz(x):
-#     return x*jnp.log(x / (1. + -jnp.sum(x)))
+def Helmholtz(x):
+    return x*jnp.log(x / (1. + -jnp.sum(x)))
 
-# x = jnp.array([0.05, 0.15, 0.25, 0.35]) # jnp.ones(300)/2000. # 
-# print(jax.make_jaxpr(jacve(Helmholtz, [1, 2, 3, 4, 5]))(x))
+x = jnp.ones(300)/2000. # jnp.array([0.05, 0.15, 0.25, 0.35]) # 
+jac_fwd = jax.jit(jacve(Helmholtz, [1, 2, 3, 4, 5]))
+jac_rev = jax.jit(jacve(Helmholtz, [5, 4, 3, 2, 1]))
+jac_cc = jax.jit(jacve(Helmholtz, [2, 5, 4, 3, 1]))
+print(jax.make_jaxpr(jacve(Helmholtz, [2, 5, 4, 3, 1]))(x))
 
-# print(jacve(Helmholtz, [1, 2, 3, 4, 5])(x))
-# print(timeit.timeit(lambda: jacve(Helmholtz, [2, 5, 4, 3, 1])(x), number=1000))
-# print(timeit.timeit(lambda: jacve(Helmholtz, [1, 2, 3, 4, 5])(x), number=1000))
-# print(timeit.timeit(lambda: jacve(Helmholtz, [5, 4, 3, 2, 1])(x), number=1000))
+print(jac_cc(x))
+
+print(timeit.timeit(lambda: jac_cc(x), number=10000))
+print(timeit.timeit(lambda: jac_fwd(x), number=10000))
+print(timeit.timeit(lambda: jac_rev(x), number=10000))
 
 
-# jac_Helmholtz = jax.jacfwd(Helmholtz, argnums=(0,))
-# print(jax.make_jaxpr(jac_Helmholtz)(x))
+jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
+jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
 
-# print(jac_Helmholtz(x))
-# print(timeit.timeit(lambda: jac_Helmholtz(x), number=1000))
+print(jax_jac_fwd(x))
+print(timeit.timeit(lambda: jax_jac_fwd(x), number=10000))
+print(timeit.timeit(lambda: jax_jac_rev(x), number=10000))
 
 
 # def transpose(x, y):
