@@ -9,8 +9,8 @@ from jax._src.core import ShapedArray
 
 
 def _eye_like(shape, out_len):
-    primal_shape = shape[:out_len]
-    out_shape = shape[out_len:]
+    primal_shape = shape[out_len:]
+    out_shape = shape[:out_len]
     primal_size = reduce((lambda x, y: x * y), primal_shape)
     out_size = reduce((lambda x, y: x * y), out_shape)
     return jnp.eye(out_size, primal_size).reshape(*out_shape, *primal_shape)
@@ -81,7 +81,7 @@ class SparseTensor:
     
     def materialize_actual_shape(self):
         # Materializes tensor to actual shape where Dimensions with val_dim=None
-        # are materialized as 1        
+        # are materialized as 1     
         _sparse_shape = []
         _shape, _broadcast_dims = [], []
         for i, d in enumerate(self.out_dims):
@@ -105,13 +105,13 @@ class SparseTensor:
                     _shape.append(1)
             else:
                 _shape.append(1)
-                
+
             if type(d) is SparseDimension:
                 _sparse_shape.append(d.size)
             else:
                 _sparse_shape.append(1)
                 
-        if len(self.out_dims) == 0 and len(self.primal_dims) == 0:
+        if len(self.out_dims) == 0 or len(self.primal_dims) == 0:
             return self.val
         else:
             val = lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
@@ -119,7 +119,6 @@ class SparseTensor:
     
     
 def _add(lhs: SparseTensor, rhs: SparseTensor):
-    # TODO handle the addition of sparse & dense dimension appropriately
     assert lhs.shape == rhs.shape
     # Here we just do broadcasting
     ldims, rdims = [], []
@@ -211,8 +210,6 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
         
     dim_count, lcount, rcount = 0, 0, 0
     l = len(lhs.out_dims)
-        
-    # TODO handle scalar dimensions!
     
     # Handling dependent variables
     for ld in lhs.out_dims:
@@ -228,8 +225,8 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
         if type(ld) is DenseDimension:
             if type(rd) is DenseDimension:
                 # In this case we have a contraction
-                lcontracting_dims.append((ld.id, ld.val_dim))
-                rcontracting_dims.append((rd.id, rd.val_dim))
+                lcontracting_dims.append(ld.val_dim) # (ld.id, ld.val_dim)
+                rcontracting_dims.append(rd.val_dim) # (rd.id, rd.val_dim)
                 
             elif type(rd) is SparseDimension:
                 # rhs contains a Kronecker delta
@@ -295,11 +292,19 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
     # Executing the appropriate computations
     if len(lcontracting_dims) > 0:
         # If we do contractions first, the process looks different
-        dimension_numbers = (lcontracting_dims, rcontracting_dims)
-        val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
         print("we fail here!")
-        # TODO This needs proper treatment
+
+        dimension_numbers = (tuple(lcontracting_dims), tuple(rcontracting_dims))
+        dimension_numbers = (dimension_numbers, ((), ()))
+        print(lhs.val.shape, rhs.val.shape, dimension_numbers)
+        val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
         
+        print(val.shape)
+        
+        if len(lbroadcasting_dims) > 0 or len(rbroadcasting_dims) > 0:
+            pass
+        else:
+            pass
     else: 
         lhs_val = lhs.materialize_dimensions(ldims)
         rhs_val = rhs.materialize_dimensions(rdims)            

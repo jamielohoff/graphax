@@ -1,6 +1,7 @@
 from functools import wraps, partial
 from collections import defaultdict
 
+import time
 import timeit
 
 import jax
@@ -171,16 +172,21 @@ def dot_general_elemental_rule(primals, **params):
     val_out = lax.dot_general_p.bind(*primals, **params)
     lhs, rhs = primals
     
-    # TODO properly treat the transpose
-    transpose_rhs = rhs.T
-    
     # Which dimensions of the tensors are contracted
     dimension_numbers = params["dimension_numbers"][0]
     
     lhs_contracting_dims = dimension_numbers[0]
     rhs_contracting_dims = dimension_numbers[1]
-    # TODO this needs generalization to higher-dimensional tensors
-    transpose_rhs_dims = [1-d for d in dimension_numbers[1]]
+    
+    # TODO properly treat the transpose
+    if len(rhs.aval.shape) > 1:
+        transpose_rhs = rhs.T
+        print(lhs, transpose_rhs)
+        # TODO this needs generalization to higher-dimensional tensors
+        transpose_rhs_dims = [1-d for d in dimension_numbers[1]]
+    else:
+        transpose_rhs = rhs
+        transpose_rhs_dims = rhs_contracting_dims
 
     lhs_shape = list(lhs.aval.shape)
     rhs_shape = list(rhs.aval.shape)
@@ -333,7 +339,7 @@ key = jrand.PRNGKey(42)
 
 # xkey, ykey = jrand.split(key, 2)
 # x = jrand.normal(xkey, (2, 3))
-# y = jrand.normal(ykey, (3, 4))
+# y = jrand.normal(ykey, (3,))
 # jaxpr = jax.make_jaxpr(jacve(f, [1]))(x, y)
 # print(jaxpr)
 
@@ -347,18 +353,19 @@ key = jrand.PRNGKey(42)
 # print("ve",jacs[0])
 # print("rev", jax_jacs[0])
 
-def f(x, y):
-    z = x * y
-    w = z**3
-    return w + z, jnp.log(w)
 
-x = 1. # jnp.ones((50, 50))
-y = 2. # *jnp.ones((50, 50))
-jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
-print(jaxpr)
+# def f(x, y):
+#     z = x * y
+#     w = z**3
+#     return w + z, jnp.log(w)
 
-jacs = jax.jit(jacve(f, [2, 1]))
-print(jacs(x, y))
+# x = 1. # jnp.ones((50, 50))
+# y = 2. # *jnp.ones((50, 50))
+# jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
+# print(jaxpr)
+
+# jacs = jax.jit(jacve(f, [2, 1]))
+# print(jacs(x, y))
 
 # jacfwd_f = jax.jit(jacve(f, [1, 2]))
 # jacrev_f = jax.jit(jacve(f, [2, 1]))
@@ -383,28 +390,28 @@ print(jacs(x, y))
 # print((jacs[1][0] == jax_jacs[1][0]).all())
 
 
-def Helmholtz(x):
-    return x*jnp.log(x / (1. + -jnp.sum(x)))
+# def Helmholtz(x):
+#     return x*jnp.log(x / (1. + -jnp.sum(x)))
 
-x = jnp.ones(300)/2000. # jnp.array([0.05, 0.15, 0.25, 0.35]) # 
-jac_fwd = jax.jit(jacve(Helmholtz, [1, 2, 3, 4, 5]))
-jac_rev = jax.jit(jacve(Helmholtz, [5, 4, 3, 2, 1]))
-jac_cc = jax.jit(jacve(Helmholtz, [2, 5, 4, 3, 1]))
-print(jax.make_jaxpr(jacve(Helmholtz, [2, 5, 4, 3, 1]))(x))
+# x = jnp.ones(300)/2000. # jnp.array([0.05, 0.15, 0.25, 0.35]) # 
+# jac_fwd = jax.jit(jacve(Helmholtz, [1, 2, 3, 4, 5]))
+# jac_rev = jax.jit(jacve(Helmholtz, [5, 4, 3, 2, 1]))
+# jac_cc = jax.jit(jacve(Helmholtz, [2, 5, 4, 3, 1]))
+# print(jax.make_jaxpr(jacve(Helmholtz, [2, 5, 4, 3, 1]))(x))
 
-print(jac_cc(x))
+# print(jac_cc(x))
 
-print(timeit.timeit(lambda: jac_cc(x), number=10000))
-print(timeit.timeit(lambda: jac_fwd(x), number=10000))
-print(timeit.timeit(lambda: jac_rev(x), number=10000))
+# print(timeit.timeit(lambda: jac_cc(x), number=10000))
+# print(timeit.timeit(lambda: jac_fwd(x), number=10000))
+# print(timeit.timeit(lambda: jac_rev(x), number=10000))
 
 
-jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
-jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
+# jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
+# jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
 
-print(jax_jac_fwd(x))
-print(timeit.timeit(lambda: jax_jac_fwd(x), number=10000))
-print(timeit.timeit(lambda: jax_jac_rev(x), number=10000))
+# print(jax_jac_fwd(x))
+# print(timeit.timeit(lambda: jax_jac_fwd(x), number=10000))
+# print(timeit.timeit(lambda: jax_jac_rev(x), number=10000))
 
 
 # def transpose(x, y):
@@ -416,84 +423,53 @@ print(timeit.timeit(lambda: jax_jac_rev(x), number=10000))
 # veres = jacve(transpose, [1])(x, y)[0]
 # print(veres)
 
-# jac_matmul = jax.jacfwd(transpose, argnums=(0, 1))
-# print(jax.make_jaxpr(jac_matmul)(x, y))
-# revres = jac_matmul(x, y)[0]
-# print(revres)
 
-# print(jnp.allclose(veres, revres))
-
-
-# def matmul(x, y, z):
-#     return x@y + z
-
-# x = jnp.ones((2, 3))
-# y = jnp.ones((3,))
-# z = jnp.ones((2,))
-# print(jax.make_jaxpr(jacve(matmul, [1]))(x, y, z))
-# veres = jacve(matmul, [1])(x, y, z)[0]
-# print(veres)
-
-# jac_matmul = jax.jacfwd(matmul, argnums=(0, 1))
-# print(jax.make_jaxpr(jac_matmul)(x, y, z))
-# revres = jac_matmul(x, y, z)[0]
-# print(revres)
-
-# print(jnp.allclose(veres, revres))
-
-
-# def NeuralNetwork(x, W1, b1, W2, b2, y):
-#     y1 = W1 @ x
-#     z1 = y1 + b1
-#     a1 = jnp.tanh(z1)
+def NeuralNetwork(x, W1, b1, W2, b2, y):
+    y1 = W1 @ x
+    z1 = y1 + b1
+    a1 = jnp.tanh(z1)
     
-#     y2 = W2 @ a1
-#     z2 = y2 + b2
-#     a2 = jnp.tanh(z2)
-#     d = a2 - y
-#     return .5*jnp.sum(d**2)
+    y2 = W2 @ a1
+    z2 = y2 + b2
+    a2 = jnp.tanh(z2)
+    d = a2 - y
+    return .5*jnp.sum(d**2)
 
-# import time
-# import jax.random as jrand
 
-# key = jrand.PRNGKey(42)
+key = jrand.PRNGKey(42)
 
-# x = jnp.ones(40)
-# y = jrand.normal(key, (40,))
+x = jnp.ones(40)
+y = jrand.normal(key, (40,))
 
-# w1key, b1key, key = jrand.split(key, 3)
-# W1 = jrand.normal(w1key, (30, 40))
-# b1 = jrand.normal(b1key, (30,))
+w1key, b1key, key = jrand.split(key, 3)
+W1 = jrand.normal(w1key, (30, 40))
+b1 = jrand.normal(b1key, (30,))
 
-# W2 = jnp.ones((40, 30))
-# b2 = jnp.ones(40)
-# print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
+W2 = jnp.ones((40, 30))
+b2 = jnp.ones(40)
+print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
 
-# print(jax.make_jaxpr(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))(x, W1, b1, W2, b2, y))
-# jac_NN = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
-# revres = jac_NN(x, W1, b1, W2, b2, y)[1]
-# print(timeit.timeit(lambda: jac_NN(x, W1, b1, W2, b2, y), number=10000))
+print(jax.make_jaxpr(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))(x, W1, b1, W2, b2, y))
+jac_NN = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
+revres = jac_NN(x, W1, b1, W2, b2, y)[1]
 
-# print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
-# jacrev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
-# veres = jacrev(x, W1, b1, W2, b2, y)[1]
-# print(timeit.timeit(lambda: jacrev(x, W1, b1, W2, b2, y), number=10000))
+print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
+jacrev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
+veres = jacrev(x, W1, b1, W2, b2, y)[1]
 
-# print(jnp.allclose(veres, revres))
+print(jnp.allclose(veres, revres))
 
-# keys = jrand.split(key, 10000)
+st = time.time()
+for _ in range(1000):
+    key, subkey = jrand.split(key, 2)
+    x = jrand.normal(subkey, (40,))
+    grad = jacrev(x, W1, b1, W2, b2, y)[1]
+print(time.time() - st)
 
-# st = time.time()
-# for _ in range(1000):
-#     key, subkey = jrand.split(key, 2)
-#     x = jrand.normal(subkey, (40,))
-#     grad = jacrev(x, W1, b1, W2, b2, y)[1]
-# print(time.time() - st)
-
-# st = time.time()
-# for _ in range(1000):
-#     key, subkey = jrand.split(key, 2)
-#     x = jrand.normal(subkey, (40,))
-#     grad = jac_NN(x, W1, b1, W2, b2, y)[1]
-# print(time.time() - st)
+st = time.time()
+for _ in range(1000):
+    key, subkey = jrand.split(key, 2)
+    x = jrand.normal(subkey, (40,))
+    grad = jac_NN(x, W1, b1, W2, b2, y)[1]
+print(time.time() - st)
 
