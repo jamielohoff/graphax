@@ -114,7 +114,9 @@ class SparseTensor:
         if len(self.out_dims) == 0 or len(self.primal_dims) == 0:
             return self.val
         else:
-            val = lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
+            # TODO this is just a workaround!!!!
+            val = jnp.squeeze(self.val)
+            val = lax.broadcast_in_dim(val, _shape, _broadcast_dims)
             return val*_eye_like(_sparse_shape, len(self.out_dims))
     
     
