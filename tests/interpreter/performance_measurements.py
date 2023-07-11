@@ -129,7 +129,7 @@ def Perceptron():
     jax_rev_f = jax.jit(jax.jacrev(Perceptron, argnums=(0, 1, 2, 3, 4, 5)))
       
     duration = 1000
-    scales = [1, 2, 5, 10, 20, 50, 100, 200, 500]
+    scales = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]
 
     for s in scales:
         x = jnp.ones(4*s)
@@ -144,19 +144,22 @@ def Perceptron():
         W2 = jrand.normal(w2key, (4*s, 8*s))
         b2 = jrand.normal(b2key, (4*s,))
         
-        st = time.time()
-        for _ in range(duration):
-            key, subkey = jrand.split(key, 2)
-            x = jrand.normal(subkey, (4*s,))
-            grad = jac_rev_f(x, W1, b1, W2, b2, y)[1]
-        rev.append(time.time() - st)
+        rev.append(timeit.timeit(lambda: jac_rev_f(x, W1, b1, W2, b2, y), number=duration))
+        jax_rev.append(timeit.timeit(lambda: jax_rev_f(x, W1, b1, W2, b2, y), number=duration))
+        
+        # st = time.time()
+        # for _ in range(duration):
+        #     key, subkey = jrand.split(key, 2)
+        #     x = jrand.normal(subkey, (4*s,))
+        #     grad = jac_rev_f(x, W1, b1, W2, b2, y)[1]
+        # rev.append(time.time() - st)
 
-        st = time.time()
-        for _ in range(duration):
-            key, subkey = jrand.split(key, 2)
-            x = jrand.normal(subkey, (4*s,))
-            grad = jax_rev_f(x, W1, b1, W2, b2, y)[1]
-        jax_rev.append(time.time() - st)
+        # st = time.time()
+        # for _ in range(duration):
+        #     key, subkey = jrand.split(key, 2)
+        #     x = jrand.normal(subkey, (4*s,))
+        #     grad = jax_rev_f(x, W1, b1, W2, b2, y)[1]
+        # jax_rev.append(time.time() - st)
 
     plt.figure()
     plt.yscale("log")
@@ -171,7 +174,7 @@ def Perceptron():
     plt.legend()
     plt.savefig("Perceptron.png")
 
-simple()
-Helmholtz()
+# simple()
+# Helmholtz()
 Perceptron()
 
