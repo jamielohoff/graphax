@@ -69,6 +69,7 @@ class SparseTensor:
     def materialize_dimensions(self, dims):
         # TODO add docstring
         dims = sorted(dims)
+        print("dims", dims)
         _shape = list(self.val.shape)
         _broadcast_dims = []
         for d in dims:
@@ -77,6 +78,7 @@ class SparseTensor:
         for i, vd in enumerate(self.val.shape):
             shift = sum([1 for d in dims if d <= i])
             _broadcast_dims.append(i+shift)
+        print("broadcast", self, _shape, _broadcast_dims)
         return lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
     
     def materialize_actual_shape(self):
@@ -115,8 +117,10 @@ class SparseTensor:
             return self.val
         else:
             # TODO this is just a workaround!!!!
-            val = jnp.squeeze(self.val)
-            val = lax.broadcast_in_dim(val, _shape, _broadcast_dims)
+            # Sequuze everything is a bad idea
+            print(self.out_dims, self.primal_dims)
+            print(self.shape, self.val.shape, _shape, _broadcast_dims)
+            val = lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
             return val*_eye_like(_sparse_shape, len(self.out_dims))
     
     
@@ -218,9 +222,9 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
         if type(ld) is DenseDimension:
             rdims.append(0)
             new_dim = DenseDimension(lcount, ld.size, dim_count)
-            new_out_dims.append(new_dim)   
-            lcount += 1       
+            new_out_dims.append(new_dim)         
             dim_count += 1
+            lcount += 1
     
     # Handling contracting variables and adjusting sparsity map
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
@@ -232,8 +236,6 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
                 
             elif type(rd) is SparseDimension:
                 # rhs contains a Kronecker delta
-                # Adds DenseDimension to primal_dims
-                rbroadcasting_dims.append((ld.id, ld.val_dim))
                 new_dim = DenseDimension(rcount, rd.size, dim_count)
                 new_primal_dims.append(new_dim)
                 if rd.val_dim is None:
@@ -247,7 +249,6 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
             if type(rd) is DenseDimension:
                 # lhs contains a Kronecker delta
                 # Adds DenseDimension to out_dims
-                lbroadcasting_dims.append((rd.id, rd.val_dim))
                 new_dim = DenseDimension(lcount, ld.size, dim_count)
                 new_out_dims.append(new_dim)
                 
@@ -308,6 +309,10 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
         else:
             pass
     else: 
+        
+        print("lhs rhs", lhs, rhs)
+        print(ldims, rdims)
+        print(new_out_dims, new_primal_dims)
         lhs_val = lhs.materialize_dimensions(ldims)
         rhs_val = rhs.materialize_dimensions(rdims)            
         val = lhs_val * rhs_val

@@ -101,54 +101,91 @@ key = jrand.PRNGKey(42)
 # print(veres)
 
 
-def NeuralNetwork(x, W1, b1, W2, b2, y):
-    y1 = W1 @ x
-    z1 = y1 + b1
-    a1 = jnp.tanh(z1)
+# def NeuralNetwork(x, W1, b1, W2, b2, y):
+#     y1 = W1 @ x
+#     z1 = y1 + b1
+#     a1 = jnp.tanh(z1)
     
-    y2 = W2 @ a1
-    z2 = y2 + b2
-    a2 = jnp.tanh(z2)
-    d = a2 - y
-    return .5*jnp.sum(d**2)
+#     y2 = W2 @ a1
+#     z2 = y2 + b2
+#     a2 = jnp.tanh(z2)
+#     d = a2 - y
+#     return .5*jnp.sum(d**2)
 
 
-key = jrand.PRNGKey(42)
+# key = jrand.PRNGKey(42)
 
-x = jnp.ones(40)
-y = jrand.normal(key, (40,))
+# x = jnp.ones(40)
+# y = jrand.normal(key, (40,))
 
-w1key, b1key, key = jrand.split(key, 3)
-W1 = jrand.normal(w1key, (80, 40))
-b1 = jrand.normal(b1key, (80,))
+# w1key, b1key, key = jrand.split(key, 3)
+# W1 = jrand.normal(w1key, (80, 40))
+# b1 = jrand.normal(b1key, (80,))
 
 
-w2key, b2key, key = jrand.split(key, 3)
-W2 = jrand.normal(w2key, (40, 80))
-b2 = jrand.normal(b2key, (40,))
-print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
+# w2key, b2key, key = jrand.split(key, 3)
+# W2 = jrand.normal(w2key, (40, 80))
+# b2 = jrand.normal(b2key, (40,))
+# print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
 
-print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
-jac_rev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
-veres = jac_rev(x, W1, b1, W2, b2, y)[1]
+# print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
+# jac_rev = jax.jit(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
+# veres = jac_rev(x, W1, b1, W2, b2, y)[1]
 
-print(jax.make_jaxpr(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))(x, W1, b1, W2, b2, y))
-jax_jac_rev = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
-revres = jax_jac_rev(x, W1, b1, W2, b2, y)[1]
+# print(jax.make_jaxpr(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))(x, W1, b1, W2, b2, y))
+# jax_jac_rev = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
+# revres = jax_jac_rev(x, W1, b1, W2, b2, y)[1]
 
-print(jnp.allclose(veres, revres))
+# print(jnp.allclose(veres, revres))
 
-st = time.time()
-for _ in range(1000):
-    key, subkey = jrand.split(key, 2)
-    x = jrand.normal(subkey, (40,))
-    grad = jac_rev(x, W1, b1, W2, b2, y)[1]
-print(time.time() - st)
+# st = time.time()
+# for _ in range(1000):
+#     key, subkey = jrand.split(key, 2)
+#     x = jrand.normal(subkey, (40,))
+#     grad = jac_rev(x, W1, b1, W2, b2, y)[1]
+# print(time.time() - st)
 
-st = time.time()
-for _ in range(1000):
-    key, subkey = jrand.split(key, 2)
-    x = jrand.normal(subkey, (40,))
-    grad = jax_jac_rev(x, W1, b1, W2, b2, y)[1]
-print(time.time() - st)
+# st = time.time()
+# for _ in range(1000):
+#     key, subkey = jrand.split(key, 2)
+#     x = jrand.normal(subkey, (40,))
+#     grad = jax_jac_rev(x, W1, b1, W2, b2, y)[1]
+# print(time.time() - st)
+
+import jax.lax as lax
+import jax.nn as jnn
+
+
+def softmax_attention(X, WQ, WK, WV):
+    q = WQ @ X
+    k = WK @ X
+    v = WV @ X
+    a = q @ k.T
+    return jnn.softmax(a, axis=1) @ v
+ 
+x = jrand.normal(key, (10, 16))
+WQ = jrand.normal(key,(10, 10)) 
+WK = jrand.normal(key,(10, 10))
+WV = jrand.normal(key,(10, 10))
+
+print(jax.make_jaxpr(jacve(softmax_attention, order="fwd"))(x, WQ, WK, WV))
+
+# def f(x, y):
+#     z = x * y
+#     return 3.0*z
+
+# x = jnp.ones((2, 3))
+# y = jnp.ones((3,))
+# jaxpr = jax.make_jaxpr(jacve(f, "fwd"))(x, y)
+# print(jaxpr)
+
+# jacs = jacve(f, "fwd")(x, y)
+
+# jax_jacs = jax.jacrev(f, argnums=(0, 1))(x, y)
+
+# print((jacs[0] == jax_jacs[0]).all())
+# print((jacs[1] == jax_jacs[1]).all())
+
+# print("ve",jacs[0])
+# print("rev", jax_jacs[0])
 
