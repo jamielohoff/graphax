@@ -128,9 +128,10 @@ def transpose_elemental_rule(primals, **params):
     
     new_out_dims, new_primal_dims = [], []
     
+    l = len(permutation)
     for i, p in enumerate(permutation):
-        new_out_dims.append(SparseDimension(i, elemental.aval.shape[i], i, p))
-        new_primal_dims.append(SparseDimension(p, elemental.aval.shape[i], i, i))
+        new_out_dims.insert(i, SparseDimension(i, elemental.aval.shape[i], i, l+p))
+        new_primal_dims.insert(p, SparseDimension(l+p, elemental.aval.shape[i], i, i))
     
     return val_out, [SparseTensor(new_out_dims, new_primal_dims, elemental)]
 
@@ -354,6 +355,7 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
         primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
+        print("elementals", elemental_outvals)
         safe_map(write, eqn.outvars, [primal_outvals])
         safe_map(write_elemental, eqn.invars, elemental_outvals)
         
@@ -374,7 +376,7 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 pre_val = transpose_graph[eqn.outvars[0]][in_edge]
                 print(in_edge, eqn.outvars[0], out_edge)
-                print("in shape", post_val, pre_val)
+                # print("in shape", post_val, pre_val)
                 edge_outval = post_val * pre_val
                 print("mul shape", edge_outval)
 

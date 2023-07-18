@@ -11,21 +11,35 @@ from jax._src.core import ShapedArray
 def _eye_like(shape, out_len):
     primal_shape = shape[out_len:]
     out_shape = shape[:out_len]
-    primal_size = reduce((lambda x, y: x * y), primal_shape)
-    out_size = reduce((lambda x, y: x * y), out_shape)
-    return jnp.eye(out_size, primal_size).reshape(*out_shape, *primal_shape)
-
+    if any([primal_shape == out_shape]):
+        primal_size = reduce((lambda x, y: x*y), primal_shape)
+        out_size = reduce((lambda x, y: x*y), out_shape)
+        return jnp.eye(out_size, primal_size).reshape(*out_shape, *primal_shape)
+    else:
+        l = len(out_shape)
+        val = 1.
+        for i, o in enumerate(out_shape):
+            j = primal_shape.index(o)
+            _shape = [1]*len(shape)
+            _shape[i] = o
+            _shape[l+j] = o
+            kronecker = jnp.eye(o).reshape(_shape)
+            val *= kronecker
+        return val
+            
 
 class DenseDimension(NamedTuple):
     id: int
     size: int
     val_dim: int
 
+
 class SparseDimension(NamedTuple):
     id: int
     size: int
     val_dim: int
     other_id: int
+
 
 Dimension = Union[DenseDimension, SparseDimension]
         
@@ -75,15 +89,22 @@ class SparseTensor:
         for d in dims:
             _shape.insert(d, 1)
             
+        # print("_shape", _shape)
+        total_shift = 0
         for i, vd in enumerate(self.val.shape):
-            shift = sum([1 for d in dims if d <= i])
+            shift = 0
+            for d in dims:
+                if d <= i + total_shift:
+                    shift += 1
             _broadcast_dims.append(i+shift)
+            total_shift += shift
         print("broadcast", self, _shape, _broadcast_dims)
-        return lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
+        return self.val.reshape(_shape) # lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
     
+    # TODO simplify this
     def materialize_actual_shape(self):
         # Materializes tensor to actual shape where Dimensions with val_dim=None
-        # are materialized as 1     
+        # are materialized as 1    
         _sparse_shape = []
         _shape, _broadcast_dims = [], []
         for i, d in enumerate(self.out_dims):
@@ -117,13 +138,14 @@ class SparseTensor:
             return self.val
         else:
             # TODO this is just a workaround!!!!
-            # Sequuze everything is a bad idea
-            print(self.out_dims, self.primal_dims)
-            print(self.shape, self.val.shape, _shape, _broadcast_dims)
-            val = lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
+            # Squeeze everything is a bad idea
+            # print(self.out_dims, self.primal_dims)
+            # print(self.shape, self.val.shape, _shape, _sparse_shape, _broadcast_dims)
+            val = self.val.reshape(_shape) # lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
             return val*_eye_like(_sparse_shape, len(self.out_dims))
     
     
+# TODO simplify this
 def _add(lhs: SparseTensor, rhs: SparseTensor):
     assert lhs.shape == rhs.shape
     # Here we just do broadcasting
@@ -196,6 +218,9 @@ def _add(lhs: SparseTensor, rhs: SparseTensor):
     lhs_val = lhs.materialize_dimensions(ldims)
     rhs_val = rhs.materialize_dimensions(rdims)
     
+    # print(lhs, rhs)
+    # print("error", _lshape, len(lhs.out_dims), _rshape, len(rhs.out_dims))
+    
     # We need to materialize sparse dimensions for addition
     if len(_lshape) != 0:
         lhs_val *= _eye_like(_lshape, len(lhs.out_dims))
@@ -206,91 +231,93 @@ def _add(lhs: SparseTensor, rhs: SparseTensor):
     
     return SparseTensor(new_out_dims, new_primal_dims, val)
     
-    
+
 def _mul(lhs: SparseTensor, rhs: SparseTensor):
     # TODO add docstring
-    lbroadcasting_dims, rbroadcasting_dims = [], []
     lcontracting_dims, rcontracting_dims = [], []
     new_out_dims, new_primal_dims = [], []
     ldims, rdims = [], []
         
-    dim_count, lcount, rcount = 0, 0, 0
+    dim_count = 0
     l = len(lhs.out_dims)
-    
+    r = len(rhs.out_dims)
     # Handling dependent variables
     for ld in lhs.out_dims:
         if type(ld) is DenseDimension:
-            rdims.append(0)
-            new_dim = DenseDimension(lcount, ld.size, dim_count)
-            new_out_dims.append(new_dim)         
+            rdims.append(ld.id)
+            new_dim = DenseDimension(ld.id, ld.size, dim_count)
+            new_out_dims.insert(ld.id, new_dim)
             dim_count += 1
-            lcount += 1
-    
-    # Handling contracting variables and adjusting sparsity map
-    for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
-        if type(ld) is DenseDimension:
-            if type(rd) is DenseDimension:
-                # In this case we have a contraction
-                lcontracting_dims.append(ld.val_dim) # (ld.id, ld.val_dim)
-                rcontracting_dims.append(rd.val_dim) # (rd.id, rd.val_dim)
-                
-            elif type(rd) is SparseDimension:
-                # rhs contains a Kronecker delta
-                new_dim = DenseDimension(rcount, rd.size, dim_count)
-                new_primal_dims.append(new_dim)
-                if rd.val_dim is None:
-                    rdims.append(dim_count)
-                rcount += 1
-                dim_count += 1
-            else:
-                ValueError(rd + " is not a valid dimension type!")
-                
+            
         elif type(ld) is SparseDimension:
+            rd = rhs.out_dims[ld.other_id-l]
             if type(rd) is DenseDimension:
                 # lhs contains a Kronecker delta
                 # Adds DenseDimension to out_dims
-                new_dim = DenseDimension(lcount, ld.size, dim_count)
-                new_out_dims.append(new_dim)
-                
+                new_dim = DenseDimension(ld.id, ld.size, dim_count)
+                new_out_dims.insert(ld.id, new_dim)
                 if ld.val_dim is None:
-                    ldims.append(dim_count)
-                lcount += 1
+                    ldims.append(ld.id)
                 dim_count += 1
                 
             elif type(rd) is SparseDimension:
                 # Both dimension contain a Kronecker delta
-                if rd.val_dim is None and ld.val_dim is None:
+                if ld.val_dim is None and rd.val_dim is None:
                     dim = None
                 elif rd.val_dim is None:
-                    rdims.append(dim_count)
+                    rdims.append(ld.id)
                     dim = dim_count
                     dim_count += 1
                 elif ld.val_dim is None:
-                    ldims.append(dim_count)
+                    ldims.append(rd.id)
                     dim = dim_count
                     dim_count += 1
                 else:
                     dim = dim_count
                     dim_count += 1
-                new_out_dim = SparseDimension(lcount, ld.size, dim, l+rcount)
-                new_out_dims.append(new_out_dim)
-                new_primal_dim = SparseDimension(l+rcount, rd.size, dim, lcount)
-                new_primal_dims.append(new_primal_dim)                
-                lcount += 1
-                rcount += 1   
+
+                new_out_dim = SparseDimension(ld.id, ld.size, dim, rd.other_id)
+                new_out_dims.insert(ld.id, new_out_dim)
+                new_primal_dim = SparseDimension(rd.other_id, rd.size, dim, ld.id)
+                new_primal_dims.insert(rd.other_id-r, new_primal_dim)                
             else:
-                ValueError(rd + " is not a valid dimension type!")
+                ValueError(str(rd) + " is not a valid dimension type!")
         else:
-            ValueError(ld + " is not a valid dimension type!")
+            ValueError(str(ld) + " is not a valid dimension type!")
+        
+    
+    # Handling contracting variables
+    for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
+        if type(ld) is DenseDimension:
+            if type(rd) is DenseDimension:
+                # In this case we have a contraction
+                lcontracting_dims.append(ld.val_dim)
+                rcontracting_dims.append(rd.val_dim)
+            else:
+                ValueError(str(rd) + " is not a valid dimension type!")
+        else:
+            ValueError(str(ld) + " is not a valid dimension type!")
     
     # Handling independent variables
-    for i, rd in enumerate(rhs.primal_dims):
+    for rd in rhs.primal_dims:
         if type(rd) is DenseDimension:
-            ldims.append(lhs.val.ndim)
-            new_dim = DenseDimension(l+rcount, rd.size, dim_count)
-            new_primal_dims.insert(i, new_dim)   
-            rcount += 1  
+            ldims.append(rd.id)
+            new_dim = DenseDimension(rd.id, rd.size, dim_count)
+            new_primal_dims.insert(rd.id-l, new_dim)  
             dim_count += 1
+        elif type(rd) is SparseDimension:
+            ld = lhs.primal_dims[rd.other_id]
+            if type(ld) is DenseDimension:
+                # rhs contains a Kronecker delta
+                new_dim = DenseDimension(rd.id, rd.size, dim_count)
+                new_primal_dims.insert(rd.id-l, new_dim)
+                if rd.val_dim is None:
+                    rdims.append(rd.other_id)
+                dim_count += 1
+            else:
+                ValueError(str(ld) + " is not a valid dimension type!")
+        else:
+            ValueError(str(rd) + " is not a valid dimension type!")
     
     # Executing the appropriate computations
     if len(lcontracting_dims) > 0:
@@ -304,19 +331,15 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor):
         
         print(val.shape)
         
-        if len(lbroadcasting_dims) > 0 or len(rbroadcasting_dims) > 0:
+        if len(ldims) > 0 or len(rdims) > 0:
             pass
         else:
             pass
     else: 
-        
-        print("lhs rhs", lhs, rhs)
-        print(ldims, rdims)
-        print(new_out_dims, new_primal_dims)
         lhs_val = lhs.materialize_dimensions(ldims)
         rhs_val = rhs.materialize_dimensions(rdims)            
         val = lhs_val * rhs_val
-    
+            
     return SparseTensor(new_out_dims, new_primal_dims, val)
 
     
