@@ -407,5 +407,5 @@ def add_concatenate_vertex(edges, eqn, variables):
 
 vertex_registry[lax.concatenate_p] = add_concatenate_vertex
 
-# TODO find the iota primitive      
+# TODO find the iota primitive    
     
