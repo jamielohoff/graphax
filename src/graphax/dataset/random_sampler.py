@@ -10,9 +10,9 @@ import jax.random as jrand
 import chex
 
 from .sampler import ComputationalGraphSampler
-from ..core import GraphInfo
-from ..examples import make_random
+from ..examples import make_random_code
 from ..transforms import safe_preeliminations_gpu, compress_graph, embed, clean
+from ..interpreter.from_jaxpr import make_graph
 
 
 class RandomSampler(ComputationalGraphSampler):
@@ -48,16 +48,18 @@ class RandomSampler(ComputationalGraphSampler):
         samples = []
         
         while len(samples) < num_samples:
-            fkey, rkey, key = jrand.split(key, 3)
-            fraction = jrand.uniform(fkey, (), **kwargs)
-            edges, info = make_random(rkey, self.max_info, fraction=fraction)
+            rkey, key = jrand.split(key, 2)
+            code, jaxpr = make_random_code(rkey, self.max_info, **kwargs)
+            edges = make_graph(jaxpr)
+            
             edges, info = clean(edges, info)
             edges, info = safe_preeliminations_gpu(edges, info)
             edges, info = compress_graph(edges, info)
+            
             num_intermediates = info.num_intermediates
             edges, _, vertices, attn_mask = embed(edges, info, self.max_info)
             num_intermediates = info.num_intermediates
             if num_intermediates > self.min_num_intermediates:
-                samples.append(("", edges, info, vertices, attn_mask))
+                samples.append((code, edges, info, vertices, attn_mask))
         return samples
     

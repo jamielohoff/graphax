@@ -2,10 +2,10 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrand
 
-from graphax.examples.random import make_random_jaxpr
+from graphax.examples.random_codegenerator import make_random_code
 
 
-info = [2, 10, 1]
-key = jrand.PRNGKey(42)
-print(make_random_jaxpr(key, info))
+info = [20, 50, 20]
+key = jrand.PRNGKey(1234)
+print(make_random_code(key, info))
 

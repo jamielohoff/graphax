@@ -3,7 +3,7 @@ import jax.nn as jnn
 import jax.lax as lax
 import jax.numpy as jnp
 
-from jax._src.core import Var, ClosedJaxpr, JaxprEqn
+from jax._src.core import Var
 
 
 vertex_registry = {}
@@ -354,7 +354,7 @@ vertex_registry[lax.stop_gradient_p] = add_stop_gradient_vertex
 def add_copy_gradient_vertex(edges, eqn, variables):
     """
     TODO check this for correctness
-    Adds a vertex for operations that are essentially just copy the gradient 
+    Adds a vertex for operations that are essentially just copies the gradient 
     such as squeeze, broadcast_in_dim etc.
     """
     filtered_invars = filter_invars(eqn, variables)
@@ -372,6 +372,7 @@ def add_copy_gradient_vertex(edges, eqn, variables):
     edges = edges.at[1:, i, j].set(structure)
     return edges
 
+# TODO check if this is true!
 vertex_registry[lax.broadcast_in_dim_p] = add_copy_gradient_vertex
 vertex_registry[lax.squeeze_p] = add_copy_gradient_vertex
 
@@ -405,7 +406,5 @@ def add_concatenate_vertex(edges, eqn, variables):
                         
     return edges
 
-vertex_registry[lax.concatenate_p] = add_concatenate_vertex
-
-# TODO find the iota primitive    
+vertex_registry[lax.concatenate_p] = add_concatenate_vertex  
     
