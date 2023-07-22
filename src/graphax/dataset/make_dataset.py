@@ -1,14 +1,15 @@
 import os
+from typing import Sequence
 from tqdm import tqdm
 
 import jax
 import jax.random as jrand
 
-import chex
+from chex import PRNGKey
 
 from .sampler import ComputationalGraphSampler
 from .utils import create, write
-from ..core import GraphInfo, make_graph_info
+
 
 class Graph2File:
     """
@@ -19,7 +20,7 @@ class Graph2File:
     num_samples: int
     num_files: int
     samples_per_file: int
-    max_info: GraphInfo
+    max_info: Sequence[int]
     
     sampler_batchsize: int
     sampler: ComputationalGraphSampler
@@ -31,7 +32,7 @@ class Graph2File:
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
                 samples_per_file: int = 100,
-                max_info: GraphInfo = make_graph_info([10, 50, 10])) -> None:
+                max_info: Sequence[int] = [10, 50, 10]) -> None:
         self.path = path
         self.fname_prefix = fname_prefix
         self.num_samples = num_samples
@@ -43,7 +44,7 @@ class Graph2File:
         self.sampler_batchsize = sampler_batchsize
         self.sampler = sampler
         
-    def generate(self, key: chex.PRNGKey = None, **kwargs) -> None:
+    def generate(self, key: PRNGKey = None, **kwargs) -> None:
         pbar = tqdm(range(self.num_files))
         for _ in pbar:
             fname = self.new_file()

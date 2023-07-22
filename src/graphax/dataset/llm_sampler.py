@@ -4,11 +4,10 @@ import openai
 import jax
 import jax.random as jrand
 
-import chex
+from chex import Array, PRNGKey
 
 from .sampler import ComputationalGraphSampler
 from .utils import check_graph_shape
-from ..core import GraphInfo
 from ..interpreter.from_jaxpr import make_graph
 from ..transforms import safe_preeliminations_gpu, compress_graph, embed
 
@@ -41,8 +40,8 @@ class LLMSampler(ComputationalGraphSampler):
     
     def sample(self, 
                num_samples: int = 1, 
-               key: chex.PRNGKey = None,
-               **kwargs) -> Sequence[tuple[str, chex.Array, GraphInfo]]:
+               key: PRNGKey = None,
+               **kwargs) -> Sequence[tuple[str, Array]]:
         openai.api_key = self.api_key
         idx = jrand.randint(key, (), 0, len(self.prompt_list)-1)
         message, make_jaxpr = self.prompt_list[idx]
@@ -73,16 +72,15 @@ class LLMSampler(ComputationalGraphSampler):
                 if "return" in line:
                     indicator = False
             
-            if len(clean_lines) == 0:
-                continue
+            if len(clean_lines) == 0: continue
 
             function = "\n".join(clean_lines)
             function += make_jaxpr
             try:
                 exec(function, globals())
-                edges, info = make_graph(jaxpr)
-                edges, info = safe_preeliminations_gpu(edges, info)
-                edges, info = compress_graph(edges, info)
+                edges = make_graph(jaxpr)
+                edges = safe_preeliminations_gpu(edges, info)
+                edges = compress_graph(edges, info)
                 num_intermediates = info.num_intermediates
                 edges, _, vertices, attn_mask = embed(edges, info, self.max_info)
                 print(info)

@@ -14,15 +14,11 @@ def compress_graph(edges: Array) -> Array:
             
     i, num_removed_vertices = 1, 0
     for _ in range(1, num_v+1):            
-        s1 = jnp.sum(edges.at[i+num_i-1, :].get()) == 0.
-        s2 = jnp.sum(edges.at[:, i-1].get()) == 0.
-        if s1 and s2:           
-            add_mask = jnp.where(vertex_mask >= i, 1, 0)
-            vertex_mask -= add_mask     
-            edges = jnp.delete(edges, i+num_i-1, axis=0)
-            edges = jnp.delete(edges, i-1, axis=1)
-            attn_mask = jnp.delete(attn_mask, i-1, axis=0)
-            attn_mask = jnp.delete(attn_mask, i-1, axis=1)
+        s1 = jnp.sum(edges.at[:, i+num_i, :].get()) == 0
+        s2 = jnp.sum(edges.at[:, :, i-1].get()) == 0
+        if s1 and s2:         
+            edges = jnp.delete(edges, i+num_i, axis=1)
+            edges = jnp.delete(edges, i-1, axis=2)
             num_removed_vertices += 1
         else:
             i += 1

@@ -254,7 +254,6 @@ def broadcast_rule(primitive, key, outvar, invars, invals):
 defspecialcode(jnp.reshape, broadcast_rule)
 
 
-
 def sample_primitive(key, prim_p):
     subkey, key = jrand.split(key, 2)
     N = jrand.choice(key, jnp.arange(0, 5), p=prim_p)
@@ -373,7 +372,6 @@ def make_random_code(key,
     code += "global jaxpr\n"
     code += "jaxpr = jax.make_jaxpr(f)(" + ",".join(f_inputs) + ")"
 
-    print(code)
     input_params = {v:env[v] for v in f_inputs}
     exec(code, globals(), input_params)
     
