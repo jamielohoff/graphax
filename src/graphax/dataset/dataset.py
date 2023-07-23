@@ -1,5 +1,5 @@
-from typing import Dict, Sequence, Tuple
 import os
+from typing import Sequence, Tuple
 from torch.utils.data import Dataset
 
 import chex

@@ -5,6 +5,8 @@ import jax.numpy as jnp
 
 from chex import Array
 
+from graphax import vertex_eliminate
+
 
 def scan(f, init, xs, length=None):
     if xs is None:
@@ -17,33 +19,41 @@ def scan(f, init, xs, length=None):
     return carry, jnp.stack(ys)
 
 
-def cond(conditional, true_fn, false_fn, *xs):
-    if conditional:
-        return true_fn(*xs)
-    else:
-        return false_fn(*xs)
+def minimal_markowitz(edges: Array):
+    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
+    
+    def loop_fn(_edges, _):
+        minimal_markowitz_vertex = get_minimal_markowitz(_edges)
+        _edges, _ = vertex_eliminate(minimal_markowitz_vertex, _edges)
+        return _edges, minimal_markowitz_vertex
+    
+    it = jnp.arange(1, num_v+1-num_o)
+    _, idxs = lax.scan(loop_fn, edges, it)
+
+    return [int(i) for i in idxs]
 
 
-def minimal_markowitz(edges: Array) -> Sequence[int]:
+def get_minimal_markowitz(edges: Array, degrees: bool = False) -> Sequence[int]:
     """
     Function that calculates the elimination order of a computational graph
     with regard to the minimal Markowitz degree.
     To do this it calculates the markowitz degree of a single vertex within a
     group of similar vertices, i.e. for a single component of a tensor vertex.
-    """
-    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
-    
+    """    
     def loop_fn(carry, vertex):
-        is_output_vertex = edges.at[2, 0, vertex-1].get() == 1
-        markowitz_degree = lax.cond(is_output_vertex,
+        is_eliminated_vertex = edges.at[1, 0, vertex-1].get() == 1
+        markowitz_degree = lax.cond(is_eliminated_vertex,
                                     lambda v, e: -1, 
                                     lambda v, e: calc_markowitz_degree(v, e), 
                                     vertex, edges)
         return carry, markowitz_degree
     
-    vertices = jnp.arange(1, num_v+1)
+    vertices = jnp.arange(1, edges.shape[2]+1)
     _, markowitz_degrees = lax.scan(loop_fn, (), vertices)
-    return [int(i)+1 for i in jnp.argsort(markowitz_degrees)[num_o:]]
+    if degrees:
+        print(markowitz_degrees)
+    idx = jnp.sum(edges.at[1, 0, :].get())
+    return jnp.argsort(markowitz_degrees)[idx]+1
 
 
 def calc_markowitz_degree(vertex: int, edges: Array):
@@ -66,7 +76,7 @@ def count_in_edges(edge_slice: Array):
         num_edges += _num_edges
         return num_edges, 0
 
-    num_edges, _ = scan(loop_fn, 0, edge_slice.T)
+    num_edges, _ = lax.scan(loop_fn, 0, edge_slice.T)
     
     return num_edges
 
@@ -81,7 +91,7 @@ def count_out_edges(edge_slice: Array):
         num_edges += _num_edges
         return num_edges, 0
 
-    num_edges, _ = scan(loop_fn, 0, edge_slice.T)
+    num_edges, _ = lax.scan(loop_fn, 0, edge_slice.T)
     
     return num_edges
 
@@ -97,7 +107,6 @@ def matrix_parallel(slice: Array):
 
 
 SPARSITY_MAP = jnp.array([2, 1, 1, 2])
-
 
 def vector_parallel(slice: Array):
     sparsity_type = slice.at[0].get()

@@ -26,7 +26,6 @@ class RandomSampler(ComputationalGraphSampler):
 
         Args:
             num_games (int): _description_
-            info (Array): _description_
             key (PRNGKey, optional): _description_. Defaults to None.
 
         Returns:
@@ -53,8 +52,7 @@ class RandomSampler(ComputationalGraphSampler):
             code, jaxpr = make_random_code(rkey, self.max_info, **kwargs)
             edges = make_graph(jaxpr)
             print(code, edges)
-            
-            # TODO check these
+
             edges = clean(edges)
             edges = safe_preeliminations(edges)
             edges = compress_graph(edges)

@@ -1,6 +1,5 @@
 from .utils import create, write
-from ..core import GraphInfo, make_graph_info
-from ..transforms import safe_preeliminations_gpu, compress_graph, embed
+from ..transforms import safe_preeliminations, compress_graph, embed
 from ..examples import (make_LIF, 
                               make_adaptive_LIF, 
                               make_Helmholtz, 

@@ -1,4 +1,4 @@
-from typing import Callable, Union, Sequence
+from typing import Callable, Sequence, Union
 
 import jax
 from jax._src.core import ClosedJaxpr, JaxprEqn
