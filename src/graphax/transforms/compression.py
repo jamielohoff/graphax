@@ -8,7 +8,7 @@ from chex import Array
 def compress_graph(edges: Array) -> Array:
     """
     Function that removes all zero rows and cols from a comp. graph repr.
-    WARNING: This changes the shape of the edges array and the number of intermediate variables!
+    NOTE: This changes the shape of the edges array and the number of intermediate variables!
     """
     num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
             

@@ -1,10 +1,6 @@
 from typing import Callable, Union, Sequence
 
 import jax
-import jax.nn as jnn
-import jax.lax as lax
-import jax.numpy as jnp
-
 from jax._src.core import ClosedJaxpr, JaxprEqn
 
 from chex import Array

@@ -4,7 +4,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 
 from jax._src.core import Var
-
+# Jacobian has shape (sparsity type, input shape, output shape)
 
 vertex_registry = {}
 

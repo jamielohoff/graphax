@@ -11,13 +11,14 @@ from chex import Array, PRNGKey
 
 from .sampler import ComputationalGraphSampler
 from ..examples import make_random_code
-from ..transforms import safe_preeliminations_gpu, compress_graph, embed, clean
+from ..transforms import safe_preeliminations, compress_graph, embed, clean
 from ..interpreter.from_jaxpr import make_graph
 
 
 class RandomSampler(ComputationalGraphSampler):
     """
     TODO add documentation
+    TODO use multiprocessing
     """
     
     def __init__(self, *args, **kwargs) -> None:
@@ -52,13 +53,14 @@ class RandomSampler(ComputationalGraphSampler):
             code, jaxpr = make_random_code(rkey, self.max_info, **kwargs)
             edges = make_graph(jaxpr)
             print(code, edges)
-            # TODO check these
-            # edges = clean(edges)
-            # edges = safe_preeliminations_gpu(edges)
-            # edges = compress_graph(edges)
             
-            # edges = embed(edges, self.max_info)
-            # if num_intermediates > self.min_num_intermediates:
-            samples.append((code, edges))
+            # TODO check these
+            edges = clean(edges)
+            edges = safe_preeliminations(edges)
+            edges = compress_graph(edges)
+            
+            edges = embed(edges, self.max_info)
+            if edges.at[0, 0, 1].get() >= self.min_num_intermediates:
+                samples.append((code, edges))
         return samples
     

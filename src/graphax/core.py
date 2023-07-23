@@ -9,15 +9,35 @@ DO NOT TOUCH!
 """
 
 from functools import partial
-from typing import Tuple, NamedTuple, Sequence
+from typing import Sequence, Tuple
 
 import jax
-import jax.nn as jnn
 import jax.lax as lax
 import jax.numpy as jnp
 
 from chex import Array
 
+# Every entry in the 3-dimensional tensor has the following meaning:
+# (sparsity type, Jacobian shape 1st input component == 1st component, 
+#                 Jacobain shape 2nd input component == 2nd component,
+#                 Jacobian shape 1st output component == 3rd component,
+#                 Jacobian shape 2nd output component == 4th component)
+# Thus the current implementation can only deal with scalars vectors and matrices
+# and related operations. 
+# NOTE: No support for higher-order tensors!
+
+# Sparsity types explanation:
+# 0: No edge between vertices
+# 1: Dense Jacobian, i.e. no Kronecker symbols
+# 8: For "copy" operation that keep sparsity
+#
+# Kronecker symbol between components: 
+# 2: (1, 3)
+# 3: (2, 4)
+# 4: (1, 4)
+# 5: (2, 3)
+# 6: (1, 3) and (2, 4)
+# 7: (1, 4) and (2, 3)
 
 # Row idx is incoming edge, col idx is outgoing edge
 # For meaning of the different numbers, "checkout fmas_sparsity_map()" function
@@ -64,7 +84,6 @@ CONTRACTION_MAP =  jnp.array([[[0, 0, 0, 0, 0, 0, 0, 0, 0],
 # Row idx is incoming edge, col idx is outgoing edge
 # Gives the resulting sparsity type if two hyperdimensional Jacobians
 # are multiplied with each other
-# TODO add description of different sparsity types and their behavior
 MUL_SPARSITY_MAP = jnp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                               [0, 1, 1, 1, 1, 1, 1, 1, 1],
                               [0, 1, 2, 1, 4, 1, 2, 4, 2],
@@ -148,7 +167,6 @@ def get_fmas_jacprod(_jac_edges, fmas, col, _col, nonzero, vertex, num_i):
     new_sparsity_col = sparsity_where(_col[0, :], new_sparsity_col)
     new_sparsity_col = jnp.broadcast_to(new_sparsity_col, (1, *new_sparsity_col.shape))
     fmas = jnp.sum(_fmas)
-    # print(fmas)
     # In shape column
     new_col_ins = jnp.where(col_ins[1] > 0, col_ins, _col_ins)
     
@@ -174,7 +192,6 @@ def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
         vertex (int): Vertex we want to eliminate.
         edges (Array): Matrix that describes the connectivity of the 
                         computational graph.
-        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
         A tuple that contains the new edge representation of the computational
@@ -212,6 +229,36 @@ def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
     return edges, fmas
 
 
+def cross_country(order: Sequence[int], edges: Array) -> Array:
+    """
+    Fully JIT-compilable function that implements cross-country elimination 
+    according to the given order.
+
+    Arguments:
+        edges (Array): Matrix that describes the connectivity of the 
+                        computational graph.
+
+    Returns:
+        A tuple that contains the new edge representation of the computational
+        graph and the number of fmas (fused multiplication-addition ops).
+    """
+    num_i, num_v = get_info(edges)
+    vertex_mask = 1 + jnp.nonzero(1 - edges.at[1, 0, :].get(), size=num_v, fill_value=-2)[0]
+    def cc_fn(carry, vertex):
+        _edges, fmas = carry
+        not_masked = jnp.any(vertex == vertex_mask)
+        _edges, _fmas = lax.cond(not_masked,
+                                lambda e: vertex_eliminate(vertex, e),
+                                lambda e: (e, 0),
+                               _edges)
+        fmas += _fmas
+        carry = (_edges, fmas)
+        return carry, None
+    vertices = jnp.array(order)
+    output, _ = lax.scan(cc_fn, (edges, 0), vertices)
+    return output
+
+
 def forward(edges: Array):
     """
     Fully JIT-compilable function that implements forward-mode AD by 
@@ -222,27 +269,14 @@ def forward(edges: Array):
     Arguments:
         edges (Array): Matrix that describes the connectivity of the 
                         computational graph.
-        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
     num_i, num_v = get_info(edges)
-    vertex_mask = 1 + jnp.nonzero(1 - edges.at[1, 0, :].get(), size=num_v, fill_value=-2)[0]
-    
-    def fwd_fn(carry, vertex):
-        _edges, fmas = carry
-        not_masked = jnp.any(vertex == vertex_mask)
-        _edges, _fmas = lax.cond(not_masked,
-                                lambda e: vertex_eliminate(vertex, e),
-                                lambda e: (e, 0),
-                                _edges)
-        fmas += _fmas
-        carry = (_edges, fmas)
-        return carry, None
-    vertices = jnp.arange(1, num_v+1)
-    output, _ = lax.scan(fwd_fn, (edges, 0), vertices)
+    order = jnp.arange(1, num_v+1)
+    output = cross_country(order, edges)
     return output
 
 
@@ -256,25 +290,13 @@ def reverse(edges: Array):
     Arguments:
         edges (Array): Matrix that describes the connectivity of the 
                         computational graph.
-        info (GraphInfo): Meta-information about the computational graph.
 
     Returns:
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
     num_i, num_v = get_info(edges)
-    vertex_mask = 1 + jnp.nonzero(1 - edges.at[1, 0, :].get(), size=num_v, fill_value=-2)[0]
-    def rev_fn(carry, vertex):
-        _edges, fmas = carry
-        not_masked = jnp.any(vertex == vertex_mask)
-        _edges, _fmas = lax.cond(not_masked,
-                                lambda e: vertex_eliminate(vertex, e),
-                                lambda e: (e, 0),
-                               _edges)
-        fmas += _fmas
-        carry = (_edges, fmas)
-        return carry, None
-    vertices = jnp.arange(1, num_v+1)[::-1]
-    output, _ = lax.scan(rev_fn, (edges, 0), vertices)
+    order = jnp.arange(1, num_v+1)[::-1]
+    output = cross_country(order, edges)
     return output
 
