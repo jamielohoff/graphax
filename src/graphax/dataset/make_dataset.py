@@ -32,7 +32,7 @@ class Graph2File:
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
                 samples_per_file: int = 100,
-                max_info: Sequence[int] = [10, 50, 10]) -> None:
+                max_info: Sequence[int] = [20, 50, 20]) -> None:
         self.path = path
         self.fname_prefix = fname_prefix
         self.num_samples = num_samples

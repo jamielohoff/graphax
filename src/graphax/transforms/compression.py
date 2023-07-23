@@ -23,5 +23,9 @@ def compress_graph(edges: Array) -> Array:
         else:
             i += 1
 
+    num_v = edges.shape[2]
+    num_i = edges.shape[1] - num_v - 1
+    num_o = jnp.sum(edges.at[0, 2, :].get())
+    edges = edges.at[0, 0, 0:3].set(jnp.array([num_i, num_v,num_o]))
     return edges
 

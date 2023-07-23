@@ -11,7 +11,7 @@ class ComputationalGraphSampler:
     
     def __init__(self, 
                 min_num_intermediates: int = 12,
-                max_info: Sequence[int] = [10, 30, 5]) -> None:
+                max_info: Sequence[int] = [20, 50, 20]) -> None:
         """initializes a fixed repository of possible vertex games
 
         Args:

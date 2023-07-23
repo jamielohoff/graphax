@@ -177,7 +177,7 @@ def transpose_rule(primitive, key, outvar, invars, invals):
         perm = jrand.permutation(key, axes)
         perm = [int(p) for p in perm]
         
-        params = {"axes":axes}
+        params = {"axes":perm}
         lines = f"{outvar} = jnp.{name}({invars[0]},axes={perm})\n"
         val = primitive(*invals, **params)
         return val, lines
@@ -191,6 +191,7 @@ def dot_general_rule(primitive, key, outvar, invars, invals):
     assert len(invals) == 2
     name = primitive.__name__
     lhs, rhs = invals
+
     if len(lhs.shape) != 0 and len(rhs.shape) != 0:
         dim_pairs = []
         for i, s in enumerate(lhs.shape):
@@ -315,14 +316,14 @@ def make_random_code(key,
         var = "v"+str(count)
         write(var, primal)
         count += 1
-                
+
     f_inputs = list(env.keys())
     function_header = "def f(" + ",".join(f_inputs) + "):\n"
     code += function_header
     
     # Add literals
-    n = jrand.randint(key, (), 0, max_literals) # number of literals
-    for _ in range(n):
+    num_literals = jrand.randint(key, (), 0, max_literals) # number of literals
+    for _ in range(num_literals):
         subkey, key = jrand.split(key, 2)
         literal = make_random_primal(subkey, ndims)
         shape = literal.shape
@@ -340,12 +341,12 @@ def make_random_code(key,
         
         # Select primitive
         prim = sample_primitive(pkey, prim_p=prim_p)
-        rule, ninputs = primitive_code[prim]            
+        rule, num_inputs = primitive_code[prim]            
         
         # Select inputs
         _p = jnp.array(inputs_p)
         p = _p/_p.sum()
-        idxs = jrand.choice(vkey, jnp.array(range(len(inputs))), (ninputs,), replace=False, p=p)
+        idxs = jrand.choice(vkey, jnp.array(range(len(inputs))), (num_inputs,), replace=False, p=p)
         vars = [inputs[idx] for idx in idxs]
         primals = safe_map(read, vars)
 
@@ -364,7 +365,7 @@ def make_random_code(key,
         
     # Create list of outvars
     inputs = list(env.keys())
-    out_idxs = jrand.choice(vkey, jnp.arange(num_i+n, len(inputs)), (num_o-1,), replace=False)
+    out_idxs = jrand.choice(vkey, jnp.arange(num_i+num_literals, len(inputs)), (num_o-1,), replace=False)
     out_idxs = list(jnp.append(out_idxs, -1))
     outputs = [inputs[idx] for idx in out_idxs]
 
