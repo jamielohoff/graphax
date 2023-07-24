@@ -1,7 +1,8 @@
 import sys
 from .interpreter.from_jaxpr import make_graph
 from .core import (make_empty_edges, 
-                    vertex_eliminate, 
+                    vertex_eliminate,
+                    cross_country, 
                     forward, 
                     reverse)
 from .vertex_game import VertexGameState, make_vertex_game_state, step

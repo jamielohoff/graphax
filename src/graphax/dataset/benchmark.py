@@ -1,23 +1,18 @@
+from typing import Sequence
+
 from .utils import create, write
-from ..core import GraphInfo, make_graph_info
-from ..transforms import safe_preeliminations_gpu, compress_graph, embed
-from ..examples import (make_LIF, 
-                              make_adaptive_LIF, 
-                              make_Helmholtz, 
-                              make_lighthouse, 
-                              make_hole,
-                              make_scalar_assignment_tree,
-                              make_f,
-                              make_g,
-                              make_minimal_reverse,
-                              make_hessian,
-                              make_sdf_box,
-                              make_sdf_sphere,
-                              make_softmax_attention)
+from ..transforms import safe_preeliminations, compress_graph, embed
+from ..examples import (make_1d_roe_flux,
+                        make_lif_SNN,
+                        make_ada_lif_SNN,
+                        make_transformer_decoder,
+                        make_lighthouse)
+                        # make_transformer_encoder_decoder)
 
 
-def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 50, 10])) -> None:
-    """_summary_
+def make_benchmark_dataset(fname: str, info: Sequence[int] =[20, 100, 20]) -> None:
+    """
+    Creates a benchmark dataset that
 
     Args:
         info (GraphInfo): _description_
@@ -29,71 +24,35 @@ def make_benchmark_dataset(fname: str, info: GraphInfo = make_graph_info([10, 50
     create(fname, 10, info)
 
     # We use the field that is usually reserved for source code to store the names
-    edges, _info = make_lighthouse()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("lighthouse", edges, info, vertices, attn_mask))
+    edges = make_lighthouse()
+    edges = safe_preeliminations(edges)
+    edges = compress_graph(edges)
+    edges = embed(edges, info)
+    samples.append(("lighthouse", edges))
 
-    edges, _info = make_LIF()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("LIF", edges, info, vertices, attn_mask))
+    edges = make_lif_SNN()
+    edges = safe_preeliminations(edges)
+    edges = compress_graph(edges)
+    edges = embed(edges, info)
+    samples.append(("LIF SNN", edges))
 
-    edges, _info = make_adaptive_LIF()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("Adaptive LIF", edges, info, vertices, attn_mask))
-        
-    edges, _info = make_hole()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("Hole", edges, info, vertices, attn_mask))
-
-    edges, _info = make_scalar_assignment_tree()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("Scalar assignment tree", edges, info, vertices, attn_mask))
-
-    edges, _info = make_f()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("f", edges, info, vertices, attn_mask))
-
-    edges, _info = make_g(size=10)
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("g", edges, info, vertices, attn_mask))
-
-    edges, _info = make_minimal_reverse()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("minimal reverse", edges, info, vertices, attn_mask))
+    edges = make_ada_lif_SNN()
+    edges = safe_preeliminations(edges)
+    edges = compress_graph(edges)
+    edges = embed(edges, info)
+    samples.append(("Adaptive LIF SNN", edges))
+            
+    edges = make_transformer_decoder()
+    edges = safe_preeliminations(edges)
+    edges = compress_graph(edges)
+    edges = embed(edges, info)
+    samples.append(("transformer", edges))
     
-    edges, _info = make_hessian()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("hessian", edges, info, vertices, attn_mask))
-    
-    edges, _info = make_sdf_sphere()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("sdf sphere", edges, info, vertices, attn_mask))
-    
-    edges, _info = make_softmax_attention()
-    edges, _info = safe_preeliminations_gpu(edges, _info)
-    edges, _info = compress_graph(edges, _info)
-    edges, _, vertices, attn_mask = embed(edges, _info, info)
-    samples.append(("softmax attention", edges, info, vertices, attn_mask))
+    # edges = make_transformer_encoder_decoder()
+    # edges = safe_preeliminations(edges)
+    # edges = compress_graph(edges)
+    # edges = embed(edges, info)
+    # samples.append(("transformer", edges))
     
     write(fname, samples)
 

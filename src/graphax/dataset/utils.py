@@ -3,9 +3,9 @@ Tools that provides the tools to save a comp. graph repr., meta-data
 and the corresponding source code to a hdf5 file respectively.
 Comp. graph repr. are stored in safe-preeliminated form to save memory.
 """
+import os
 from typing import Sequence, Tuple
 
-import os
 import h5py
 import jax
 import jax.numpy as jnp
@@ -23,9 +23,9 @@ def get_prompt_list(prompt_file: str):
 
 
 def check_graph_shape(info: Sequence[int], max_info: Sequence[int]):
-    a = info.num_inputs <= max_info.num_inputs
-    b = info.num_intermediates <= max_info.num_intermediates
-    c = info.num_outputs <= max_info.num_outputs
+    a = info[0] <= max_info[0]
+    b = info[1] <= max_info[1]
+    c = info[2] <= max_info[2]
     return jnp.logical_and(jnp.logical_and(a, b), c)
 
 

@@ -9,6 +9,7 @@ import jax.random as jrand
 
 from graphax.interpreter.to_jaxpr import jacve
 
+
 def simple():
     def f(x, y):
         z = x * y
@@ -20,8 +21,6 @@ def simple():
 
     duration = 1000
     shapes = [(5, 5), (10, 10), (20, 20), (30, 30), (40, 40), (50, 50)]
-
-    jacs = jax.jit(jacve(f, [2, 1]))
 
     jac_fwd_f = jax.jit(jacve(f, [1, 2]))
     jac_rev_f = jax.jit(jacve(f, [2, 1]))
@@ -120,10 +119,8 @@ def Perceptron():
         d = a2 - y
         return .5*jnp.sum(d**2)
 
-
     key = jrand.PRNGKey(42)
     rev, jax_rev = [], []
-
     
     jac_rev_f = jax.jit(jacve(Perceptron, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))
     jax_rev_f = jax.jit(jax.jacrev(Perceptron, argnums=(0, 1, 2, 3, 4, 5)))

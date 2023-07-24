@@ -1,18 +1,17 @@
 from typing import Sequence
-import chex
-from ..core import GraphInfo, make_graph_info
+from chex import Array, PRNGKey
 
 
 class ComputationalGraphSampler:
     """
     TODO add documentation
     """
-    max_info: GraphInfo
+    max_info: Sequence[int]
     min_num_intermediates: int
     
     def __init__(self, 
                 min_num_intermediates: int = 12,
-                max_info: GraphInfo = make_graph_info([10, 30, 5])) -> None:
+                max_info: Sequence[int] = [20, 50, 20]) -> None:
         """initializes a fixed repository of possible vertex games
 
         Args:
@@ -28,8 +27,8 @@ class ComputationalGraphSampler:
             
     def sample(self, 
                 num_samples: int = 1, 
-                key: chex.PRNGKey = None,
-                **kwargs) -> Sequence[tuple[str, chex.Array, GraphInfo]]:
+                key: PRNGKey = None,
+                **kwargs) -> Sequence[tuple[str, Array]]:
         """Samples from the repository of possible games
 
         Args:

@@ -1,37 +1,9 @@
-import jax
-import jax.numpy as jnp
-
-from graphax.interpreter.from_jaxpr import make_graph
-from graphax.core import reverse, vertex_eliminate
-from graphax.transforms.preelimination import safe_preeliminations_gpu, compress_graph
+from graphax.examples import make_Helmholtz
+from graphax.transforms.preelimination import safe_preeliminations
 
 
-def Helmholtz(x):
-    z = jnp.log(x / (1 - jnp.sum(x)))
-    return x * z
+edges = make_Helmholtz()
 
-x = jnp.ones(4)
-edges, info = make_graph(Helmholtz, x)
-print(edges, info)
+edges = safe_preeliminations(edges)
+print(edges)
 
-edges, info = safe_preeliminations_gpu(edges, info)
-print(edges, info)
-edges, info = compress_graph(edges, info)
-print(edges, info)
-
-def f(x, y):
-    z = x + y
-    a = jnp.arctan(.33)
-    b = jnp.arccos(.25)
-    c = a + b
-    w = jnp.cos(z/c)
-    return w + z, 2.*w
-
-x = jnp.ones(2)
-edges, info = make_graph(f, 1., 1.)
-print(edges, info)
-
-edges, info = safe_preeliminations_gpu(edges, info)
-print(edges, info)
-edges, info = compress_graph(edges, info)
-print(edges, info)

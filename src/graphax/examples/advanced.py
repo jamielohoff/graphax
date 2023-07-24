@@ -55,18 +55,3 @@ def make_hessian():
     grad_f = jax.grad(f)
     return make_graph(grad_f, 1., 1., 1., 1.)
 
-
-def make_softmax_attention():    
-    def attn(q, k, v):
-        a = q.T @ k
-        z = jnn.softmax(a, axis=1)
-        return z @ v
-    
-    q = jnp.ones((4, 4))
-    k = jnp.ones((4, 4))
-    v = jnp.ones((4, 4))
-    
-    print(jax.make_jaxpr(attn)(q, k, v))
-    
-    return make_graph(attn, q, k, v)
-
