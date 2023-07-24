@@ -61,6 +61,7 @@ def add_mono_vertex(edges, eqn, variables):
     return edges
 
 vertex_registry[lax.neg_p] = add_mono_vertex
+vertex_registry[lax.abs_p] = add_mono_vertex
 
 vertex_registry[lax.exp_p] = add_mono_vertex
 vertex_registry[lax.log_p] = add_mono_vertex

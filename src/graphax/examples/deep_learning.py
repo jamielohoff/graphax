@@ -4,6 +4,12 @@ import jax.numpy as jnp
 
 from ..interpreter.from_jaxpr import make_graph
 
+
+def layer_norm(x, gamma, beta):
+    mu = jnp.mean(x, axis=1)
+    sigma = jnp.var(x, axis=1)
+    return (x - mu)/jnp.sqrt(sigma + 1e-6) * gamma + beta
+
 def attn(q, k, v):
     a = q.T @ k
     z = jnn.softmax(a, axis=1)
@@ -13,15 +19,16 @@ def make_softmax_attention():
     q = jnp.ones((4, 4))
     k = jnp.ones((4, 4))
     v = jnp.ones((4, 4))
-    
     return make_graph(attn, q, k, v)
 
 
 def make_Perceptron():
-    def Perceptron(x, W1, b1, W2, b2, y):
+    def Perceptron(x, y, W1, b1, W2, b2, gamma, beta):
         y1 = W1 @ x
         z1 = y1 + b1
         a1 = jnp.tanh(z1)
+        
+        a1 = layer_norm(a1, gamma, beta)
         
         y2 = W2 @ a1
         z2 = y2 + b2
@@ -39,14 +46,7 @@ def make_Perceptron():
     W2 = jnp.ones((4, 3))
     b2 = jnp.ones(4)
     
-    return make_graph(Perceptron, x, W1, b1, W2, b2, y)
-
-
-def layer_norm(x, gamma, beta):
-    mu = jnp.mean(x, axis=1)
-    sigma = jnp.var(x, axis=1)
-    
-    return (x - mu)/jnp.sqrt(sigma + 1e-6) * gamma + beta
+    return make_graph(Perceptron, x, y, W1, b1, W2, b2, 1., 0.)
 
 
 # TODO this might not be correct yet!
@@ -71,7 +71,7 @@ def make_transformer_encoder():
         return .5*(z2 - y)**2
     
     x = jnp.ones((4, 4))
-    y = jnp.ones(4)
+    y = jnp.ones((2, 4))
     
     WQ1 = jnp.ones((4, 4))
     WK1 = jnp.ones((4, 4))
@@ -84,8 +84,8 @@ def make_transformer_encoder():
     W1 = jnp.ones((4, 4))
     b1 = jnp.ones(4)
 
-    W2 = jnp.ones((4, 4))
-    b2 = jnp.ones(4)
+    W2 = jnp.ones((2, 4))
+    b2 = jnp.ones((2, 1))
         
     return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, 1., 1., 0., 0.) 
     

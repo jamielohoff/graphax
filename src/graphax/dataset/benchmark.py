@@ -2,16 +2,17 @@ from typing import Sequence
 
 from .utils import create, write
 from ..transforms import safe_preeliminations, compress_graph, embed
-from ..examples import (make_LIF, 
-                        make_adaptive_LIF,
-                        make_lighthouse, 
-                        make_f,
-                        make_g,
-                        make_softmax_attention)
+from ..examples import (make_1d_roe_flux,
+                        make_lif_SNN,
+                        make_ada_lif_SNN,
+                        make_transformer_encoder,
+                        make_lighthouse,
+                        make_transformer_encoder_decoder)
 
 
 def make_benchmark_dataset(fname: str, info: Sequence[int] =[20, 100, 20]) -> None:
-    """_summary_
+    """
+    Creates a benchmark dataset that
 
     Args:
         info (GraphInfo): _description_
@@ -29,35 +30,29 @@ def make_benchmark_dataset(fname: str, info: Sequence[int] =[20, 100, 20]) -> No
     edges = embed(edges, info)
     samples.append(("lighthouse", edges))
 
-    edges = make_LIF()
+    edges = make_lif_SNN()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
     edges = embed(edges, info)
-    samples.append(("LIF", edges))
+    samples.append(("LIF SNN", edges))
 
-    edges = make_adaptive_LIF()
+    edges = make_ada_lif_SNN()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
     edges = embed(edges, info)
-    samples.append(("Adaptive LIF", edges))
+    samples.append(("Adaptive LIF SNN", edges))
+            
+    edges = make_transformer_encoder()
+    edges = safe_preeliminations(edges)
+    edges = compress_graph(edges)
+    edges = embed(edges, info)
+    samples.append(("transformer", edges))
     
-    edges = make_f()
+    edges = make_transformer_encoder_decoder()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
     edges = embed(edges, info)
-    samples.append(("f", edges))
-
-    edges = make_g(size=10)
-    edges = safe_preeliminations(edges)
-    edges = compress_graph(edges)
-    edges = embed(edges, info)
-    samples.append(("g", edges))
-        
-    edges = make_softmax_attention()
-    edges = safe_preeliminations(edges)
-    edges = compress_graph(edges)
-    edges = embed(edges, info)
-    samples.append(("softmax attention", edges))
+    samples.append(("transformer", edges))
     
     write(fname, samples)
 

@@ -76,6 +76,7 @@ def standard_elemental2(elementalrule, primitive, primals, **params):
     
 # Define elemental partials
 defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
+defelemental(lax.abs_p, lambda x: x/jnp.abs(x)) # NOTE: not differentiable here!
 defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 
 defelemental2(lax.exp_p, lambda out, primal: out)
