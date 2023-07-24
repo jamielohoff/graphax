@@ -6,8 +6,8 @@ from ..examples import (make_1d_roe_flux,
                         make_lif_SNN,
                         make_ada_lif_SNN,
                         make_transformer_decoder,
-                        make_lighthouse,
-                        make_transformer_encoder_decoder)
+                        make_lighthouse)
+                        # make_transformer_encoder_decoder)
 
 
 def make_benchmark_dataset(fname: str, info: Sequence[int] =[20, 100, 20]) -> None:
