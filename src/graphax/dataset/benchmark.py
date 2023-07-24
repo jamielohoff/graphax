@@ -48,11 +48,11 @@ def make_benchmark_dataset(fname: str, info: Sequence[int] =[20, 100, 20]) -> No
     edges = embed(edges, info)
     samples.append(("transformer", edges))
     
-    edges = make_transformer_encoder_decoder()
-    edges = safe_preeliminations(edges)
-    edges = compress_graph(edges)
-    edges = embed(edges, info)
-    samples.append(("transformer", edges))
+    # edges = make_transformer_encoder_decoder()
+    # edges = safe_preeliminations(edges)
+    # edges = compress_graph(edges)
+    # edges = embed(edges, info)
+    # samples.append(("transformer", edges))
     
     write(fname, samples)
 
