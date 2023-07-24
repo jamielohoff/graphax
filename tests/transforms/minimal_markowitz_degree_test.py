@@ -2,7 +2,7 @@ from graphax import forward, reverse, cross_country
 from graphax.examples import (make_simple, 
                                 make_Helmholtz, 
                                 make_softmax_attention, 
-                                make_transformer_encoder, 
+                                make_transformer_decoder, 
                                 make_lif_SNN,
                                 make_ada_lif_SNN,
                                 make_1d_roe_flux,
@@ -29,7 +29,7 @@ from graphax.transforms.markowitz import minimal_markowitz
 # print(cross_country(order, edges)[1])
 
 
-edges = make_transformer_encoder()
+edges = make_transformer_decoder()
 order = minimal_markowitz(edges)
 print(order)
 

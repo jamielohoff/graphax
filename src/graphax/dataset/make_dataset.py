@@ -20,7 +20,7 @@ class Graph2File:
     num_samples: int
     num_files: int
     samples_per_file: int
-    max_info: Sequence[int]
+    storage_shape: Sequence[int]
     
     sampler_batchsize: int
     sampler: ComputationalGraphSampler
@@ -32,14 +32,14 @@ class Graph2File:
                 fname_prefix: str = "comp_graph_examples", 
                 num_samples: int = 200,  
                 samples_per_file: int = 100,
-                max_info: Sequence[int] = [20, 50, 20]) -> None:
+                storage_shape: Sequence[int] = [20, 50, 20]) -> None:
         self.path = path
         self.fname_prefix = fname_prefix
         self.num_samples = num_samples
         self.samples_per_file = samples_per_file
         self.num_files = num_samples // samples_per_file
         self.current_num_files = 0
-        self.max_info = max_info
+        self.storage_shape = storage_shape
         
         self.sampler_batchsize = sampler_batchsize
         self.sampler = sampler
@@ -63,7 +63,7 @@ class Graph2File:
     def new_file(self) -> str:
         name = self.fname_prefix + "-" + str(self.current_num_files) + ".hdf5"
         fname = os.path.join(self.path, name)
-        create(fname, num_samples=self.samples_per_file, max_info=self.max_info)
+        create(fname, num_samples=self.samples_per_file, max_info=self.storage_shape)
         self.current_num_files += 1
         return fname
 

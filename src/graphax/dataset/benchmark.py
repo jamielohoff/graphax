@@ -5,7 +5,7 @@ from ..transforms import safe_preeliminations, compress_graph, embed
 from ..examples import (make_1d_roe_flux,
                         make_lif_SNN,
                         make_ada_lif_SNN,
-                        make_transformer_encoder,
+                        make_transformer_decoder,
                         make_lighthouse,
                         make_transformer_encoder_decoder)
 
@@ -42,7 +42,7 @@ def make_benchmark_dataset(fname: str, info: Sequence[int] =[20, 100, 20]) -> No
     edges = embed(edges, info)
     samples.append(("Adaptive LIF SNN", edges))
             
-    edges = make_transformer_encoder()
+    edges = make_transformer_decoder()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
     edges = embed(edges, info)
