@@ -25,8 +25,8 @@ surrogate = superspike_surrogate()
 
 
 def lif(U, I, S, a, b, threshold):
-        U_next = a*U + (1-a)*I
-        I_next = b*I + (1-b)*S
+        U_next = a*U + (1.-a)*I
+        I_next = b*I + (1.-b)*S
         S_next = surrogate(U_next - threshold)
         
         return U_next, I_next, S_next

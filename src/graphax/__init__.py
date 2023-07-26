@@ -4,8 +4,12 @@ from .core import (make_empty_edges,
                     vertex_eliminate,
                     cross_country, 
                     forward, 
-                    reverse)
-from .vertex_game import VertexGameState, make_vertex_game_state, step
+                    reverse,
+                    get_info,
+                    get_elimination_order,
+                    get_output_mask,
+                    get_vertex_mask)
+from .vertex_game import step
 from .transforms.embedding import embed
 
 if sys.version_info[:2] >= (3, 8):

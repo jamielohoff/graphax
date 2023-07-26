@@ -15,7 +15,7 @@ def compress_graph(edges: Array) -> Array:
     i, num_removed_vertices = 1, 0
     for _ in range(1, num_v+1):            
         s1 = jnp.sum(edges.at[:, i+num_i, :].get()) == 0
-        s2 = jnp.sum(edges.at[:, :, i-1].get()) == 0
+        s2 = jnp.sum(edges.at[:, 1:, i-1].get()) == 0
         if s1 and s2:         
             edges = jnp.delete(edges, i+num_i, axis=1)
             edges = jnp.delete(edges, i-1, axis=2)
@@ -25,7 +25,7 @@ def compress_graph(edges: Array) -> Array:
 
     num_v = edges.shape[2]
     num_i = edges.shape[1] - num_v - 1
-    num_o = jnp.sum(edges.at[0, 2, :].get())
+    num_o = jnp.sum(edges.at[1, 0, :].get())
     edges = edges.at[0, 0, 0:3].set(jnp.array([num_i, num_v,num_o]))
     return edges
 
