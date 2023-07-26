@@ -1,16 +1,12 @@
 from graphax.core import forward, reverse
 from graphax.examples import (make_simple,
                             make_f, 
-                            make_g, 
-                            make_minimal_reverse,
                             make_LIF, 
                             make_adaptive_LIF, 
                             make_Helmholtz, 
                             make_lighthouse, 
                             make_hole, 
                             make_scalar_assignment_tree,
-                            make_sdf_sphere,
-                            make_sdf_box,
                             make_hessian,
                             make_softmax_attention)
 

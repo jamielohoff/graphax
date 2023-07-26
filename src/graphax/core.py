@@ -117,6 +117,18 @@ def get_info(edges: Array):
     return num_i, num_v
 
 
+def get_output_mask(edges: Array):
+    return edges.at[2, 0, :].get()
+
+
+def get_vertex_mask(edges: Array):
+    return edges.at[1, 0, :].get()
+
+
+def get_elimination_order(edges: Array):
+    return edges.at[3, 0, :].get()
+
+
 def make_empty_edges(info: Array) -> Array:
     """
     Creates an empty matrix fo represent the connectivity of the computational graph.

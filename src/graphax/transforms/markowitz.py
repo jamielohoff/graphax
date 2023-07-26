@@ -8,17 +8,6 @@ from chex import Array
 from graphax import vertex_eliminate
 
 
-def scan(f, init, xs, length=None):
-    if xs is None:
-        xs = [None] * length
-    carry = init
-    ys = []
-    for x in xs:
-        carry, y = f(carry, x)
-        ys.append(y)
-    return carry, jnp.stack(ys)
-
-
 def minimal_markowitz(edges: Array):
     num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
     

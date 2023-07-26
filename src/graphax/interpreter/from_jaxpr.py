@@ -44,6 +44,7 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
     # Process intermediate variables
     for eqn in eqns:
         filtered_invars = filter_invars(eqn, variables)
+        is_invar_list.extend(eqn.invars)
         # Ignore calculation with just Literals, i.e. constant values
         for outvar in eqn.outvars:
             # Add new variables to tracker
@@ -66,7 +67,10 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
     # Processing output variables
     for outvar in jaxpr.jaxpr._outvars:
         if not outvar in is_invar_list:
+            print(outvar)
             # Track which vertices are output vertices
+            # Vertices that are output vertices but also intermediate vertices
+            # are eliminated non-the-less
             idx = variables[str(outvar)]
             edges = edges.at[1, 0, idx-num_i-1].set(1)
             edges = edges.at[2, 0, idx-num_i-1].set(1)

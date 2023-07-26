@@ -155,6 +155,5 @@ def make_1d_roe_flux():
         return phi0, phi1, phi2
     
     ulr = [1.]*6
-    print(jax.make_jaxpr(roe_flux)(*ulr))
     return make_graph(roe_flux, *ulr)  
 

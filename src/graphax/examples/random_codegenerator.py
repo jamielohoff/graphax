@@ -295,7 +295,7 @@ jaxpr = None
 def make_random_code(key, 
                     info, 
                     primal_p=jnp.array([.15, .5, .35]),
-                    prim_p=jnp.array([.15, .35, .06, .12, .31]),
+                    prim_p=jnp.array([.12, .4, .06, .1, .31]),
                     max_literals=3):
     code = "import jax\nimport jax.numpy as jnp\n"
     num_i, num_v, num_o = info
@@ -336,6 +336,7 @@ def make_random_code(key,
     v = 0
     inputs = list(env.keys())
     inputs_p = [1.]*len(inputs)
+    unused_vars = {}
     while v < num_v:
         pkey, rkey, vkey, key = jrand.split(key, 4)
         
@@ -346,7 +347,7 @@ def make_random_code(key,
         # Select inputs
         _p = jnp.array(inputs_p)
         p = _p/_p.sum()
-        idxs = jrand.choice(vkey, jnp.array(range(len(inputs))), (num_inputs,), replace=False, p=p)
+        idxs = jrand.choice(vkey, jnp.arange(0, len(inputs)), (num_inputs,), replace=False, p=p)
         vars = [inputs[idx] for idx in idxs]
         primals = safe_map(read, vars)
 
@@ -359,13 +360,31 @@ def make_random_code(key,
             count += 1
             v += 1
             for idx in idxs:
-                inputs_p[idx] *= .15
+                inputs_p[idx] *= .05
             inputs.append(var)
+            unused_vars[var] = len(inputs)-1
             inputs_p.append(1.)
+            
+            for w in vars:
+                if w in unused_vars.keys():
+                    del unused_vars[w]
         
-    # Create list of outvars
-    inputs = list(env.keys())
-    out_idxs = jrand.choice(vkey, jnp.arange(num_i+num_literals, len(inputs)), (num_o-1,), replace=False)
+    # Create list of outvars and reuse unused outvars
+    unused_vars_list = list(unused_vars.values())
+    
+    # Outvar management
+    if len(unused_vars_list) == 0:
+        inputs = list(env.keys())
+        out_idxs = jrand.choice(vkey, jnp.arange(num_i+num_literals, len(inputs)), (num_o-1,), replace=False)
+    elif len(unused_vars_list) >= num_o:
+        idxs = jrand.choice(vkey, jnp.arange(0, len(unused_vars_list)), (num_o-1,), replace=False)
+        out_idxs = jnp.array([unused_vars_list[idx] for idx in idxs])
+    else:
+        out_idxs = jnp.array(unused_vars_list)
+        inputs = list(env.keys())
+        _out_idxs = jrand.choice(vkey, jnp.arange(num_i+num_literals, len(inputs)), (num_o-1-len(unused_vars_list),), replace=False)
+        out_idxs = jnp.append(out_idxs, _out_idxs)
+        
     out_idxs = list(jnp.append(out_idxs, -1))
     outputs = [inputs[idx] for idx in out_idxs]
 
