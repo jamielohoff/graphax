@@ -5,12 +5,12 @@ import jax.random as jrand
 from graphax import reverse, forward, cross_country
 from graphax.transforms.markowitz import minimal_markowitz
 from graphax.dataset.utils import read
-from graphax.dataset.tasks import make_task_dataset
+from graphax.dataset import make_benchmark_dataset
 
 key = jrand.PRNGKey(42)
-make_task_dataset(key, "./task_dataset.hdf5")
+make_benchmark_dataset(key, "./benchmark_dataset.hdf5", size=8)
 
-names, data = read("./task_dataset.hdf5", [0, 1, 2, 3, 4, 5, 6, 7])
+names, data = read("./benchmark_dataset.hdf5", [0, 1, 2, 3, 4, 5, 6, 7])
 
 
 for name, edges in zip(names, data):

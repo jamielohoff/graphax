@@ -23,7 +23,7 @@ def safe_preeliminations(edges: Array) -> Array:
     def loop_fn(carry, vertex):
         _edges = carry
         # Do not preeliminate output vertices
-        is_output_vertex = _edges.at[2, 0, vertex-1].get() == 1
+        is_output_vertex = _edges.at[2, 0, vertex-1].get() > 0
         _edges = lax.cond(is_output_vertex,
                             lambda v, e: e, 
                             lambda v, e: update_edges(v, e), 
@@ -42,7 +42,6 @@ def update_edges(vertex: int, edges: Array):
                         lambda v, e: vertex_eliminate(v, e)[0], 
                         lambda v, e: is_eligible(v, e), 
                         vertex, edges)        
-        
         return edges
     
 
@@ -121,7 +120,7 @@ def _sparsity_checker(edge: Array):
 def is_dead_branch(vertex: int, edges: Array) -> bool:
     # Remove dead branches from the computational graph
     num_i = edges.at[0, 0, 0].get()
-    row_flag = jnp.sum(edges[:, vertex+num_i, :]) >= 1
+    row_flag = jnp.sum(edges[:, vertex+num_i, :]) > 0
     col_flag = jnp.sum(edges[:, :, vertex-1]) == 0
     return jnp.logical_and(row_flag, col_flag)
 

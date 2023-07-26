@@ -58,23 +58,7 @@ class RandomSampler(ComputationalGraphSampler):
         
         samples = result.get()
         
-        # while len(samples) < num_samples:
-        #     rkey, key = jrand.split(key, 2)
-        #     code, jaxpr = make_random_code(rkey, self.max_info, **kwargs)
-        #     edges = make_graph(jaxpr)
-            
-        #     if self.debug:
-        #         print(code, edges)
-
-        #     edges = clean(edges)
-        #     edges = safe_preeliminations(edges)
-        #     edges = compress_graph(edges)
-        #     edges = embed(key, edges, self.max_info)
-            
-        #     if edges.at[0, 0, 1].get() >= self.min_num_intermediates:
-        #         samples.append((code, edges))
         return samples
-    
     
     
 def sample_worker(key, max_info, kwargs):
