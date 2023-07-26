@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from ..interpreter.from_jaxpr import make_graph
 
+
 S = lambda a, b: jnp.cos(a)*jnp.sin(b) + jnp.sin(a)*jnp.cos(b)
 C = lambda a, b: jnp.cos(a)*jnp.cos(b) - jnp.sin(a)*jnp.sin(b)
 

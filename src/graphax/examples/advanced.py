@@ -17,33 +17,9 @@ def make_f():
         h = jnp.sqrt(jnp.abs(e))
         i = jnp.tan(h)
         j = jnp.maximum(x, 0)
-        return e, f, g, i
+        return jnp.sinh(e), -f, 3.*g, i**2
 
     return make_graph(f, 1., 1., 1., 1.)
-
-
-def make_g(size: int = 5):
-    def g(x):
-        return jnp.sum(jnp.sin(x) * jnp.cos(x**2) + jnp.log(x) - x**3 + jnp.exp(x), axis=0)
-    
-    x = jnp.ones(size)
-    return make_graph(g, x)
-
-
-def make_minimal_reverse():
-    # Define the component functions
-    def g1(x, y, z, w):
-        return x ** 2 + y ** 2
-
-    def g2(x, y, z, w):
-        return jnp.sin(z) + jnp.log(w)
-    
-    # Define the overall function
-    def minimal_reverse(x, y, z, w):
-        return g1(x, y, z, w) + g2(x, y, z, w)
-
-    print(jax.make_jaxpr(minimal_reverse)(1., 1., 1., 1.))
-    return make_graph(minimal_reverse, 1., 1., 1., 1.)
 
 
 def make_hessian():
