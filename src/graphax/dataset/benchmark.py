@@ -26,12 +26,9 @@ def make_benchmark_dataset(key: PRNGKey,
         num_i = jrand.randint(ikey, (), 2, 21)
         num_v = jrand.randint(vkey, (), 60, 105)
         num_o = jrand.randint(okey, (), 1, 21)
-        
         info = [num_i, num_v, num_o]
-        print(info)
         
         code, jaxpr = make_random_code(key, info)
-        print(jaxpr)
         edges = make_graph(jaxpr)
 
         edges = clean(edges)
@@ -46,16 +43,14 @@ def make_benchmark_dataset(key: PRNGKey,
     for _ in tqdm(range(size//2)):
         ikey, vkey, okey, key = jrand.split(key, 4)
         num_i = jrand.randint(ikey, (), 2, 21)
-        num_v = jrand.randint(vkey, (), 80, 106)
+        num_v = jrand.randint(vkey, (), 90, 106)
         num_o = jrand.randint(okey, (), 1, 21)
-        
         info = [num_i, num_v, num_o]
         
         code, jaxpr = make_random_code(key, 
                                         info, 
                                         primal_p=jnp.array([1., 0., 0.]), 
                                         prim_p=jnp.array([0.2, 0.8, 0., 0., 0.]))
-        print(jaxpr)
         edges = make_graph(jaxpr)
 
         edges = clean(edges)
@@ -66,8 +61,5 @@ def make_benchmark_dataset(key: PRNGKey,
         samples.append((code, edges))
         
     write(fname, samples)   
-        
-        
-        
     
     
