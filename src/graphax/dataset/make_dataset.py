@@ -1,6 +1,5 @@
 import os
 from typing import Sequence
-from tqdm import tqdm
 
 import jax
 import jax.random as jrand
@@ -28,42 +27,26 @@ class Graph2File:
     def __init__(self, 
                 sampler: ComputationalGraphSampler,
                 path: str,
-                sampler_batchsize: int = 20,
                 fname_prefix: str = "comp_graph_examples", 
-                num_samples: int = 200,  
-                samples_per_file: int = 100,
-                storage_shape: Sequence[int] = [20, 50, 20]) -> None:
+                num_samples: int = 16384,  
+                storage_shape: Sequence[int] = [25, 130, 25]) -> None:
         self.path = path
         self.fname_prefix = fname_prefix
         self.num_samples = num_samples
-        self.samples_per_file = samples_per_file
-        self.num_files = num_samples // samples_per_file
-        self.current_num_files = 0
         self.storage_shape = storage_shape
-        
-        self.sampler_batchsize = sampler_batchsize
         self.sampler = sampler
         
     def generate(self, key: PRNGKey = None, **kwargs) -> None:
-        pbar = tqdm(range(self.num_files))
-        for _ in pbar:
-            fname = self.new_file()
-            num_current_samples = 0
-            while num_current_samples < self.samples_per_file:
-                subkey, key = jrand.split(key, 2)
-                try:
-                    samples = self.sampler.sample(self.sampler_batchsize, key=subkey, **kwargs)
-                except Exception as e:
-                    print(e)
-                    continue
-                print("Retrieved", len(samples), "samples")
-                num_current_samples += len(samples)
-                write(fname, samples)
-                
-    def new_file(self) -> str:
-        name = self.fname_prefix + "-" + str(self.current_num_files) + ".hdf5"
+        handle = "_".join([str(s) for s in self.storage_shape])
+        handle += "_" + str(self.num_samples)
+        
+        name = self.fname_prefix + "-" + handle + ".hdf5"
         fname = os.path.join(self.path, name)
-        create(fname, num_samples=self.samples_per_file, max_info=self.storage_shape)
-        self.current_num_files += 1
-        return fname
+        print("Saving under", fname)
+        create(fname, num_samples=self.num_samples, max_info=self.storage_shape)
+    
+        subkey, key = jrand.split(key, 2)
+        samples = self.sampler.sample(self.num_samples, key=subkey, **kwargs)
+        print("Retrieved", len(samples), "samples")
+        write(fname, samples)
 

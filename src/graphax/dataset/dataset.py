@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 
 import chex
 
-from .utils import read, read_graph_info, read_file_size
+from .utils import read, read_graph, read_file_size
 
 
 class GraphDataset(Dataset):
@@ -34,9 +34,9 @@ class GraphDataset(Dataset):
         _idx = idx - sum(file_idx)
         
         if self.include_code:
-            src, graph, info, vertices, attn_mask = read(file, _idx)
-            return src, graph, info, vertices, attn_mask
+            src, graph = read(file, _idx)
+            return src, graph
         else:
-            graph, info, vertices, attn_mask = read_graph_info(file, _idx)
-            return graph, info, vertices, attn_mask
+            graph = read_graph(file, _idx)
+            return graph
 

@@ -84,7 +84,7 @@ def read(fname: str, batch_idxs: Sequence[int]) -> Tuple[str, Array]:
         return codes, graphs
     
     
-def read_graph_info(fname: str, batch_idxs: Sequence[int]) -> Tuple[Array]:
+def read_graph(fname: str, batch_idxs: Sequence[int]) -> Tuple[Array]:
     """
     TODO add documentation
     """

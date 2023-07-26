@@ -1,6 +1,7 @@
 from typing import Sequence
 
-import multiprocessing as mp
+from tqdm import tqdm
+import time
 
 import jax
 import jax.random as jrand
@@ -19,7 +20,7 @@ class RandomSampler(ComputationalGraphSampler):
     TODO use multiprocessing
     """
     
-    def __init__(self, *args, debug: bool = False, num_cores: int = 8, **kwargs) -> None:
+    def __init__(self, *args, debug: bool = False, **kwargs) -> None:
         """initializes a fixed repository of possible vertex games
 
         Args:
@@ -30,12 +31,12 @@ class RandomSampler(ComputationalGraphSampler):
             _type_: _description_
         """
         self.debug = debug
-        self.num_cores = num_cores
         super().__init__(*args, **kwargs)
             
     def sample(self, 
                 num_samples: int = 1, 
                 key: PRNGKey = None,
+                max_info: Sequence[int] = None,
                 **kwargs) -> Sequence[tuple[str, Array]]:
         """
         Samples from the repository of possible games
@@ -45,47 +46,44 @@ class RandomSampler(ComputationalGraphSampler):
 
         Returns:
             Any: _description_
-        """
-        chunksize = num_samples//self.num_cores
-        pool = mp.Pool(self.num_cores)
+        """      
         samples = []
-        keys = jrand.split(key, num_samples)
-        it = [(key, self.max_info, kwargs) for key in keys]
-        
-        result = pool.starmap_async(sample_worker, it, chunksize=chunksize)
-        pool.close()
-        pool.join()
-        
-        samples = result.get()
-        
-        # while len(samples) < num_samples:
-        #     rkey, key = jrand.split(key, 2)
-        #     code, jaxpr = make_random_code(rkey, self.max_info, **kwargs)
-        #     edges = make_graph(jaxpr)
-            
-        #     if self.debug:
-        #         print(code, edges)
+        max_info = self.max_info if max_info is None else max_info
+        pbar = tqdm(total=num_samples)
+        while len(samples) < num_samples:
+            rkey, key = jrand.split(key, 2)
+            print("Sampling...")
+            st = time.time()
+            try:
+                code, jaxpr = make_random_code(rkey, max_info, **kwargs)
+                print("Sampling time", time.time()-st)
+                edges = make_graph(jaxpr)
+                
+                if self.debug:
+                    print(code, edges)
 
-        #     edges = clean(edges)
-        #     edges = safe_preeliminations(edges)
-        #     edges = compress_graph(edges)
-        #     edges = embed(key, edges, self.max_info)
+                st = time.time()
+                edges = clean(edges)
+                print("Cleaning time", time.time()-st)
+                
+                st = time.time()
+                edges = safe_preeliminations(edges)
+                print("Preelimination time", time.time()-st)
+                
+                st = time.time()
+                edges = compress_graph(edges)
+                print("Compression time", time.time()-st)
+                
+                st = time.time()
+                edges = embed(key, edges, self.max_info)
+                print("Embedding time", time.time()-st)
+            except Exception as e:
+                print(e)
+                continue
             
-        #     if edges.at[0, 0, 1].get() >= self.min_num_intermediates:
-        #         samples.append((code, edges))
+            if edges.at[0, 0, 1].get() >= self.min_num_intermediates:
+                samples.append((code, edges))
+                pbar.update(1)
+        pbar.close()
         return samples
-    
-    
-    
-def sample_worker(key, max_info, kwargs):
-    rkey, key = jrand.split(key, 2)
-    code, jaxpr = make_random_code(rkey, max_info, **kwargs)
-    edges = make_graph(jaxpr)
-
-    edges = clean(edges)
-    edges = safe_preeliminations(edges)
-    edges = compress_graph(edges)
-    edges = embed(key, edges, max_info)
-    
-    return code, edges
     
