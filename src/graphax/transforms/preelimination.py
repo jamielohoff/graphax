@@ -30,36 +30,45 @@ def safe_preeliminations(edges: Array) -> Array:
                             vertex, _edges)        
         
         carry = _edges
-        return carry, 0
+        return carry, None
     vertices = jnp.arange(1, edges.at[0, 0, 1].get()+1)
     edges, _ = lax.scan(loop_fn, edges, vertices)
     return edges
 
 
 def update_edges(vertex: int, edges: Array):
-        dead_branch = is_dead_branch(vertex, edges)
-        edges = lax.cond(dead_branch,
-                        lambda v, e: vertex_eliminate(v, e)[0], 
-                        lambda v, e: is_eligible(v, e), 
-                        vertex, edges)        
-        return edges
+    dead_branch = is_dead_branch(vertex, edges)
+
+    edges = lax.cond(dead_branch,
+                    lambda v, e: vertex_eliminate(v, e)[0], 
+                    lambda v, e: is_eligible(v, e), 
+                    vertex, edges)        
+    return edges
     
+    
+def is_dead_branch(vertex: int, edges: Array) -> bool:
+    # Remove dead branches from the computational graph
+    num_i = edges.at[0, 0, 0].get()
+    row_flag = jnp.sum(edges[:, vertex+num_i, :]) > 0
+    col_flag = jnp.sum(edges[:, 1:, vertex-1]) == 0
+    return jnp.logical_and(row_flag, col_flag)    
+
 
 def is_eligible(vertex: int, edges: Array):
     markowitz_degree_1 = check_markowitz(vertex, edges)
     edges = lax.cond(markowitz_degree_1,
-                        lambda v, e: eliminate(v, e), 
-                        lambda v, e: e, 
-                        vertex, edges)        
+                    lambda v, e: eliminate(v, e), 
+                    lambda v, e: e, 
+                    vertex, edges)        
     return edges
 
 
 def eliminate(vertex: int, edges: Array):
     is_sparse = check_sparsity(vertex, edges)
     edges = lax.cond(is_sparse,
-                        lambda v, e: vertex_eliminate(v, e)[0], 
-                        lambda v, e: e, 
-                        vertex, edges)        
+                    lambda v, e: vertex_eliminate(v, e)[0], 
+                    lambda v, e: e, 
+                    vertex, edges)        
     return edges
 
 
@@ -69,6 +78,7 @@ def check_markowitz(vertex: int, edges: Array) -> bool:
     num_i = edges.at[0, 0, 0].get()
     row = edges[0, vertex+num_i, :]
     col = edges[0, 1:, vertex-1]
+       
     row_flag = jnp.equal(jnp.sum(jnp.where(row > 0, 1, 0)), 1)
     col_flag = jnp.equal(jnp.sum(jnp.where(col > 0, 1, 0)), 1)
     return jnp.logical_and(col_flag, row_flag)
@@ -84,10 +94,10 @@ def check_sparsity(vertex: int, edges: Array):
     num_i = edges.at[0, 0, 0].get()
     in_edge_idx = jnp.nonzero(edges.at[0, vertex+num_i, :].get(), size=1, fill_value=0)[0][0]
     out_edge_idx = jnp.nonzero(edges.at[0, :, vertex-1].get(), size=1, fill_value=0)[0][0]
-    
+        
     in_edge = edges.at[:, vertex+num_i, in_edge_idx].get()
     out_edge = edges.at[:, out_edge_idx, vertex-1].get()
-        
+            
     in_edge_flag = _sparsity_checker(in_edge)    
     out_edge_flag = _sparsity_checker(out_edge) 
     
@@ -116,11 +126,3 @@ def _sparsity_checker(edge: Array):
     
     return is_parallel
     
-
-def is_dead_branch(vertex: int, edges: Array) -> bool:
-    # Remove dead branches from the computational graph
-    num_i = edges.at[0, 0, 0].get()
-    row_flag = jnp.sum(edges[:, vertex+num_i, :]) > 0
-    col_flag = jnp.sum(edges[:, :, vertex-1]) == 0
-    return jnp.logical_and(row_flag, col_flag)
-

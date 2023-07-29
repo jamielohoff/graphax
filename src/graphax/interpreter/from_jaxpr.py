@@ -6,7 +6,7 @@ from jax._src.core import ClosedJaxpr, JaxprEqn
 from chex import Array
 
 from graphax.core import make_empty_edges
-from graphax.interpreter.prim_mapper import vertex_registry, filter_invars
+from graphax.interpreter.prim_mapper import vertex_registry
     
 
 def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
@@ -43,19 +43,14 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
 
     # Process intermediate variables
     for eqn in eqns:
-        filtered_invars = filter_invars(eqn, variables)
+        # filtered_invars = filter_invars(eqn, variables)
         is_invar_list.extend(eqn.invars)
         # Ignore calculation with just Literals, i.e. constant values
         for outvar in eqn.outvars:
             # Add new variables to tracker
             if str(outvar) not in variables:
-                if len(filtered_invars) == 0:
-                    # If a variable is the result of computations with only 
-                    # Literals, we also treat it as a literal
-                    variables[str(outvar)] = -1
-                else:
-                    variables[str(outvar)] = counter
-                    counter += 1
+                variables[str(outvar)] = counter
+                counter += 1
                         
         # Resolves primitive and adds it to the edge representation matrix
         try:
@@ -67,7 +62,6 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
     # Processing output variables
     for outvar in jaxpr.jaxpr._outvars:
         if not outvar in is_invar_list:
-            print(outvar)
             # Track which vertices are output vertices
             # Vertices that are output vertices but also intermediate vertices
             # are eliminated non-the-less

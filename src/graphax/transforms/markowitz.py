@@ -1,5 +1,6 @@
 from typing import Sequence
 
+import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
@@ -9,17 +10,17 @@ from graphax import vertex_eliminate
 
 
 def minimal_markowitz(edges: Array):
-    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
+    num_v = edges.shape[-1]
     
     def loop_fn(_edges, _):
         minimal_markowitz_vertex = get_minimal_markowitz(_edges)
         _edges, _ = vertex_eliminate(minimal_markowitz_vertex, _edges)
         return _edges, minimal_markowitz_vertex
     
-    it = jnp.arange(1, num_v+1-num_o)
+    it = jnp.arange(1, num_v+1)
     _, idxs = lax.scan(loop_fn, edges, it)
 
-    return [int(i) for i in idxs]
+    return [i for i in idxs]
 
 
 def get_minimal_markowitz(edges: Array, degrees: bool = False) -> Sequence[int]:

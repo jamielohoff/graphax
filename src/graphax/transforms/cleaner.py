@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
@@ -27,7 +25,7 @@ def clean(edges: Array) -> Array:
     """
     num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
     row_shape = num_i+num_v
-    
+        
     conn = connectivity_checker(edges)
     is_clean = jnp.all(conn)
     while not is_clean:

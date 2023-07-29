@@ -34,7 +34,7 @@ def make_task_dataset(key: PRNGKey, fname: str, info: Sequence[int] =[20, 105, 2
     # We use the field that is usually reserved for source code to store the names
     
     # Number of FMAs after safe preeliminations
-    # fwd: 12, rev: 9, cc: 11
+    # fwd: 16, rev: 11, cc: 13
     edges = make_lighthouse()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
@@ -50,7 +50,7 @@ def make_task_dataset(key: PRNGKey, fname: str, info: Sequence[int] =[20, 105, 2
     samples.append(("f", edges))
 
     # Number of FMAs after safe preeliminations
-    # fwd: 298, rev: 204, cc: 250
+    # fwd: 392, rev: 320, cc: 298
     edges = make_lif_SNN()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
@@ -58,7 +58,7 @@ def make_task_dataset(key: PRNGKey, fname: str, info: Sequence[int] =[20, 105, 2
     samples.append(("LIF SNN", edges))
 
     # Number of FMAs after safe preeliminations
-    # fwd: 614, rev: 336, cc: 424
+    # fwd: 2020, rev: 992, cc: 1176
     edges = make_ada_lif_SNN()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
@@ -82,7 +82,7 @@ def make_task_dataset(key: PRNGKey, fname: str, info: Sequence[int] =[20, 105, 2
     samples.append(("Transformer Encoder-Decoder", edges))
     
     # Number of FMAs after safe preeliminations
-    # fwd: 432, rev: 247, cc: 285
+    # fwd: 384, rev: 217, cc: 277
     edges = make_1d_roe_flux()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)

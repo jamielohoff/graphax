@@ -5,60 +5,32 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrand
 
-from chex import Array, PRNGKey
+from chex import PRNGKey
 
 from .utils import create, write
-from ..interpreter import make_graph
-from ..transforms import safe_preeliminations, compress_graph, embed, clean
-from ..examples import make_random_code
+from .random_sampler import RandomSampler
 
 
 def make_benchmark_dataset(key: PRNGKey, 
                             fname: str, 
                             size: int = 100,
-                            max_info: Sequence[int] =[20, 105, 20]) -> None:
+                            max_shape: Sequence[int] =[20, 105, 20]) -> None:
     samples = []
-    create(fname, 100, max_info)
+    create(fname, size, max_shape)
+    sampler = RandomSampler(min_num_intermediates=40, max_shape=max_shape)
     
-    # Do arbitrary operations
-    for _ in tqdm(range(size//2)):
-        ikey, vkey, okey, key = jrand.split(key, 4)
-        num_i = jrand.randint(ikey, (), 2, 21)
-        num_v = jrand.randint(vkey, (), 60, 105)
-        num_o = jrand.randint(okey, (), 1, 21)
-        info = [num_i, num_v, num_o]
-        
-        code, jaxpr = make_random_code(key, info)
-        edges = make_graph(jaxpr)
-
-        edges = clean(edges)
-        edges = safe_preeliminations(edges)
-        edges = compress_graph(edges)
-        edges = embed(key, edges, max_info)
-        
-        samples.append((code, edges))
-        
+    # Do scalars, vectors and matrices mixed
+    result = sampler.sample(num_samples=size//2, key=key, sampling_shape=[20, 105, 20])
+    samples.extend(result)
+            
                 
     # Do scalar only
-    for _ in tqdm(range(size//2)):
-        ikey, vkey, okey, key = jrand.split(key, 4)
-        num_i = jrand.randint(ikey, (), 2, 21)
-        num_v = jrand.randint(vkey, (), 90, 106)
-        num_o = jrand.randint(okey, (), 1, 21)
-        info = [num_i, num_v, num_o]
-        
-        code, jaxpr = make_random_code(key, 
-                                        info, 
-                                        primal_p=jnp.array([1., 0., 0.]), 
-                                        prim_p=jnp.array([0.2, 0.8, 0., 0., 0.]))
-        edges = make_graph(jaxpr)
-
-        edges = clean(edges)
-        edges = safe_preeliminations(edges)
-        edges = compress_graph(edges)
-        edges = embed(key, edges, max_info)
-        
-        samples.append((code, edges))
+    result = sampler.sample(num_samples=size//2, 
+                            key=key, 
+                            sampling_shape=[20, 105, 20],
+                            primal_p=jnp.array([1., 0., 0.]), 
+                            prim_p=jnp.array([.2, .8, 0., 0., 0.]))
+    samples.extend(result)
         
     write(fname, samples)   
     
