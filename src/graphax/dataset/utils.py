@@ -54,7 +54,7 @@ def write(fname: str, samples: Tuple[str, Array]):
         header.attrs["current_idx"] = idx + batchsize
         
         
-def create(fname: str, num_samples: int, max_info: Sequence[int] = (20, 50, 20)):
+def create(fname: str, num_samples: int, max_info: Sequence[int] = (20, 105, 20)):
     assert os.path.isfile(fname) == False
     max_i, max_v, max_o = max_info
     

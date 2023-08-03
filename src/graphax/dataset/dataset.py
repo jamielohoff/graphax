@@ -2,7 +2,7 @@ import os
 from typing import Sequence, Tuple
 from torch.utils.data import Dataset
 
-import chex
+from chex import Array
 
 from .utils import read, read_graph, read_file_size
 
@@ -28,9 +28,9 @@ class GraphDataset(Dataset):
     def __len__(self) -> int:
         return self.length
     
-    def __getitem__(self, idx: int) -> Tuple[chex.Array, chex.Array]:
+    def __getitem__(self, idx: int) -> Tuple[Array, Array]:
         file_idx = [fs for i, fs in enumerate(self.file_sizes) if sum(self.file_sizes[:i+1]) <= idx]
-        file = self.files[len(file_idx)-1]
+        file = self.files[len(file_idx)]
         _idx = idx - sum(file_idx)
         
         if self.include_code:

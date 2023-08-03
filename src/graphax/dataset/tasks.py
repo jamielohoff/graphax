@@ -66,7 +66,7 @@ def make_task_dataset(key: PRNGKey, fname: str, info: Sequence[int] =[20, 105, 2
     samples.append(("Adaptive LIF SNN", edges))
             
     # Number of FMAs after safe preeliminations
-    # fwd: 69824, rev: 15584, cc: 23552
+    # fwd: 69824, rev: n/v, cc: 23552
     edges = make_transformer_encoder()
     edges = safe_preeliminations(edges)
     edges = compress_graph(edges)
