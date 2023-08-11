@@ -10,14 +10,14 @@ from graphax import vertex_eliminate
 
 
 def minimal_markowitz(edges: Array):
-    num_v = edges.shape[-1]
+    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
     
     def loop_fn(_edges, _):
         minimal_markowitz_vertex = get_minimal_markowitz(_edges)
         _edges, _ = vertex_eliminate(minimal_markowitz_vertex, _edges)
         return _edges, minimal_markowitz_vertex
     
-    it = jnp.arange(1, num_v+1)
+    it = jnp.arange(1, num_v+1-num_o)
     _, idxs = lax.scan(loop_fn, edges, it)
 
     return [i for i in idxs]

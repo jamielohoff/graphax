@@ -84,6 +84,7 @@ vertex_registry[lax.acosh_p] = add_mono_vertex
 vertex_registry[lax.atanh_p] = add_mono_vertex
 
 vertex_registry[lax.integer_pow_p] = add_mono_vertex
+vertex_registry[lax.sqrt_p] = add_mono_vertex
 
 vertex_registry[lax.convert_element_type_p] = add_mono_vertex
 # We currently included the custom derivative operator here 

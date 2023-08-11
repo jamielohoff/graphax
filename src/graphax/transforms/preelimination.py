@@ -7,7 +7,25 @@ from chex import Array
 from ..core import vertex_eliminate
 
 
-def safe_preeliminations(edges: Array) -> Array:
+def scan(f, init, xs, length=None):
+    if xs is None:
+        xs = [None] * length
+    carry = init
+    ys = []
+    for x in xs:
+        carry, y = f(carry, x)
+        ys.append(y)
+    return carry, jnp.stack(ys)
+
+
+def cond(cond, true_fn, false_fn, *xs):
+    if cond:
+        return true_fn(*xs)
+    else:
+        return false_fn(*xs)
+
+
+def safe_preeliminations(edges: Array, return_preeliminated: bool = False) -> Array:
     """
     Function that runs a safe-preelimination routine that eliminates all vertices
     with only Kronecker symbols or only one scalar input and one scalar output.
@@ -24,52 +42,53 @@ def safe_preeliminations(edges: Array) -> Array:
         _edges = carry
         # Do not preeliminate output vertices
         is_output_vertex = _edges.at[2, 0, vertex-1].get() > 0
-        _edges = lax.cond(is_output_vertex,
-                            lambda v, e: e, 
-                            lambda v, e: update_edges(v, e), 
-                            vertex, _edges)        
+        _edges, _vert = lax.cond(is_output_vertex,
+                                lambda v, e: (e, -1), 
+                                lambda v, e: update_edges(v, e), 
+                                vertex, _edges)        
         
         carry = _edges
-        return carry, None
+        return carry, _vert
     vertices = jnp.arange(1, edges.at[0, 0, 1].get()+1)
-    edges, _ = lax.scan(loop_fn, edges, vertices)
+    edges, preelim_order = lax.scan(loop_fn, edges, vertices)
+    if return_preeliminated:
+        return edges, preelim_order
     return edges
 
 
 def update_edges(vertex: int, edges: Array):
     dead_branch = is_dead_branch(vertex, edges)
+    edges, vert = lax.cond(dead_branch,
+                            lambda v, e: (vertex_eliminate(v, e)[0], v), 
+                            lambda v, e: is_eligible(v, e), 
+                            vertex, edges)        
+    return edges, vert
+    
 
-    edges = lax.cond(dead_branch,
-                    lambda v, e: vertex_eliminate(v, e)[0], 
-                    lambda v, e: is_eligible(v, e), 
-                    vertex, edges)        
-    return edges
-    
-    
 def is_dead_branch(vertex: int, edges: Array) -> bool:
     # Remove dead branches from the computational graph
     num_i = edges.at[0, 0, 0].get()
-    row_flag = jnp.sum(edges[:, vertex+num_i, :]) > 0
-    col_flag = jnp.sum(edges[:, 1:, vertex-1]) == 0
-    return jnp.logical_and(row_flag, col_flag)    
+    row_flag = jnp.sum(edges[0, vertex+num_i, :]) > 0
+    col_flag = jnp.sum(edges[0, 1:, vertex-1]) == 0
+    return jnp.logical_and(row_flag, col_flag)
 
 
 def is_eligible(vertex: int, edges: Array):
     markowitz_degree_1 = check_markowitz(vertex, edges)
-    edges = lax.cond(markowitz_degree_1,
-                    lambda v, e: eliminate(v, e), 
-                    lambda v, e: e, 
-                    vertex, edges)        
-    return edges
+    edges, vert = lax.cond(markowitz_degree_1,
+                            lambda v, e: eliminate(v, e), 
+                            lambda v, e: (e, -1), 
+                            vertex, edges)        
+    return edges, vert
 
 
 def eliminate(vertex: int, edges: Array):
     is_sparse = check_sparsity(vertex, edges)
-    edges = lax.cond(is_sparse,
-                    lambda v, e: vertex_eliminate(v, e)[0], 
-                    lambda v, e: e, 
-                    vertex, edges)        
-    return edges
+    edges, vert = lax.cond(is_sparse,
+                            lambda v, e: (vertex_eliminate(v, e)[0], v), 
+                            lambda v, e: (e, -1), 
+                            vertex, edges)        
+    return edges, vert
 
 
 def check_markowitz(vertex: int, edges: Array) -> bool:

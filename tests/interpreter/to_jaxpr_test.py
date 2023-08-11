@@ -7,8 +7,7 @@ import jax.random as jrand
 
 import equinox as eqx
 
-from graphax.interpreter.to_jaxpr import jacve
-
+from graphax.interpreter import jacve, tree_allclose
 
 key = jrand.PRNGKey(42)
 
@@ -22,27 +21,28 @@ y = jrand.normal(ykey, (3,))
 jaxpr = jax.make_jaxpr(jacve(f, [1]))(x, y)
 print(jaxpr)
 
-veres = jacve(f, [1])(x, y)
+deriv_fn = jax.jit(jacve(f, [1], argnums=(0, 1)))
+veres = deriv_fn(x, y)[0]
 
 revres = jax.jacrev(f, argnums=(0, 1))(x, y)
 
-print(eqx.tree_equal(veres, revres))
+print(veres)
+print(revres)
 
-print("ve", veres[0])
-print("rev", revres[0])
+print(tree_allclose(veres, revres))
 
 
 def f(x, y):
     z = x * y
     w = z**3
-    return w + z, jnp.log(w)
+    return w + z, 5*w
 
 x = 1. # jnp.ones((50, 50))
 y = 2. # *jnp.ones((50, 50))
 jaxpr = jax.make_jaxpr(jacve(f, [2, 1]))(x, y)
 print(jaxpr)
 
-jacs = jax.jit(jacve(f, [2, 1]))
+jacs = jax.jit(jacve(f, [2, 1], argnums=(0, 1)))
 veres = jacs(x, y)
 print(veres)
 
@@ -63,7 +63,7 @@ revres = jac_f(x, y)
 # jac_f(x, y)
 # print(timeit.timeit(lambda: jac_f(x, y), number=1000))
 
-print(eqx.tree_equal(veres, revres))
+print(tree_allclose(veres, revres))
 
 
 def Helmholtz(x):
@@ -74,20 +74,21 @@ jac_fwd = jax.jit(jacve(Helmholtz, order="fwd"))
 jac_rev = jax.jit(jacve(Helmholtz, order="rev"))
 jac_cc = jax.jit(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))
 # print(jax.make_jaxpr(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))(x))
-veres = jac_cc(x)
+veres = jac_cc(x)[0]
 
 # print(timeit.timeit(lambda: jac_cc(x), number=10000))
 # print(timeit.timeit(lambda: jac_fwd(x), number=10000))
 # print(timeit.timeit(lambda: jac_rev(x), number=10000))
 
-jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
-jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz, argnums=(0,)))
+jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz))
+jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz))
 revres = jax_jac_rev(x)
 
 # print(timeit.timeit(lambda: jax_jac_fwd(x), number=10000))
 # print(timeit.timeit(lambda: jax_jac_rev(x), number=10000))
 
-print(eqx.tree_equal(veres, revres))
+# TODO management of transposes and so on
+print(tree_allclose(veres, revres))
 
 print(veres)
 print(revres)
@@ -105,7 +106,7 @@ print(revres)
 # revres = jax.jacrev(transpose)(x, y)
 # print(revres)
 
-# print(eqx.tree_equal(veres, revres))
+# print(tree_allclose(veres, revres))
 
 # def NeuralNetwork(x, W1, b1, W2, b2, y):
 #     y1 = W1 @ x

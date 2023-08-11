@@ -99,61 +99,61 @@ def F_1d(u0, u1, u2, p):
     return u1, p+u1*v, v*(p + u2)
 
 # 1d Roe flux as defined in paper Roe[1981]
-def make_1d_roe_flux():
-    def roe_flux(ul0, ul1, ul2, ur0, ur1, ur2):        
-        du0 = ur0 - ul0
-        ulr0 = jnp.sqrt(ul0*ur0)
-        
-        w1 = jnp.sqrt(ul0) + jnp.sqrt(ur0)
-        
-        vl = ul1/ul0
-        pl = pressure_1d(ul0, ul1, ul2,)
-        hl = enthalpy(ul0, ul2, pl)
-        
-        vr = ur1/ur0
-        pr = pressure_1d(ur0, ur1, ur2)
-        hr = enthalpy(ur0, ur2, pr)
-        
-        dp = pr - pl
-        dv = vr - vl
-                
-        # Arithmetic mean as in Roe's paper (often called Roe averaging)        
-        u = (jnp.sqrt(ul0)*vl + jnp.sqrt(ur0)*vr) / w1
-        h = (jnp.sqrt(ul0)*hl + jnp.sqrt(ur0)*hr) / w1
-        
-        q2 = u**2
-        a2 = (gamma-1.)*(h-.5*q2)
-        a = jnp.sqrt(a2)
-        
-        lp = jnp.abs(u + a)
-        l = jnp.abs(u)
-        ln = jnp.abs(u)
-                
-        # Here we calculate the coefficients for the approximation
-        n = a*ulr0
-        c0 = (du0 - dp/a2)*l
-        c1 = (dv + dp/n)*lp
-        c2 = (dv - dp/n)*ln
-
-        FL0, FL1, FL2 = F_1d(ul0, ul1, ul2, pl)
-        FR0, FR1, FR2 = F_1d(ur0, ur1, ur2, pr)
-        
-        F0 = FL0 + FR0
-        F1 = FL1 + FR1
-        F2 = FL2 + FR2
-        
-        c = .5*ulr0/a
-        
-        dF0 = c0 + c*c1 - c*c2
-        dF1 = c0*u + c*c1*(u+a) - c*c2*(u-a)
-        dF2 = c0*0.5*q2 + c*c1*(h+u*a) - c*c2*(h-u*a)
-        
-        phi0 = .5*(F0 - dF0) 
-        phi1 = .5*(F1 - dF1) 
-        phi2 = .5*(F2 - dF2) 
-
-        return phi0, phi1, phi2
+def roe_flux(ul0, ul1, ul2, ur0, ur1, ur2):        
+    du0 = ur0 - ul0
+    ulr0 = jnp.sqrt(ul0*ur0)
     
+    w1 = jnp.sqrt(ul0) + jnp.sqrt(ur0)
+    
+    vl = ul1/ul0
+    pl = pressure_1d(ul0, ul1, ul2,)
+    hl = enthalpy(ul0, ul2, pl)
+    
+    vr = ur1/ur0
+    pr = pressure_1d(ur0, ur1, ur2)
+    hr = enthalpy(ur0, ur2, pr)
+    
+    dp = pr - pl
+    dv = vr - vl
+            
+    # Arithmetic mean as in Roe's paper (often called Roe averaging)        
+    u = (jnp.sqrt(ul0)*vl + jnp.sqrt(ur0)*vr) / w1
+    h = (jnp.sqrt(ul0)*hl + jnp.sqrt(ur0)*hr) / w1
+    
+    q2 = u**2
+    a2 = (gamma-1.)*(h-.5*q2)
+    a = jnp.sqrt(a2)
+    
+    lp = jnp.abs(u + a)
+    l = jnp.abs(u)
+    ln = jnp.abs(u)
+            
+    # Here we calculate the coefficients for the approximation
+    n = a*ulr0
+    c0 = (du0 - dp/a2)*l
+    c1 = (dv + dp/n)*lp
+    c2 = (dv - dp/n)*ln
+
+    FL0, FL1, FL2 = F_1d(ul0, ul1, ul2, pl)
+    FR0, FR1, FR2 = F_1d(ur0, ur1, ur2, pr)
+    
+    F0 = FL0 + FR0
+    F1 = FL1 + FR1
+    F2 = FL2 + FR2
+    
+    c = .5*ulr0/a
+    
+    dF0 = c0 + c*c1 - c*c2
+    dF1 = c0*u + c*c1*(u+a) - c*c2*(u-a)
+    dF2 = c0*0.5*q2 + c*c1*(h+u*a) - c*c2*(h-u*a)
+    
+    phi0 = .5*(F0 - dF0) 
+    phi1 = .5*(F1 - dF1) 
+    phi2 = .5*(F2 - dF2) 
+
+    return phi0, phi1, phi2
+
+def make_1d_roe_flux():    
     ulr = [1.]*6
     return make_graph(roe_flux, *ulr)  
 
