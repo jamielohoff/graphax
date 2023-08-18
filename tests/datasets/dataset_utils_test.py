@@ -1,24 +1,32 @@
-from graphax.dataset import ComputationalGraphSampler
-from graphax.dataset import create, write, read
+import jax
+import jax.numpy as jnp
+import jax.random as jrand
 
-API_KEY = "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"
-MESSAGE = """Generate an arbitrary JAX function with 4 inputs and 
-            4 outputs and a maximum of 15 operations. Name the 
-            function 'f' and only show the source code without 
-            jit and description."""
-MAKE_JAXPR = "jaxpr = jax.make_jaxpr(f)(1., 1., 1., 1.)"
+from graphax.dataset import RandomSampler, Graph2File
+from graphax.dataset import create, write, read, delete, densify
             
 
-gen = ComputationalGraphSampler(api_key=API_KEY, 
-                                default_message=MESSAGE,
-                                default_make_jaxpr=MAKE_JAXPR)
-fn_list, graph_list, info_list = gen.sample(temperature=0.75, max_tokens=300)
+sampler = RandomSampler(storage_shape=[10, 50, 10],
+                        min_num_intermediates=5)
 
-# create("test.hdf5")
-write("test.hdf5", (fn_list, graph_list, info_list))
-code, graph, info = read("test.hdf5", [0,])
+key = jrand.PRNGKey(42)
+gen = Graph2File(sampler,
+                "./",
+                fname_prefix="test",
+                num_samples=3, 
+                batchsize=3,
+                storage_shape=[10, 50, 10])
+gen.generate(key=key, sampling_shape=[10, 40, 10])
+
+code, header, graph = read("test-10_50_10_3_64008.hdf5", [0,1,2])
 
 print(code[0].decode("utf-8"))
+print(header[0])
 print(graph[0])
-print(info[0])
-
+print(len(graph[0]))
+print(len(graph[1]))
+print(len(graph[2]))
+header = jnp.array(header[0])
+graph = jnp.array(graph[0])
+assembled = densify(header, graph, shape=[10, 50, 10])
+print(assembled)

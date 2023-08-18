@@ -5,8 +5,6 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrand
 
-import equinox as eqx
-
 from graphax.interpreter import jacve, tree_allclose
 
 key = jrand.PRNGKey(42)
@@ -22,7 +20,7 @@ jaxpr = jax.make_jaxpr(jacve(f, [1]))(x, y)
 print(jaxpr)
 
 deriv_fn = jax.jit(jacve(f, [1], argnums=(0, 1)))
-veres = deriv_fn(x, y)[0]
+veres = deriv_fn(x, y)
 
 revres = jax.jacrev(f, argnums=(0, 1))(x, y)
 
@@ -74,7 +72,7 @@ jac_fwd = jax.jit(jacve(Helmholtz, order="fwd"))
 jac_rev = jax.jit(jacve(Helmholtz, order="rev"))
 jac_cc = jax.jit(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))
 # print(jax.make_jaxpr(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))(x))
-veres = jac_cc(x)[0]
+veres = jac_cc(x)
 
 # print(timeit.timeit(lambda: jac_cc(x), number=10000))
 # print(timeit.timeit(lambda: jac_fwd(x), number=10000))
@@ -87,7 +85,7 @@ revres = jax_jac_rev(x)
 # print(timeit.timeit(lambda: jax_jac_fwd(x), number=10000))
 # print(timeit.timeit(lambda: jax_jac_rev(x), number=10000))
 
-# TODO management of transposes and so on
+# TODO management of vector derivatives and so on
 print(tree_allclose(veres, revres))
 
 print(veres)

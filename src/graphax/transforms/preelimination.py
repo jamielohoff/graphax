@@ -18,8 +18,8 @@ def scan(f, init, xs, length=None):
     return carry, jnp.stack(ys)
 
 
-def cond(cond, true_fn, false_fn, *xs):
-    if cond:
+def cond(condition, true_fn, false_fn, *xs):
+    if condition:
         return true_fn(*xs)
     else:
         return false_fn(*xs)
@@ -37,7 +37,8 @@ def safe_preeliminations(edges: Array, return_preeliminated: bool = False) -> Ar
     3.) Is of sparsity type 2, 3, 4, 5 with the dense components having size 1 
     (Parallel vector operations)
     """
-        
+    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
+    
     def loop_fn(carry, vertex):
         _edges = carry
         # Do not preeliminate output vertices
@@ -49,10 +50,10 @@ def safe_preeliminations(edges: Array, return_preeliminated: bool = False) -> Ar
         
         carry = _edges
         return carry, _vert
-    vertices = jnp.arange(1, edges.at[0, 0, 1].get()+1)
+    vertices = jnp.arange(1, num_v+1)
     edges, preelim_order = lax.scan(loop_fn, edges, vertices)
     if return_preeliminated:
-        return edges, preelim_order
+        return edges, [int(p) for p in preelim_order if p > 0]
     return edges
 
 
@@ -60,7 +61,7 @@ def update_edges(vertex: int, edges: Array):
     dead_branch = is_dead_branch(vertex, edges)
     edges, vert = lax.cond(dead_branch,
                             lambda v, e: (vertex_eliminate(v, e)[0], v), 
-                            lambda v, e: is_eligible(v, e), 
+                            lambda v, e: has_markowitz_degree_1(v, e), 
                             vertex, edges)        
     return edges, vert
     
@@ -73,25 +74,25 @@ def is_dead_branch(vertex: int, edges: Array) -> bool:
     return jnp.logical_and(row_flag, col_flag)
 
 
-def is_eligible(vertex: int, edges: Array):
-    markowitz_degree_1 = check_markowitz(vertex, edges)
+def has_markowitz_degree_1(vertex: int, edges: Array):
+    markowitz_degree_1 = check_markowitz_degree(vertex, edges)
     edges, vert = lax.cond(markowitz_degree_1,
-                            lambda v, e: eliminate(v, e), 
+                            lambda v, e: check_sparsity(v, e), 
                             lambda v, e: (e, -1), 
                             vertex, edges)        
     return edges, vert
 
 
-def eliminate(vertex: int, edges: Array):
-    is_sparse = check_sparsity(vertex, edges)
-    edges, vert = lax.cond(is_sparse,
+def check_sparsity(vertex: int, edges: Array):
+    sparse = is_sparse(vertex, edges)
+    edges, vert = lax.cond(sparse,
                             lambda v, e: (vertex_eliminate(v, e)[0], v), 
                             lambda v, e: (e, -1), 
                             vertex, edges)        
     return edges, vert
 
 
-def check_markowitz(vertex: int, edges: Array) -> bool:
+def check_markowitz_degree(vertex: int, edges: Array) -> bool:
     # Check if vertex has only one input and one output
     # In a sense this is similar to Markowitz degree 1
     num_i = edges.at[0, 0, 0].get()
@@ -109,14 +110,14 @@ SPARSITY_MAP = jnp.array([[2, 4], # sparsity type = 2
                           [1, 4]]) # sparsity type = 5
 
 
-def check_sparsity(vertex: int, edges: Array):
+def is_sparse(vertex: int, edges: Array):
     num_i = edges.at[0, 0, 0].get()
     in_edge_idx = jnp.nonzero(edges.at[0, vertex+num_i, :].get(), size=1, fill_value=0)[0][0]
-    out_edge_idx = jnp.nonzero(edges.at[0, :, vertex-1].get(), size=1, fill_value=0)[0][0]
-        
-    in_edge = edges.at[:, vertex+num_i, in_edge_idx].get()
-    out_edge = edges.at[:, out_edge_idx, vertex-1].get()
+    out_edge_idx = jnp.nonzero(edges.at[0, 1:, vertex-1].get(), size=1, fill_value=0)[0][0]
             
+    in_edge = edges.at[:, vertex+num_i, in_edge_idx].get()
+    out_edge = edges.at[:, out_edge_idx+1, vertex-1].get()
+                
     in_edge_flag = _sparsity_checker(in_edge)    
     out_edge_flag = _sparsity_checker(out_edge) 
     
@@ -126,22 +127,29 @@ def check_sparsity(vertex: int, edges: Array):
 # TODO make this recursive!
 def _sparsity_checker(edge: Array):
     sparsity_type = edge.at[0].get()
-    is_parallel = lax.cond(jnp.logical_or(sparsity_type == 6, sparsity_type == 7),
-                            lambda: True,
-                            lambda: False)
-    
+    return lax.cond(jnp.logical_or(sparsity_type == 6, sparsity_type == 7),
+                    lambda e: True,
+                    lambda e: _sparsity(e),
+                    edge)
+
+def _sparsity(edge: Array):
+    sparsity_type = edge.at[0].get()
+    return lax.cond(sparsity_type > 1,
+                    lambda e: _parallel_sparsity(e),
+                    lambda e: _single_sparsity(e),
+                    edge)
+
+def _parallel_sparsity(edge: Array):
+    sparsity_type = edge.at[0].get()
     idxs = SPARSITY_MAP[sparsity_type-2]
-    _in = edge.at[idxs[0]].get()
-    _out = edge.at[idxs[1]].get()
-    is_parallel = lax.cond(jnp.logical_and(_in == 1, _out == 1),
-                            lambda x: True,
-                            lambda x: x,
-                            is_parallel)
+    _in_shape = edge.at[idxs[0]].get()
+    _out_shape = edge.at[idxs[1]].get()
+    return lax.cond(jnp.logical_and(_in_shape == 1, _out_shape == 1),
+                    lambda e: True,
+                    lambda e: _single_sparsity(e),
+                    edge)
     
-    is_parallel = lax.cond(jnp.prod(edge) == 1,
-                            lambda x: True,
-                            lambda x: x,
-                            is_parallel)    
-    
-    return is_parallel
+
+def _single_sparsity(edge: Array):
+    return lax.cond(jnp.prod(edge) == 1, lambda: True, lambda: False)
     

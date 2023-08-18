@@ -51,12 +51,12 @@ class Graph2File:
         subkey, key = jrand.split(key, 2)
         
         num_samples = 0
-        while num_samples <= self.num_samples:
+        while num_samples < self.num_samples:
             samples = self.sampler.sample(self.batchsize, key=subkey, **kwargs)
             print("Writing", len(samples), "samples to file...")
             num_samples += len(samples)
             write(fname, samples)
-            del samples
             
+            del samples
             gc.collect()
 

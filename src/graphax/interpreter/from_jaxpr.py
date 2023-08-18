@@ -29,7 +29,7 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
        
     edges = make_empty_edges([num_i, num_v, num_o])
     edges = edges.at[0, 0, 0].set(num_i)
-    edges = edges.at[0, 0, 1].set(num_v)
+    edges = edges.at[0, 0, 1].set(num_v-num_o)
     edges = edges.at[0, 0, 2].set(num_o)
         
     is_invar_list = []
@@ -64,7 +64,8 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
         if not outvar in is_invar_list:
             # Track which vertices are output vertices
             # Vertices that are output vertices but also intermediate vertices
-            # are eliminated non-the-less
+            # are eliminated non-the-less and we add an additional slice to the 
+            # tensor
             idx = variables[str(outvar)]
             edges = edges.at[1, 0, idx-num_i-1].set(1)
             edges = edges.at[2, 0, idx-num_i-1].set(1)

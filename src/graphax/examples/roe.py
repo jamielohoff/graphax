@@ -17,6 +17,7 @@ def F(u0, u1, u2, u3, u4, p):
 
 
 # 3d Roe flux as defined in paper Roe[1981]
+# TODO write this in vectorized form again
 def make_3d_roe_flux():
     def roe_flux(ul0, ul1, ul2, ul3, ul4, ur0, ur1, ur2, ur3, ur4):        
         du0 = ur0 - ul0
@@ -145,7 +146,7 @@ def roe_flux(ul0, ul1, ul2, ur0, ur1, ur2):
     
     dF0 = c0 + c*c1 - c*c2
     dF1 = c0*u + c*c1*(u+a) - c*c2*(u-a)
-    dF2 = c0*0.5*q2 + c*c1*(h+u*a) - c*c2*(h-u*a)
+    dF2 = c0*.5*q2 + c*c1*(h+u*a) - c*c2*(h-u*a)
     
     phi0 = .5*(F0 - dF0) 
     phi1 = .5*(F1 - dF1) 
@@ -155,5 +156,5 @@ def roe_flux(ul0, ul1, ul2, ur0, ur1, ur2):
 
 def make_1d_roe_flux():    
     ulr = [1.]*6
-    return make_graph(roe_flux, *ulr)  
+    return make_graph(roe_flux, *ulr)
 

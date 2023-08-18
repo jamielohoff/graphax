@@ -323,10 +323,12 @@ def jacve(fun, order, argnums=(0,)):
         # Make repackaging work properly with one input value only
         flattened_args, in_tree = tree_flatten(args)
         closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
-        out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
+        
         out = vertex_elimination_jaxpr(closed_jaxpr.jaxpr, order, closed_jaxpr.literals, *args, argnums=argnums)
-        out = tree_unflatten(out_tree, out)
-        return out
+        out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
+        if len(closed_jaxpr.jaxpr.outvars) == 1:
+            return out[0]
+        return tree_unflatten(out_tree, out)
     return wrapped
 
 

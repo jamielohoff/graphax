@@ -52,11 +52,11 @@ def make_adaptive_LIF():
 def make_lif_SNN():
     def snn(S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, thresh):
         i1 = W1 @ S_in
-        U1, a1, s1 = lif(U1, I1, i1, alpha[1], beta[1], thresh[1])
+        U1, a1, s1 = lif(U1, I1, i1, alpha, beta, thresh)
         i2 = W2 @ s1
-        U2, a2, s2 = lif(U2, I2, i2, alpha[2], beta[2], thresh[2])
+        U2, a2, s2 = lif(U2, I2, i2, alpha, beta, thresh)
         i3 = W3 @ s2
-        U3, a3, s3 = lif(U3, I3, i3, alpha[3], beta[3], thresh[3])
+        U3, a3, s3 = lif(U3, I3, i3, alpha, beta, thresh)
         return .5*(s3 - S_target)**2, U1, U2, U3, a1, a2, a3
     
     S_in = jnp.ones(2)
@@ -74,21 +74,22 @@ def make_lif_SNN():
     W2 = jnp.ones((4, 4))
     W3 = jnp.ones((2, 4))
     
-    alpha = .95*jnp.ones(3)
-    beta = .9*jnp.ones(3)
-    threshold = jnp.ones(3)
-    return make_graph(snn, S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, threshold)
+    alpha = .95
+    beta = .9
+    threshold = 1.
+    jaxpr = jax.make_jaxpr(snn)(S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, threshold)
+    return make_graph(snn, S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, threshold), jaxpr
 
 
 # Single SNN forward pass as done in Zenke&Neftci using time-local loss functions (e.g. regression)
 def make_ada_lif_SNN():
     def snn(S_in, S_target, U1, U2, U3, a1, a2, a3, W1, W2, W3, alpha, beta, rho, thresh):
         i1 = W1 @ S_in
-        U1, a1, s1 = ada_lif(U1, a1, i1, alpha[1], beta[1], rho[1], thresh[1])
+        U1, a1, s1 = ada_lif(U1, a1, i1, alpha, beta, rho, thresh)
         i2 = W2 @ s1
-        U2, a2, s2 = ada_lif(U2, a2, i2, alpha[2], beta[2], rho[2], thresh[2])
+        U2, a2, s2 = ada_lif(U2, a2, i2, alpha, beta, rho, thresh)
         i3 = W3 @ s2
-        U3, a3, s3 = ada_lif(U3, a3, i3, alpha[3], beta[3], rho[3], thresh[3])
+        U3, a3, s3 = ada_lif(U3, a3, i3, alpha, beta, rho, thresh)
         return .5*(s3 - S_target)**2, U1, U2, U3, a1, a2, a3
     
     S_in = jnp.ones(2)
@@ -106,9 +107,9 @@ def make_ada_lif_SNN():
     W2 = jnp.ones((4, 4))
     W3 = jnp.ones((2, 4))
     
-    alpha = .95*jnp.ones(3)
-    beta = .9*jnp.ones(3)
-    rho = .9*jnp.ones(3)
-    threshold = jnp.ones(3)
+    alpha = .95
+    beta = .9
+    rho = .9
+    threshold = 1.
     return make_graph(snn, S_in, S_target, U1, U2, U3, a1, a2, a3, W1, W2, W3, alpha, beta, rho, threshold)
         

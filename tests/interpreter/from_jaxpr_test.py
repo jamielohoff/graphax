@@ -4,6 +4,10 @@ import jax.random as jrand
 
 from graphax.interpreter.from_jaxpr import make_graph
 from graphax.examples import make_random_code
+from graphax import forward, reverse
+
+import sys
+jnp.set_printoptions(threshold=sys.maxsize)
 
 
 # def simple(x, y):
@@ -27,6 +31,22 @@ from graphax.examples import make_random_code
 # print(jax.make_jaxpr(Helmholtz)(x))
 # edges = make_graph(Helmholtz, x)
 # print(edges)
+
+def Test(x, W1, W2):
+    y1 = W1 @ x
+    y2 = W2 @ y1
+    return .5*jnp.sum(y2)
+
+
+x = jnp.ones(4)
+W1 = jnp.ones((3, 4))
+W2 = jnp.ones((4, 3))
+print(jax.make_jaxpr(Test)(x, W1, W2))
+edges = make_graph(Test, x, W1, W2)
+print(edges)
+
+print(forward(edges))
+
 
 
 # def NeuralNetwork(x, W1, b1, W2, b2, y):
@@ -53,13 +73,12 @@ from graphax.examples import make_random_code
 # edges = make_graph(NeuralNetwork, x, W1, b1, W2, b2, y)
 # print(edges)
 
-import sys
-jnp.set_printoptions(threshold=sys.maxsize)
+# print(forward(edges))
 
-key = jrand.PRNGKey(42)
-code, jaxpr = make_random_code(key, [5, 15, 5])
-print(code)
-print(jaxpr)
-edges = make_graph(jaxpr)
-print(edges)
+# key = jrand.PRNGKey(42)
+# code, jaxpr = make_random_code(key, [5, 15, 5])
+# print(code)
+# print(jaxpr)
+# edges = make_graph(jaxpr)
+# print(edges)
 

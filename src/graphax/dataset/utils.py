@@ -10,7 +10,11 @@ import h5py
 import jax
 import jax.numpy as jnp
 
+import numpy as np
+
 from chex import Array
+
+from ..core import make_empty_edges
 
 
 def get_prompt_list(prompt_file: str):
@@ -43,33 +47,39 @@ def write(fname: str, samples: Tuple[str, Array]):
             print("Maximum file size reached!")
         
         code_dset = file["data/code"]
+        header_dset = file["data/graph_header"]
         graph_dset = file["data/graph"]
         
         code_dset[idx:idx+batchsize] = [sample[0] for sample in samples]
-        
-        for i, sample in enumerate(samples):
-            edges = sample[1]        
-            graph_dset[idx+i:idx+i+1] = edges[None,:,:,:]
-
+        header_dset[idx:idx+batchsize] = [sample[1] for sample in samples]
+        graph_dset[idx:idx+batchsize] = [sample[2] for sample in samples]
+    
         header.attrs["current_idx"] = idx + batchsize
         
         
-def create(fname: str, num_samples: int, max_info: Sequence[int] = (20, 105, 20)):
+def create(fname: str, num_samples: int, max_shape: Sequence[int] = (20, 105, 20)):
     assert os.path.isfile(fname) == False
-    max_i, max_v, max_o = max_info
+    max_v = max_shape[1]
     
     with h5py.File(fname, "w") as file:
         header = file.create_group("header", (1,))
         header.attrs["num_samples"] = num_samples
-        header.attrs["max_graph_shape"] = max_info
+        header.attrs["max_graph_shape"] = max_shape
         header.attrs["current_idx"] = 0
         
         data = file.create_group("data")
         str_dtype = h5py.string_dtype(encoding="utf-8")
         source_code = file.create_dataset("data/code", (num_samples,), dtype=str_dtype)
         
-        graph_dims = (5, max_i+max_v+1, max_v)
-        edges = file.create_dataset("data/graph", (num_samples,)+graph_dims, dtype="i4")
+        header_dims = (5, max_v)
+        graph_header = file.create_dataset("data/graph_header", (num_samples,)+header_dims, dtype="i4")
+        
+        graph_dtype = h5py.vlen_dtype(np.dtype('int32'))
+        edges = file.create_dataset("data/graph", (num_samples,), dtype=graph_dtype)
+        
+
+def delete(fname: str):
+    os.remove(fname)
     
     
 def read(fname: str, batch_idxs: Sequence[int]) -> Tuple[str, Array]:
@@ -80,8 +90,9 @@ def read(fname: str, batch_idxs: Sequence[int]) -> Tuple[str, Array]:
     
     with h5py.File(fname) as file:        
         codes = file["data/code"][batch_idxs]
+        headers = file["data/graph_header"][batch_idxs]
         graphs = file["data/graph"][batch_idxs]
-        return codes, graphs
+        return codes, headers, graphs
     
     
 def read_graph(fname: str, batch_idxs: Sequence[int]) -> Tuple[Array]:
@@ -90,9 +101,10 @@ def read_graph(fname: str, batch_idxs: Sequence[int]) -> Tuple[Array]:
     """
     assert os.path.isfile(fname) == True
     
-    with h5py.File(fname) as file:       
+    with h5py.File(fname) as file:     
+        headers = file["data/graph_header"][batch_idxs]  
         graphs = file["data/graph"][batch_idxs]
-        return graphs
+        return headers, graphs
     
     
 def read_file_size(fname: str) -> int:
@@ -104,4 +116,53 @@ def read_file_size(fname: str) -> int:
     with h5py.File(fname, "a") as file:
         header = file["header"]
         return header.attrs["num_samples"]
+
+
+def sparsify(edges: Array) -> Tuple[Array, Array]:
+    """
+    Function that takes in a 3d tensor that is the representation of a 
+    computational graph and turns it into a sparsified version where we
+    get a list of entries with corresponding values in the format
+    (i, j, sparsity type, Jacobian shapes).
+    This means it contains only existing edges.
+
+    Args:
+        edges (Array): Computational graph representation.
+    """
+    header = edges.at[:, 0, :].get()
+    
+    sparsity_map = edges.at[0, 1:, :].get()
+    nonzeros = jnp.nonzero(sparsity_map)
+
+    sparse_edges = []
+    for i, j in zip(nonzeros[0], nonzeros[1]):
+        edge = edges.at[:, i+1, j].get()
+        idxs = jnp.array([i, j])
+        edge = jnp.concatenate((idxs, edge))
+        sparse_edges.append(edge)
+    
+    return header, jnp.concatenate(sparse_edges, axis=0)
+    
+
+def densify(header: Array, edges: Array, shape: Sequence[int] = [20, 105, 20]) -> Array:
+    """
+    Function that takes in the sparsified representation of a computational
+    graph and turns it into a single dense 3d tensor again.
+    Since data is loaded from hdf5 into numpy arrays, we use numpy to 
+    reassemble the computational graph representation instead of jax.numpy.
+
+    Args:
+        header (Array): Computational graph representation.
+        edges (Sequence[Array]): Computational graph representation containing
+                                only nonzero entries, i.e. existing edges.
+    """    
+    dense_edges = np.array(make_empty_edges(shape))
+    dense_edges[:, 0, :] = header
+
+    for n in range(0, edges.shape[0], 7):
+        edge = edges[n:n+7]
+        i, j = edge[0:2]
+        val = edge[2:]
+        dense_edges[:, i+1, j] = val
+    return dense_edges
 

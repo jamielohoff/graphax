@@ -102,7 +102,7 @@ def make_transformer_encoder():
     
     gamma = jnp.ones(2)
     beta = jnp.zeros(2)
-    return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta) 
+    return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta)
 
 
 def make_transformer_encoder_decoder():

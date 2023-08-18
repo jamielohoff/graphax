@@ -48,22 +48,6 @@ def make_task_dataset(key: PRNGKey, fname: str, info: Sequence[int] =[20, 105, 2
     edges = compress_graph(edges)
     edges = embed(keys[1], edges, info)
     samples.append(("f", edges))
-
-    # Number of FMAs after safe preeliminations
-    # fwd: 392, rev: 320, cc: 298
-    edges = make_lif_SNN()
-    edges = safe_preeliminations(edges)
-    edges = compress_graph(edges)
-    edges = embed(keys[2], edges, info)
-    samples.append(("LIF SNN", edges))
-
-    # Number of FMAs after safe preeliminations
-    # fwd: 2020, rev: 992, cc: 1176
-    edges = make_ada_lif_SNN()
-    edges = safe_preeliminations(edges)
-    edges = compress_graph(edges)
-    edges = embed(keys[3], edges, info)
-    samples.append(("Adaptive LIF SNN", edges))
             
     # Number of FMAs after safe preeliminations
     # fwd: 69824, rev: n/v, cc: 23552
