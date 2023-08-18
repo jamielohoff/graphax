@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jrand
 
-from chex import Array, PRNGKey
+from chex import PRNGKey
 
 from .utils import create, write
 from ..interpreter import make_graph
