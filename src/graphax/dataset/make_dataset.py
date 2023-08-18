@@ -1,6 +1,7 @@
 import os
 from typing import Sequence
-from tqdm import tqdm
+
+import gc
 
 import jax
 import jax.random as jrand
@@ -18,52 +19,44 @@ class Graph2File:
     path: str
     fname_prefix: str
     num_samples: int
-    num_files: int
-    samples_per_file: int
+    batchsize: int
     storage_shape: Sequence[int]
-    
-    sampler_batchsize: int
     sampler: ComputationalGraphSampler
     
     def __init__(self, 
                 sampler: ComputationalGraphSampler,
                 path: str,
-                sampler_batchsize: int = 20,
                 fname_prefix: str = "comp_graph_examples", 
-                num_samples: int = 200,  
-                samples_per_file: int = 100,
-                storage_shape: Sequence[int] = [20, 50, 20]) -> None:
+                num_samples: int = 16384,  
+                batchsize: int = 1,
+                storage_shape: Sequence[int] = [20, 105, 20]) -> None:
         self.path = path
         self.fname_prefix = fname_prefix
         self.num_samples = num_samples
-        self.samples_per_file = samples_per_file
-        self.num_files = num_samples // samples_per_file
-        self.current_num_files = 0
         self.storage_shape = storage_shape
-        
-        self.sampler_batchsize = sampler_batchsize
         self.sampler = sampler
+        self.batchsize = batchsize
         
     def generate(self, key: PRNGKey = None, **kwargs) -> None:
-        pbar = tqdm(range(self.num_files))
-        for _ in pbar:
-            fname = self.new_file()
-            num_current_samples = 0
-            while num_current_samples < self.samples_per_file:
-                subkey, key = jrand.split(key, 2)
-                try:
-                    samples = self.sampler.sample(self.sampler_batchsize, key=subkey, **kwargs)
-                except Exception as e:
-                    print(e)
-                    continue
-                print("Retrieved", len(samples), "samples")
-                num_current_samples += len(samples)
-                write(fname, samples)
-                
-    def new_file(self) -> str:
-        name = self.fname_prefix + "-" + str(self.current_num_files) + ".hdf5"
+        ri = int(jrand.randint(key, (), 0, 1e6))
+        handle = "_".join([str(s) for s in self.storage_shape])
+        handle += f"_{self.num_samples}"
+        handle += f"_{ri}"
+        
+        name = self.fname_prefix + "-" + handle + ".hdf5"
         fname = os.path.join(self.path, name)
-        create(fname, num_samples=self.samples_per_file, max_info=self.storage_shape)
-        self.current_num_files += 1
-        return fname
+        print("Saving under", fname)
+        create(fname, num_samples=self.num_samples, max_info=self.storage_shape)
+    
+        subkey, key = jrand.split(key, 2)
+        
+        num_samples = 0
+        while num_samples < self.num_samples:
+            samples = self.sampler.sample(self.batchsize, key=subkey, **kwargs)
+            print("Writing", len(samples), "samples to file...")
+            num_samples += len(samples)
+            write(fname, samples)
+            
+            del samples
+            gc.collect()
 

@@ -83,7 +83,9 @@ class SparseTensor:
     def materialize_dimensions(self, dims):
         # TODO add docstring
         dims = sorted(dims)
-        print("dims", dims)
+        # print("dims", dims)
+        if type(self.val) is float:
+            return self.val
         _shape = list(self.val.shape)
         _broadcast_dims = []
         for d in dims:
@@ -98,7 +100,7 @@ class SparseTensor:
                     shift += 1
             _broadcast_dims.append(i+shift)
             total_shift += shift
-        print("broadcast", self, _shape, _broadcast_dims)
+        # print("broadcast", self, _shape, _broadcast_dims)
         return self.val.reshape(_shape) # lax.broadcast_in_dim(self.val, _shape, _broadcast_dims)
     
     # TODO simplify this

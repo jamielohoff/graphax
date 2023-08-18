@@ -5,7 +5,7 @@ from .core import (make_empty_edges,
                     cross_country, 
                     forward, 
                     reverse,
-                    get_info,
+                    get_shape,
                     get_elimination_order,
                     get_output_mask,
                     get_vertex_mask)

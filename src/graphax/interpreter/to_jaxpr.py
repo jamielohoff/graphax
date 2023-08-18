@@ -1,20 +1,18 @@
 from functools import wraps, partial
 from collections import defaultdict
 
-import time
-import timeit
-
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
-import jax.random as jrand
 from jax._src.util import safe_map
 import jax._src.core as core
-
+import jax.tree_util as jtu
 from jax.tree_util import tree_flatten, tree_unflatten
-from graphax.interpreter.sparse_tensor import (SparseTensor, 
-                                                DenseDimension, 
-                                                SparseDimension)
+
+from .utils import zeros_like
+from .sparse_tensor import (SparseTensor, 
+                            DenseDimension, 
+                            SparseDimension)
 
 
 def make_parallel_jacobian(primal, val_out, elemental):
@@ -25,7 +23,7 @@ def make_parallel_jacobian(primal, val_out, elemental):
         out_dims = [SparseDimension(i, val_out.aval.shape[i], i, out_size+i) 
                     for i, e in enumerate(val_out.aval.shape)]
         primal_dims = [SparseDimension(out_size+i, val_out.aval.shape[i], i, i) 
-                    for i, e in enumerate(val_out.aval.shape)]
+                        for i, e in enumerate(val_out.aval.shape)]
         
     elif primal_size == 0:
         # Handling broadcast of singletons
@@ -35,7 +33,6 @@ def make_parallel_jacobian(primal, val_out, elemental):
     else:
         out_dims = []
         primal_dims = []
-    print(out_dims, primal_dims)
     return SparseTensor(out_dims, primal_dims, elemental)
 
 
@@ -54,7 +51,7 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     elementals = elementalrule(*primals, **params)
     elementals = elementals if type(elementals) is tuple else (elementals,)
     elementals_out = [make_parallel_jacobian(primal, val_out, elemental) 
-                        for primal, elemental in zip(primals, elementals)]
+                        for primal, elemental in zip(primals, elementals) if type(primal) is jax._src.interpreters.partial_eval.DynamicJaxprTracer]
     return val_out, elementals_out
 
 
@@ -81,6 +78,7 @@ defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 
 defelemental2(lax.exp_p, lambda out, primal: out)
 defelemental(lax.log_p, lambda x: 1./x)
+defelemental(lax.sqrt_p, lambda x: .5/jnp.sqrt(x))
 
 defelemental(lax.sin_p, lambda x: jnp.cos(x))
 defelemental(lax.asin_p, lambda x: 1./jnp.sqrt(1.0 - x**2))
@@ -119,6 +117,12 @@ def div_elemental_rule(x, y):
     return (1./y, -x/y**2)
 
 defelemental(lax.div_p, div_elemental_rule)
+
+
+def atan2_elemental_rule(x, y):
+    return (y/(x**2+y**2), -x/(x**2+y**2))
+
+defelemental(lax.atan2_p, atan2_elemental_rule)
 
 
 def transpose_elemental_rule(primals, **params):
@@ -216,7 +220,7 @@ def dot_general_elemental_rule(primals, **params):
     # TODO properly treat the transpose
     if len(rhs.aval.shape) > 1:
         transpose_rhs = rhs.T
-        print(lhs, transpose_rhs)
+        # print(lhs, transpose_rhs)
         # TODO this needs generalization to higher-dimensional tensors
         transpose_rhs_dims = [1-d for d in dimension_numbers[1]]
     else:
@@ -319,9 +323,12 @@ def jacve(fun, order, argnums=(0,)):
         # Make repackaging work properly with one input value only
         flattened_args, in_tree = tree_flatten(args)
         closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
+        
         out = vertex_elimination_jaxpr(closed_jaxpr.jaxpr, order, closed_jaxpr.literals, *args, argnums=argnums)
-        out = tree_unflatten(in_tree, out)
-        return out
+        out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
+        if len(closed_jaxpr.jaxpr.outvars) == 1:
+            return out[0]
+        return tree_unflatten(out_tree, out)
     return wrapped
 
 
@@ -346,7 +353,6 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             transpose_graph[eqn.outvars[0]][invar] = outval
                 
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
-    ignore_invars = [invar for i, invar in enumerate(jaxpr.invars) if i not in argnums]
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
@@ -356,9 +362,9 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
         primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
-        print("elementals", elemental_outvals)
         safe_map(write, eqn.outvars, [primal_outvals])
-        safe_map(write_elemental, eqn.invars, elemental_outvals)
+        invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        safe_map(write_elemental, invars, elemental_outvals)
         
     if type(order) is str:
         if order == "forward" or order == "fwd":
@@ -369,6 +375,7 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
                     if eqn.outvars[0] not in jaxpr.outvars][::-1]
         else:
             raise ValueError(order + " is not a valid order identifier!")
+
     # Eliminate the vertices
     for vertex in order:
         eqn = jaxpr.eqns[vertex-1]
@@ -376,14 +383,14 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             post_val = graph[eqn.outvars[0]][out_edge]
             for in_edge in transpose_graph[eqn.outvars[0]].keys():
                 pre_val = transpose_graph[eqn.outvars[0]][in_edge]
-                print(in_edge, eqn.outvars[0], out_edge)
+                # print(in_edge, eqn.outvars[0], out_edge)
                 # print("in shape", post_val, pre_val)
                 edge_outval = post_val * pre_val
-                print("mul shape", edge_outval)
+                # print("mul shape", edge_outval)
 
                 if graph.get(in_edge).get(out_edge) is not None:
                     _edge = transpose_graph[out_edge][in_edge]
-                    print("add shape", _edge)
+                    # print("add shape", _edge)
                     edge_outval += _edge
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
@@ -397,15 +404,15 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         del graph[eqn.outvars[0]]
         del transpose_graph[eqn.outvars[0]]    
 
-    # Collect outputs TODO replace excluded argnums with Nones in pytree
+    # Collect outputs 
     jac_vals = [graph[invar][outvar].materialize_actual_shape() 
-                for outvar in jaxpr.outvars for invar in jaxpr.invars]
-    
-    # Restructure Jacobians for more complicated pytrees
-    n = len(jaxpr.outvars)
-    if n > 1:
-        ratio = len(jac_vals)//len(jaxpr.outvars)
-        jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
+                if outvar in list(graph[invar].keys()) else zeros_like(invar, outvar)
+                for outvar in jaxpr.outvars for invar in jaxpr_invars]
 
+    # Restructure Jacobians for more complicated pytrees
+    n = len(jaxpr_invars)
+    if n > 1:
+        ratio = len(jac_vals)//len(jaxpr_invars)
+        jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
     return jac_vals
 

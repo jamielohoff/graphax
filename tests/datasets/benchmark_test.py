@@ -8,7 +8,7 @@ from graphax.dataset.utils import read
 from graphax.dataset import make_benchmark_dataset
 
 key = jrand.PRNGKey(42)
-make_benchmark_dataset(key, "./benchmark_dataset.hdf5", size=8)
+make_benchmark_dataset(key, "./benchmark_dataset.hdf5", size=100)
 
 names, data = read("./benchmark_dataset.hdf5", [0, 1, 2, 3, 4, 5, 6, 7])
 

@@ -16,7 +16,4 @@ for i in [2, 5, 4, 3, 1]:
     print(vertex_mask)
     attn_mask = jnp.logical_or(vertex_mask.reshape(1, -1), vertex_mask.reshape(-1, 1)).astype(jnp.int32)
     print(attn_mask)
-    one_hot = jnn.one_hot(edges.at[3, 0, :].get()-1, edges.at[0, 0, 1].get())
-    print(one_hot)
-    print("mask", one_hot.sum(axis=0))
 

@@ -9,7 +9,7 @@ from chex import Array
 from .core import (vertex_eliminate, 
                     get_elimination_order, 
                     get_vertex_mask, 
-                    get_info)
+                    get_shape)
     
 
 EnvOut = Tuple[Array, float, bool, Any]
@@ -46,7 +46,7 @@ def step(edges: Array, action: int) -> EnvOut:
     # Reward is the negative of the multiplication count
     reward = -nops
     num_eliminated_vertices = get_vertex_mask(new_edges).sum()
-    num_intermediates = get_info(new_edges)[1]
+    num_intermediates = get_shape(new_edges)[1]
     terminated = lax.cond(num_eliminated_vertices == num_intermediates, lambda: True, lambda: False)
 
     return new_edges, reward, terminated

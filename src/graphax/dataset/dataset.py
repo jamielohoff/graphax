@@ -2,9 +2,9 @@ import os
 from typing import Sequence, Tuple
 from torch.utils.data import Dataset
 
-import chex
+from chex import Array
 
-from .utils import read, read_graph, read_file_size
+from .utils import read, read_graph, read_file_size, densify
 
 
 class GraphDataset(Dataset):
@@ -12,9 +12,14 @@ class GraphDataset(Dataset):
     file_sizes: Sequence[int]
     length: int
     include_code: bool
+    shape: Sequence[int]
     
-    def __init__(self, dir: str, include_code: bool = False) -> None:
+    def __init__(self, 
+                dir: str, 
+                include_code: bool = False, 
+                shape: Sequence[int] = [20, 105, 20]) -> None:
         self.length = 0
+        self.shape = shape
         self.include_code = include_code
         self.files, self.file_sizes = [], []
         for file in os.listdir(dir):
@@ -28,15 +33,17 @@ class GraphDataset(Dataset):
     def __len__(self) -> int:
         return self.length
     
-    def __getitem__(self, idx: int) -> Tuple[chex.Array, chex.Array]:
+    def __getitem__(self, idx: int) -> Tuple[Array, Array]:
         file_idx = [fs for i, fs in enumerate(self.file_sizes) if sum(self.file_sizes[:i+1]) <= idx]
-        file = self.files[len(file_idx)-1]
+        file = self.files[len(file_idx)]
         _idx = idx - sum(file_idx)
         
         if self.include_code:
-            src, graph = read(file, _idx)
+            src, header, sparse_graph = read(file, _idx)
+            graph = densify(header, sparse_graph, shape=self.shape)
             return src, graph
         else:
-            graph = read_graph(file, _idx)
+            header, sparse_graph = read_graph(file, _idx)
+            graph = densify(header, sparse_graph, shape=self.shape)
             return graph
 

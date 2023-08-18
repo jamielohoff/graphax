@@ -84,6 +84,7 @@ vertex_registry[lax.acosh_p] = add_mono_vertex
 vertex_registry[lax.atanh_p] = add_mono_vertex
 
 vertex_registry[lax.integer_pow_p] = add_mono_vertex
+vertex_registry[lax.sqrt_p] = add_mono_vertex
 
 vertex_registry[lax.convert_element_type_p] = add_mono_vertex
 # We currently included the custom derivative operator here 
@@ -376,6 +377,7 @@ def add_copy_gradient_vertex(edges, eqn, variables):
 # TODO check if this is true!
 vertex_registry[lax.broadcast_in_dim_p] = add_copy_gradient_vertex
 vertex_registry[lax.squeeze_p] = add_copy_gradient_vertex
+vertex_registry[lax.reshape_p] = add_copy_gradient_vertex
 
 # Reshaping of tensors. Does not change the Jacobian accumulation as slicing also
 # merely copies the respective partials. However, it terminates the derivative

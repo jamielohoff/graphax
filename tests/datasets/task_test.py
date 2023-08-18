@@ -10,7 +10,7 @@ from graphax.dataset.tasks import make_task_dataset
 key = jrand.PRNGKey(42)
 make_task_dataset(key, "./task_dataset.hdf5")
 
-names, data = read("./task_dataset.hdf5", [0, 1, 2, 3, 4, 5, 6, 7])
+names, data = read("./task_dataset.hdf5", [0, 1, 2, 3, 4, 5])
 
 
 for name, edges in zip(names, data):

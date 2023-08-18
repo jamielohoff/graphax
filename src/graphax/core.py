@@ -111,7 +111,7 @@ ADD_SPARSITY_MAP = jnp.array([[0, 1, 2, 3, 4, 5, 6, 7, 0],
 Edge = Tuple[int, int]
 
 
-def get_info(edges: Array):
+def get_shape(edges: Array):
     num_v = edges.shape[2]
     num_i = edges.shape[1] - num_v - 1
     return num_i, num_v
@@ -209,7 +209,7 @@ def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_i, num_v = get_info(edges)
+    num_i, num_v = get_shape(edges)
     jac_edges = edges.at[:, 1:, :].get()
     col = jac_edges.at[:, :, vertex-1].get()
         
@@ -241,6 +241,18 @@ def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
     return edges, fmas
 
 
+def scan(f, init, xs, length=None):
+    if xs is None:
+        xs = [None] * length
+    carry = init
+    ys = []
+    for x in xs:
+        carry, y = f(carry, x)
+        ys.append(y)
+    return carry, jnp.stack(ys)
+
+
+
 def cross_country(order: Sequence[int], edges: Array) -> Array:
     """
     Fully JIT-compilable function that implements cross-country elimination 
@@ -254,18 +266,17 @@ def cross_country(order: Sequence[int], edges: Array) -> Array:
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_i, num_v = get_info(edges)
-    vertex_mask = 1 + jnp.nonzero(1 - edges.at[1, 0, :].get(), size=num_v, fill_value=-2)[0]
+
     def cc_fn(carry, vertex):
         _edges, fmas = carry
-        not_masked = jnp.any(vertex == vertex_mask)
+        not_masked = jnp.logical_not(_edges.at[1, 0, vertex-1].get() > 0)
         _edges, _fmas = lax.cond(not_masked,
                                 lambda e: vertex_eliminate(vertex, e),
                                 lambda e: (e, 0),
                                _edges)
         fmas += _fmas
         carry = (_edges, fmas)
-        return carry, None
+        return carry, 0
     vertices = jnp.array(order)
     output, _ = lax.scan(cc_fn, (edges, 0), vertices)
     return output
@@ -286,7 +297,7 @@ def forward(edges: Array):
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_i, num_v = get_info(edges)
+    num_i, num_v = get_shape(edges)
     order = jnp.arange(1, num_v+1)
     output = cross_country(order, edges)
     return output
@@ -307,7 +318,7 @@ def reverse(edges: Array):
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_i, num_v = get_info(edges)
+    num_i, num_v = get_shape(edges)
     order = jnp.arange(1, num_v+1)[::-1]
     output = cross_country(order, edges)
     return output

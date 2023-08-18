@@ -6,12 +6,12 @@ class ComputationalGraphSampler:
     """
     TODO add documentation
     """
-    max_info: Sequence[int]
+    storage_shape: Sequence[int]
     min_num_intermediates: int
     
     def __init__(self, 
-                min_num_intermediates: int = 12,
-                max_info: Sequence[int] = [20, 50, 20]) -> None:
+                min_num_intermediates: int = 50,
+                storage_shape: Sequence[int] = [20, 105, 20]) -> None:
         """initializes a fixed repository of possible vertex games
 
         Args:
@@ -22,7 +22,7 @@ class ComputationalGraphSampler:
         Returns:
             _type_: _description_
         """
-        self.max_info = max_info
+        self.storage_shape = storage_shape
         self.min_num_intermediates = min_num_intermediates
             
     def sample(self, 

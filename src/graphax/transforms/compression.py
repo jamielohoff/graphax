@@ -11,7 +11,6 @@ def compress_graph(edges: Array) -> Array:
     NOTE: This changes the shape of the edges array and the number of intermediate variables!
     """
     num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
-    print(num_i, num_v, num_o)
             
     i, num_removed_vertices = 1, 0
     for _ in range(1, num_v+1):            
@@ -27,8 +26,7 @@ def compress_graph(edges: Array) -> Array:
     num_v = edges.shape[2]
     num_i = edges.shape[1] - num_v - 1
     num_o = jnp.sum(edges.at[2, 0, :].get())
-    info = jnp.array([num_i, num_v,num_o])
-    print(info)
-    edges = edges.at[0, 0, 0:3].set(info)
+    shape = jnp.array([num_i, num_v-num_o, num_o])
+    edges = edges.at[0, 0, 0:3].set(shape)
     return edges
 

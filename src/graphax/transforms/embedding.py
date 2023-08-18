@@ -14,8 +14,9 @@ def embed(key: PRNGKey, edges: Array, new_size: Sequence[int]) -> Array:
     NOTE: Changes size of the tensor!
     """
     
-    ikey, vkey, okey = jrand.split(key, 3)
+    ikey, vkey = jrand.split(key, 2)
     num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
+    size = edges.at[0, 0, 0:3].get()
     new_num_i, new_num_v, new_num_o = new_size
 
     i_diff = new_num_i - num_i
@@ -37,6 +38,6 @@ def embed(key: PRNGKey, edges: Array, new_size: Sequence[int]) -> Array:
         
     # Update edge state size to new size
     edges = edges.at[0, 0, :].set(0)
-    edges = edges.at[0, 0, 0:3].set(jnp.array(new_size))
+    edges = edges.at[0, 0, 0:3].set(jnp.array(size))
     return edges
 

@@ -1,5 +1,6 @@
 from typing import Sequence
 
+import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
@@ -16,7 +17,7 @@ def minimal_markowitz(edges: Array):
         _edges, _ = vertex_eliminate(minimal_markowitz_vertex, _edges)
         return _edges, minimal_markowitz_vertex
     
-    it = jnp.arange(1, num_v+1-num_o)
+    it = jnp.arange(1, num_v+1)
     _, idxs = lax.scan(loop_fn, edges, it)
 
     return [int(i) for i in idxs]
@@ -37,7 +38,7 @@ def get_minimal_markowitz(edges: Array, degrees: bool = False) -> Sequence[int]:
                                     vertex, edges)
         return carry, markowitz_degree
     
-    vertices = jnp.arange(1, edges.shape[2]+1)
+    vertices = jnp.arange(1, edges.shape[-1]+1)
     _, markowitz_degrees = lax.scan(loop_fn, (), vertices)
     if degrees:
         print(markowitz_degrees)

@@ -3,9 +3,9 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from graphax.dataset import GraphDataset
 
-dataset = GraphDataset("./data")
+dataset = GraphDataset("/Users/grieser/Projects/graphax/tests/datasets", shape=[10, 50, 10])
 print(len(dataset))
-loader = DataLoader(dataset, 768, shuffle=True, drop_last=True)
+loader = DataLoader(dataset, 2, num_workers=2, shuffle=False, drop_last=True)
 for content in tqdm(loader):
     print(content)
 

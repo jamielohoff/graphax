@@ -126,7 +126,7 @@ def Perceptron():
     jax_rev_f = jax.jit(jax.jacrev(Perceptron, argnums=(0, 1, 2, 3, 4, 5)))
       
     duration = 1000
-    scales = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]
+    scales = [1, 2, 5, 10, 20, 50, 100, 200, 500]
 
     for s in scales:
         x = jnp.ones(4*s)
