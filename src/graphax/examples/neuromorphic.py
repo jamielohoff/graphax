@@ -77,8 +77,7 @@ def make_lif_SNN():
     alpha = .95
     beta = .9
     threshold = 1.
-    jaxpr = jax.make_jaxpr(snn)(S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, threshold)
-    return make_graph(snn, S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, threshold), jaxpr
+    return make_graph(snn, S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, threshold)
 
 
 # Single SNN forward pass as done in Zenke&Neftci using time-local loss functions (e.g. regression)

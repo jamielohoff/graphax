@@ -57,6 +57,7 @@ def monorule(primitive, key, outvars, invars, invals):
 defmonocode(jnp.negative, monorule)
 defmonocode(jnp.exp, monorule)
 defmonocode(jnp.log, monorule)
+defmonocode(lax.logistic, monorule)
 
 defmonocode(jnp.sin, monorule)
 defmonocode(jnp.cos, monorule)
@@ -112,6 +113,8 @@ defreducecode(jnp.sum, reduce_rule)
 defreducecode(jnp.max, reduce_rule)
 defreducecode(jnp.min, reduce_rule)
 defreducecode(jnp.prod, reduce_rule)
+defreducecode(jnp.mean, reduce_rule)
+defreducecode(jnn.softmax, reduce_rule)
 
 
 # TODO include automatic broadcasting?

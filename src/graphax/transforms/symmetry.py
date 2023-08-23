@@ -6,7 +6,9 @@ import jax.numpy as jnp
 
 from chex import Array
 
-# TODO needs reworkinh
+from ..core import get_shape
+
+# TODO needs reworking
 
 def swap_rows(i: int, j: int, edges: Array) -> Array:
     val1 = edges.at[i, :].get()
@@ -25,7 +27,7 @@ def swap_cols(i: int, j: int, edges: Array) -> Array:
 
 
 def swap_inputs(i: int, j: int, edges: Array) -> Array:
-    num_i = edges.at[0, 0, 0].get()
+    num_i, num_vo = get_shape(edges)
     return swap_rows(i+num_i-1, j+num_i-1, edges)
 
 
@@ -34,7 +36,7 @@ def swap_outputs(i: int, j: int, edges: Array) -> Array:
 
 
 def _swap_intermediates(i: int, j: int, edges: Array) -> Array:
-    num_i = edges.at[0, 0, 0].get()
+    num_i, num_vo = get_shape(edges)
     edges = swap_rows(i+num_i-1, j+num_i-1, edges)
     return swap_cols(i-1, j-1, edges)
 
@@ -52,9 +54,9 @@ def swap_intermediates(i: int, j: int, edges: Array) -> Array:
                     lambda m, n: (n, m),
                     i, j)
     
-    num_v = edges.at[0, 0, 1].get()
-    _i = i+num_v-1
-    _j = j+num_v-1
+    num_i, num_vo = get_shape(edges)
+    _i = i+num_vo-1
+    _j = j+num_vo-1
     s1 = edges.at[:, _i].get()
     s2 = edges.at[:, _j].get()
     sum1 = jnp.sum(s1[_i+1:])

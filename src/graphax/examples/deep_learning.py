@@ -5,9 +5,14 @@ import jax.numpy as jnp
 from ..interpreter.from_jaxpr import make_graph
 
 
+def variance(x, axis=0):
+    mu = jnp.mean(x, axis=axis)
+    n = x.shape[axis]
+    return jnp.sum((x - mu)**2, axis=axis)/n
+
 def layer_norm(x, gamma, beta):
     mu = jnp.mean(x, axis=1)
-    sigma = jnp.var(x, axis=1)
+    sigma = variance(x, axis=1)
     return (x - mu)/jnp.sqrt(sigma + 1e-6) * gamma + beta
 
 def attn(q, k, v):
@@ -136,4 +141,4 @@ def make_transformer_encoder_decoder():
     gamma = jnp.ones(3)
     beta = jnp.zeros(3)  
     return make_graph(transformer, x, y, WQ1, WQ2, WQ3, WK1, WK2, WK3, WV1, WV2, WV3, W1, W2, b1, b2, gamma, beta)
-    
+        

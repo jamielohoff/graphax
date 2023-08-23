@@ -5,8 +5,9 @@ from jax._src.core import ClosedJaxpr, JaxprEqn
 
 from chex import Array
 
-from graphax.core import make_empty_edges
-from graphax.interpreter.prim_mapper import vertex_registry
+from ..core import make_empty_edges, get_shape
+from .utils import add_slice
+from .prim_mapper import vertex_registry
     
 
 def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
@@ -14,6 +15,38 @@ def filter_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
     Function that filters out assignments of unused variables.
     """
     return [eqn for eqn in eqns if not str(eqn.outvars[0]) == "_"]
+
+
+def count_eqns(eqns: Sequence[JaxprEqn]) -> Sequence[JaxprEqn]:
+    """
+    Function that unrolls "pjit" to count the number of equations in a jaxpr.
+    """
+    filtered_eqns = []
+    for eqn in eqns:
+        if not str(eqn.outvars[0]) == "_":
+            if eqn.primitive.name == "pjit":
+                subeqns = unroll_pjit(eqn)
+                filtered_eqns.extend(subeqns)
+            else:
+                filtered_eqns.append(eqn)
+                
+    return len(filtered_eqns)
+
+
+def unroll_pjit(eqn: JaxprEqn) -> Sequence[JaxprEqn]:
+    """
+    Function that unrolls "pjit" primitives which define subexpressions that
+    are not tracked by the algorithm otherwise
+    """
+    eqns = []
+    subjaxpr = eqn.params["jaxpr"]
+    for subeqn in subjaxpr.eqns:
+        if subeqn.primitive.name == "pjit":
+            subeqns = unroll_pjit(subeqn)
+            eqns.extend(subeqns)
+        else:
+            eqns.append(subeqn)
+    return eqns
 
 
 def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
@@ -43,9 +76,8 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
 
     # Process intermediate variables
     for eqn in eqns:
-        # filtered_invars = filter_invars(eqn, variables)
         is_invar_list.extend(eqn.invars)
-        # Ignore calculation with just Literals, i.e. constant values
+        # Ignore calculation with just literals, i.e. constant values
         for outvar in eqn.outvars:
             # Add new variables to tracker
             if str(outvar) not in variables:
@@ -53,20 +85,20 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
                 counter += 1
                         
         # Resolves primitive and adds it to the edge representation matrix
-        try:
-            add_vertex_fn = vertex_registry[eqn.primitive]
-            edges = add_vertex_fn(edges, eqn, variables)
-        except:
-            ValueError("Primitive", eqn.primitive, "not supported!")         
+        add_vertex_fn = vertex_registry[eqn.primitive]
+        edges = add_vertex_fn(edges, eqn, variables)      
      
     # Processing output variables
     for outvar in jaxpr.jaxpr._outvars:
-        if not outvar in is_invar_list:
-            # Track which vertices are output vertices
-            # Vertices that are output vertices but also intermediate vertices
-            # are eliminated non-the-less and we add an additional slice to the 
-            # tensor
-            idx = variables[str(outvar)]
+        num_i, num_vo = get_shape(edges)
+        idx = variables[str(outvar)]
+        if outvar in is_invar_list:
+            # Track which vertices are output vertices but also 
+            # intermediate vertices. These are eliminated non-the-less, 
+            # but we add an additional slice to the tensor with a copy-gradient 
+            # edge
+            edges = add_slice(edges, outvar, idx, num_i, num_vo)
+        else:
             edges = edges.at[1, 0, idx-num_i-1].set(1)
             edges = edges.at[2, 0, idx-num_i-1].set(1)
 

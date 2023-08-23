@@ -1,4 +1,4 @@
-from graphax import forward, reverse, cross_country, get_shape
+import graphax as gx
 from graphax.examples import (make_simple, 
                                 make_Helmholtz, 
                                 make_transformer_encoder, 
@@ -7,10 +7,10 @@ from graphax.examples import (make_simple,
                                 make_lif_SNN,
                                 make_1d_roe_flux,
                                 make_3d_roe_flux,
-                                make_6DOF_robot)
-from graphax.transforms.markowitz import minimal_markowitz
-from graphax.transforms.preelimination import safe_preeliminations
-from graphax.transforms.compression import compress_graph
+                                make_6DOF_robot,
+                                make_cloud_schemes,
+                                make_Kerr_Sen_metric)
+
 
 # edges= make_simple()
 # order = minimal_markowitz(edges)
@@ -22,40 +22,41 @@ from graphax.transforms.compression import compress_graph
 
 # print(cross_country(order, edges)[1])
 
-edges, jaxpr = make_lif_SNN()
+edges = make_lif_SNN()
 print(edges)
-print(jaxpr)
-print(len(jaxpr.eqns))
-num_i, num_v = get_shape(edges)
-print(edges.at[0, 0, 0:3].get())
-_, preelim = safe_preeliminations(edges, return_preeliminated=True)
-print(preelim)
-# for v in preelim:
-#     print(v, edges[0, 1:, v-1].sum(), edges[0, num_i+v, :].sum())
-#     print(jaxpr.eqns[v-1].outvars)
-#     print(jaxpr.eqns[v-1])
+num_i, num_v = gx.get_shape(edges)
+# print(edges.at[0, 0, 0:3].get())
+# print(jaxpr.eqns[31].outvars)
+# print(edges[0, num_i+32, :], edges[0, :, 31], edges[0, 35, 31])
+_, preelim_order = gx.safe_preeliminations(edges, return_preeliminated=True)
+order = gx.minimal_markowitz(edges)
+_, preelim_ops = gx.cross_country(preelim_order, edges)
+print("preelimination ops", preelim_ops)
+# import jax.numpy as jnp
+# for v in order:
+#     print(v, jnp.where(edges[0, 1:, v-1] > 0, 1, 0).sum(), jnp.where(edges[0, num_i+v, :] > 0, 1, 0).sum())
 
-order = minimal_markowitz(edges)
-print(order)
-print(edges.shape[-1])
+print("pre", preelim_order)
+print("mMd", order)
+
 print(len(order))
-print(forward(edges)[1])
-print(reverse(edges)[1])
-print(cross_country(order, edges)[1])
+print(gx.forward(edges)[1])
+print(gx.reverse(edges)[1])
+print(gx.cross_country(order, edges)[1])
 
 print("###")
 
-edges = safe_preeliminations(edges)
-edges = compress_graph(edges)
+edges = gx.safe_preeliminations(edges)
+edges = gx.compress(edges)
 print(edges.at[0, 0, 0:3].get())
-order = minimal_markowitz(edges)
+order = gx.minimal_markowitz(edges)
 print(order)
 print(edges.shape[-1])
 print(len(order))
 
-print(forward(edges)[1])
-print(reverse(edges)[1])
-print(cross_country(order, edges)[1])
+print(gx.forward(edges)[1])
+print(gx.reverse(edges)[1])
+print(gx.cross_country(order, edges)[1])
 
 
 # edges = make_3d_roe_flux()

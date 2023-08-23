@@ -4,7 +4,7 @@ import jax.numpy as jnp
 
 from chex import Array
 
-from ..core import vertex_eliminate
+from ..core import vertex_eliminate, get_shape
 
 
 def scan(f, init, xs, length=None):
@@ -37,7 +37,7 @@ def safe_preeliminations(edges: Array, return_preeliminated: bool = False) -> Ar
     3.) Is of sparsity type 2, 3, 4, 5 with the dense components having size 1 
     (Parallel vector operations)
     """
-    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
+    num_i, num_vo = get_shape(edges)
     
     def loop_fn(carry, vertex):
         _edges = carry
@@ -50,7 +50,7 @@ def safe_preeliminations(edges: Array, return_preeliminated: bool = False) -> Ar
         
         carry = _edges
         return carry, _vert
-    vertices = jnp.arange(1, num_v+1)
+    vertices = jnp.arange(1, num_vo+1)
     edges, preelim_order = lax.scan(loop_fn, edges, vertices)
     if return_preeliminated:
         return edges, [int(p) for p in preelim_order if p > 0]
@@ -68,7 +68,7 @@ def update_edges(vertex: int, edges: Array):
 
 def is_dead_branch(vertex: int, edges: Array) -> bool:
     # Remove dead branches from the computational graph
-    num_i = edges.at[0, 0, 0].get()
+    num_i, num_vo = get_shape(edges)
     row_flag = jnp.sum(edges[0, vertex+num_i, :]) > 0
     col_flag = jnp.sum(edges[0, 1:, vertex-1]) == 0
     return jnp.logical_and(row_flag, col_flag)
@@ -95,7 +95,7 @@ def check_sparsity(vertex: int, edges: Array):
 def check_markowitz_degree(vertex: int, edges: Array) -> bool:
     # Check if vertex has only one input and one output
     # In a sense this is similar to Markowitz degree 1
-    num_i = edges.at[0, 0, 0].get()
+    num_i, num_vo = get_shape(edges)
     row = edges[0, vertex+num_i, :]
     col = edges[0, 1:, vertex-1]
        
@@ -111,7 +111,7 @@ SPARSITY_MAP = jnp.array([[2, 4], # sparsity type = 2
 
 
 def is_sparse(vertex: int, edges: Array):
-    num_i = edges.at[0, 0, 0].get()
+    num_i, num_vo = get_shape(edges)
     in_edge_idx = jnp.nonzero(edges.at[0, vertex+num_i, :].get(), size=1, fill_value=0)[0][0]
     out_edge_idx = jnp.nonzero(edges.at[0, 1:, vertex-1].get(), size=1, fill_value=0)[0][0]
             

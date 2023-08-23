@@ -9,7 +9,7 @@ from chex import Array, PRNGKey
 from .sampler import ComputationalGraphSampler
 from .utils import check_graph_shape
 from ..interpreter.from_jaxpr import make_graph
-from ..transforms import safe_preeliminations, compress_graph, embed
+from ..transforms import safe_preeliminations, compress, embed
 
 
 # TODO refactor code such that we do no longer need the global variable
@@ -80,7 +80,7 @@ class LLMSampler(ComputationalGraphSampler):
                 exec(function, globals())
                 edges = make_graph(jaxpr)
                 edges = safe_preeliminations(edges)
-                edges = compress_graph(edges)
+                edges = compress(edges)
                 edges = embed(edges, self.max_info)
                 
                 info = edges.at[0, 0, 0:3].get()

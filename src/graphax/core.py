@@ -97,7 +97,7 @@ MUL_SPARSITY_MAP = jnp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
 # Row idx is incoming edge, col idx is outgoing edge
 # Gives the resulting sparsity type if two hyperdimensional Jacobians
 # are added to each other
-ADD_SPARSITY_MAP = jnp.array([[0, 1, 2, 3, 4, 5, 6, 7, 0],
+ADD_SPARSITY_MAP = jnp.array([[0, 1, 2, 3, 4, 5, 6, 7, 8],
                               [1, 1, 1, 1, 1, 1, 1, 1, 1],
                               [2, 1, 2, 1, 1, 1, 2, 1, 2],
                               [3, 1, 1, 3, 1, 1, 3, 1, 3],
@@ -105,7 +105,7 @@ ADD_SPARSITY_MAP = jnp.array([[0, 1, 2, 3, 4, 5, 6, 7, 0],
                               [5, 1, 1, 1, 1, 5, 1, 5, 5],
                               [6, 1, 2, 3, 1, 1, 6, 1, 6],
                               [7, 1, 1, 1, 4, 5, 1, 7, 7],
-                              [0, 1, 2, 3, 4, 5, 6, 7, 8]])
+                              [8, 1, 2, 3, 4, 5, 6, 7, 8]])
 
 
 Edge = Tuple[int, int]
@@ -241,18 +241,6 @@ def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
     return edges, fmas
 
 
-def scan(f, init, xs, length=None):
-    if xs is None:
-        xs = [None] * length
-    carry = init
-    ys = []
-    for x in xs:
-        carry, y = f(carry, x)
-        ys.append(y)
-    return carry, jnp.stack(ys)
-
-
-
 def cross_country(order: Sequence[int], edges: Array) -> Array:
     """
     Fully JIT-compilable function that implements cross-country elimination 
@@ -276,7 +264,7 @@ def cross_country(order: Sequence[int], edges: Array) -> Array:
                                _edges)
         fmas += _fmas
         carry = (_edges, fmas)
-        return carry, 0
+        return carry, None
     vertices = jnp.array(order)
     output, _ = lax.scan(cc_fn, (edges, 0), vertices)
     return output
@@ -297,8 +285,8 @@ def forward(edges: Array):
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_i, num_v = get_shape(edges)
-    order = jnp.arange(1, num_v+1)
+    num_i, num_vo = get_shape(edges)
+    order = jnp.arange(1, num_vo+1)
     output = cross_country(order, edges)
     return output
 
@@ -318,8 +306,8 @@ def reverse(edges: Array):
         A tuple that contains the new edge representation of the computational
         graph and the number of fmas (fused multiplication-addition ops).
     """
-    num_i, num_v = get_shape(edges)
-    order = jnp.arange(1, num_v+1)[::-1]
+    num_i, num_vo = get_shape(edges)
+    order = jnp.arange(1, num_vo+1)[::-1]
     output = cross_country(order, edges)
     return output
 

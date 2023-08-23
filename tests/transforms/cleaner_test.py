@@ -5,7 +5,7 @@ import jax.random as jrand
 from graphax.interpreter.from_jaxpr import make_graph
 from graphax.examples import make_Helmholtz
 from graphax.examples import make_random_code
-from graphax.transforms.cleaner import clean, connectivity_checker
+from graphax.transforms.clean import clean, connectivity_checker
 
 import sys
 jnp.set_printoptions(threshold=sys.maxsize)

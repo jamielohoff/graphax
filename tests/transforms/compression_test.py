@@ -3,8 +3,8 @@ import jax.random as jrand
 
 from graphax.interpreter.from_jaxpr import make_graph
 from graphax.examples import make_random_code
-from graphax.transforms.cleaner import clean
-from graphax.transforms.compression import compress_graph
+from graphax.transforms.clean import clean
+from graphax.transforms.compression import compress
 
 
 key = jrand.PRNGKey(42)
@@ -15,7 +15,7 @@ print(edges)
 edges = clean(edges)
 print(edges.shape)
 
-edges = compress_graph(edges)
+edges = compress(edges)
 print(edges)
 print(edges.shape)
 

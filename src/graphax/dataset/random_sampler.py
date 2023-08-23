@@ -11,7 +11,7 @@ from chex import Array, PRNGKey
 from .sampler import ComputationalGraphSampler
 from .utils import sparsify
 from ..examples import make_random_code
-from ..transforms import safe_preeliminations, compress_graph, embed, clean
+from ..transforms import safe_preeliminations, compress, embed, clean
 from ..interpreter.from_jaxpr import make_graph
 
 
@@ -72,7 +72,7 @@ class RandomSampler(ComputationalGraphSampler):
                 
                 large_enough = edges.at[0, 0, 1].get() >= self.min_num_intermediates
                 if large_enough:
-                    edges = compress_graph(edges)
+                    edges = compress(edges)
                     shape = edges.at[0, 0, 0:3].get()
                     
                     edges = embed(key, edges, self.storage_shape)

@@ -170,8 +170,237 @@ def Perceptron():
     plt.xticks(range(len(scales)), [str(s) for s in scales])
     plt.legend()
     plt.savefig("Perceptron.png")
+    
+import graphax as gx  
+from graphax.examples.differential_kinematics import position_angles_6DOF, make_6DOF_robot
+
+
+def RobotArm():
+    key = jrand.PRNGKey(42)
+    rev, jax_rev = [], []
+    
+    edges = make_6DOF_robot()
+    order = gx.minimal_markowitz(edges)
+    
+    jac_mM_f = jax.jit(jacve(position_angles_6DOF, order=order, argnums=(0, 1, 2, 3, 4, 5)))
+    
+    jac_rev_f = jax.jit(jacve(position_angles_6DOF, order="rev", argnums=(0, 1, 2, 3, 4, 5)))
+    jax_rev_f = jax.jit(jax.jacrev(position_angles_6DOF, argnums=(0, 1, 2, 3, 4, 5)))
+    
+    jac_fwd_f = jax.jit(jacve(position_angles_6DOF, order="fwd", argnums=(0, 1, 2, 3, 4, 5)))
+    jax_fwd_f = jax.jit(jax.jacfwd(position_angles_6DOF, argnums=(0, 1, 2, 3, 4, 5)))
+      
+    sample_size = 100
+    duration = 100
+    
+    mM_measurements = []
+    fwd_measurements = []
+    rev_measurements = []
+    jax_fwd_measurements = []
+    jax_rev_measurements = []
+    
+    for s in range(sample_size):   
+                
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()     
+            
+            st = time.time()
+            grad = jac_fwd_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            fwd_measurements.append(dt)
+        
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jax_fwd_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            jax_fwd_measurements.append(dt)
+        
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jac_mM_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            mM_measurements.append(dt)
+
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jac_rev_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            rev_measurements.append(dt)
+
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jax_rev_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            jax_rev_measurements.append(dt)
+    
+    mM_measurements = jnp.array(mM_measurements[1:])
+    fwd_measurements = jnp.array(fwd_measurements[1:])
+    rev_measurements = jnp.array(rev_measurements[1:])
+    jax_fwd_measurements = jnp.array(jax_fwd_measurements[1:])
+    jax_rev_measurements = jnp.array(jax_rev_measurements[1:])
+    
+    fwd_mean = jnp.mean(fwd_measurements)
+    rev_mean = jnp.mean(rev_measurements)
+    mM_mean = jnp.mean(mM_measurements)
+    jax_fwd_mean = jnp.mean(jax_fwd_measurements)
+    jax_rev_mean = jnp.mean(jax_rev_measurements)
+    
+    fwd_std = jnp.std(fwd_measurements)
+    rev_std = jnp.std(rev_measurements)
+    mM_std = jnp.std(mM_measurements)
+    jax_fwd_std = jnp.std(jax_fwd_measurements)
+    jax_rev_std = jnp.std(jax_rev_measurements)
+    
+    fig, ax = plt.subplots()
+    x_pos = jnp.arange(0, 5)
+    modes = ["fwd", "jax fwd", "CC", "rev", "jax rev"]
+    runtimes = [fwd_mean, jax_fwd_mean, mM_mean, rev_mean, jax_rev_mean]
+    runtime_errors = [fwd_std, jax_fwd_std, mM_std, rev_std, jax_rev_std]
+    ax.bar(x_pos, runtimes, yerr=runtime_errors, align='center', alpha=0.5, ecolor='black', capsize=10)
+    
+    ax.set_ylabel("Evaluation time in [s]")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(modes)
+    ax.set_title("Jacobian evaluation times for different modes")
+    ax.yaxis.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig("./6DOF_Robot_Arm.png")
+
+
+from graphax.examples.roe import make_1d_roe_flux, roe_flux
+
+def RoeFlux():
+    key = jrand.PRNGKey(42)
+    rev, jax_rev = [], []
+    
+    edges = make_1d_roe_flux()
+    order = gx.minimal_markowitz(edges)
+    
+    jac_mM_f = jax.jit(jacve(roe_flux, order=order, argnums=(0, 1, 2, 3, 4, 5)))
+    
+    jac_rev_f = jax.jit(jacve(roe_flux, order="rev", argnums=(0, 1, 2, 3, 4, 5)))
+    jax_rev_f = jax.jit(jax.jacrev(roe_flux, argnums=(0, 1, 2, 3, 4, 5)))
+    
+    jac_fwd_f = jax.jit(jacve(roe_flux, order="fwd", argnums=(0, 1, 2, 3, 4, 5)))
+    jax_fwd_f = jax.jit(jax.jacfwd(roe_flux, argnums=(0, 1, 2, 3, 4, 5)))
+      
+    sample_size = 100
+    duration = 100
+    
+    mM_measurements = []
+    fwd_measurements = []
+    rev_measurements = []
+    jax_fwd_measurements = []
+    jax_rev_measurements = []
+    
+    for s in range(sample_size):   
+                
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()     
+            
+            st = time.time()
+            grad = jac_fwd_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            fwd_measurements.append(dt)
+        
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jax_fwd_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            jax_fwd_measurements.append(dt)
+        
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jac_mM_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            mM_measurements.append(dt)
+
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jac_rev_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            rev_measurements.append(dt)
+
+        for _ in range(duration):
+            key, subkey = jrand.split(key, 2)
+            xs = jrand.normal(subkey, (6,)).tolist()
+            
+            st = time.time()
+            grad = jax_rev_f(*xs)
+            jax.block_until_ready(grad)
+            dt = time.time() - st
+            jax_rev_measurements.append(dt)
+    
+    mM_measurements = jnp.array(mM_measurements[1:])
+    fwd_measurements = jnp.array(fwd_measurements[1:])
+    rev_measurements = jnp.array(rev_measurements[1:])
+    jax_fwd_measurements = jnp.array(jax_fwd_measurements[1:])
+    jax_rev_measurements = jnp.array(jax_rev_measurements[1:])
+    
+    fwd_mean = jnp.mean(fwd_measurements)
+    rev_mean = jnp.mean(rev_measurements)
+    mM_mean = jnp.mean(mM_measurements)
+    jax_fwd_mean = jnp.mean(jax_fwd_measurements)
+    jax_rev_mean = jnp.mean(jax_rev_measurements)
+    
+    fwd_std = jnp.std(fwd_measurements)
+    rev_std = jnp.std(rev_measurements)
+    mM_std = jnp.std(mM_measurements)
+    jax_fwd_std = jnp.std(jax_fwd_measurements)
+    jax_rev_std = jnp.std(jax_rev_measurements)
+    
+    fig, ax = plt.subplots()
+    x_pos = jnp.arange(0, 5)
+    modes = ["fwd", "jax fwd", "CC", "rev", "jax rev"]
+    runtimes = [fwd_mean, jax_fwd_mean, mM_mean, rev_mean, jax_rev_mean]
+    runtime_errors = [fwd_std, jax_fwd_std, mM_std, rev_std, jax_rev_std]
+    ax.bar(x_pos, runtimes, yerr=runtime_errors, align='center', alpha=0.5, ecolor='black', capsize=10)
+    
+    ax.set_ylabel("Evaluation time in [s]")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(modes)
+    ax.set_title("Jacobian evaluation times for different modes")
+    ax.yaxis.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig("./RoeFlux.png")
+
 
 # simple()
 # Helmholtz()
-Perceptron()
+# Perceptron()
+RoeFlux()
 

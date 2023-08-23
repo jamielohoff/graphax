@@ -85,8 +85,8 @@ vertex_registry[lax.atanh_p] = add_mono_vertex
 
 vertex_registry[lax.integer_pow_p] = add_mono_vertex
 vertex_registry[lax.sqrt_p] = add_mono_vertex
+vertex_registry[lax.logistic_p] = add_mono_vertex
 
-vertex_registry[lax.convert_element_type_p] = add_mono_vertex
 # We currently included the custom derivative operator here 
 # to enable spiking functions
 vertex_registry[jax._src.custom_derivatives.custom_jvp_call_p] = add_mono_vertex
@@ -143,7 +143,7 @@ def add_bi_vertex(edges, eqn, variables):
         num_i = edges.at[0, 0, 0].get()
         i = variables[str(invar)]
         j = variables[str(eqn.outvars[0])] - num_i - 1
-
+        
         edges = edges.at[0, i, j].set(sparsity_type)
         
         structure = jnp.concatenate([_invar_shape, _outvar_shape]) 
@@ -151,11 +151,14 @@ def add_bi_vertex(edges, eqn, variables):
     return edges
 
 vertex_registry[lax.add_p] = add_bi_vertex
+vertex_registry[lax.atan2_p] = add_bi_vertex
 vertex_registry[lax.mul_p] = add_bi_vertex
 vertex_registry[lax.sub_p] = add_bi_vertex
 vertex_registry[lax.div_p] = add_bi_vertex
-# vertex_registry[jax._src.ad_util.add_any_p] = add_bi_vertex
-# vertex_registry[jax.ad.add_jaxvals_p] = add_bi_vertex
+vertex_registry[jax._src.ad_util.add_any_p] = add_bi_vertex
+vertex_registry[jax.ad.add_jaxvals_p] = add_bi_vertex
+vertex_registry[lax.eq_p] = add_bi_vertex
+vertex_registry[lax.pow_p] = add_bi_vertex
 
 
 def add_dot_general_vertex(edges, eqn, variables):
@@ -256,21 +259,13 @@ def add_accumulation_vertex(edges, eqn, variables):
     
     _invar_shape = get_shape(filtered_invars[0])
     _outvar_shape = get_shape(eqn.outvars[0])
-    # Input is singleton
-    if _invar_shape[0] == 1 and _invar_shape[1] == 1: 
-        sparsity_type = 1
     
-    # Input is column-vector
-    elif _invar_shape[0] > 1 and _invar_shape[1] == 1:
-        sparsity_type = 1
+    # Input is singleton or row/column vector
+    sparsity_type = 1
     
-    # Input is row-vector
-    elif _invar_shape[0] == 1 and _invar_shape[1] > 1:
-        sparsity_type = 1
-        
     # Input is matrix
-    else:
-        # Output is number, i.e. all elements are summed
+    if _invar_shape[0] > 1 and _invar_shape[1] > 1: 
+         # Output is number, i.e. all elements are summed
         if _outvar_shape[0] == 1 and _outvar_shape[1] == 1:
             sparsity_type = 1
         # Output is column-vector, i.e. summing over rows
@@ -279,7 +274,7 @@ def add_accumulation_vertex(edges, eqn, variables):
         # Output is row-vector, i.e. summing over columns
         elif _invar_shape[0] == 1 and _invar_shape[1] > 1:
             sparsity_type = 3
-            
+    
     num_i = edges.at[0, 0, 0].get()
     i = variables[str(filtered_invars[0])]
     j = variables[str(eqn.outvars[0])] - num_i - 1
@@ -385,10 +380,12 @@ vertex_registry[lax.reshape_p] = add_copy_gradient_vertex
 vertex_registry[lax.slice_p] = add_copy_gradient_vertex
 vertex_registry[lax.dynamic_slice_p] = add_copy_gradient_vertex
 vertex_registry[lax.dynamic_update_slice_p] = add_copy_gradient_vertex
+vertex_registry[lax.convert_element_type_p] = add_copy_gradient_vertex
 
 
 def add_concatenate_vertex(edges, eqn, variables):
     """
+    NOTE: Currently not working!
     Adds a vertex for operations that are essentially just copy the gradient 
     such as squeeze, broadcast_in_dim etc.
     """
@@ -410,4 +407,10 @@ def add_concatenate_vertex(edges, eqn, variables):
     return edges
 
 vertex_registry[lax.concatenate_p] = add_concatenate_vertex  
+
+
+def add_zero_vertex(edges, eqn, variables):
+    return edges
+
+vertex_registry[lax.iota_p] = add_zero_vertex
     

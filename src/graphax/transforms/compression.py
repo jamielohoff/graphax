@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from chex import Array
 
 
-def compress_graph(edges: Array) -> Array:
+def compress(edges: Array) -> Array:
     """
     Function that removes all zero rows and cols from a comp. graph repr.
     NOTE: This changes the shape of the edges array and the number of intermediate variables!

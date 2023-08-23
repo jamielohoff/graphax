@@ -1,5 +1,4 @@
 import sys
-from .interpreter.from_jaxpr import make_graph
 from .core import (make_empty_edges, 
                     vertex_eliminate,
                     cross_country, 
@@ -10,7 +9,12 @@ from .core import (make_empty_edges,
                     get_output_mask,
                     get_vertex_mask)
 from .vertex_game import step
-from .transforms.embedding import embed
+from .transforms import (embed,
+                        clean,
+                        compress,
+                        safe_preeliminations,
+                        minimal_markowitz)
+from .interpreter import make_graph, jacve
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`

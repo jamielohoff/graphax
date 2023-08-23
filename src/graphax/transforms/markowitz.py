@@ -6,18 +6,29 @@ import jax.numpy as jnp
 
 from chex import Array
 
-from graphax import vertex_eliminate
+from ..core import vertex_eliminate, get_shape
+
+
+def scan(f, init, xs, length=None):
+    if xs is None:
+        xs = [None] * length
+    carry = init
+    ys = []
+    for x in xs:
+        carry, y = f(carry, x)
+        ys.append(y)
+    return carry, jnp.stack(ys)
 
 
 def minimal_markowitz(edges: Array):
-    num_i, num_v, num_o = edges.at[0, 0, 0:3].get()
+    num_i, num_vo = get_shape(edges)
     
     def loop_fn(_edges, _):
         minimal_markowitz_vertex = get_minimal_markowitz(_edges)
         _edges, _ = vertex_eliminate(minimal_markowitz_vertex, _edges)
         return _edges, minimal_markowitz_vertex
     
-    it = jnp.arange(1, num_v+1)
+    it = jnp.arange(1, num_vo+1)
     _, idxs = lax.scan(loop_fn, edges, it)
 
     return [int(i) for i in idxs]
@@ -47,7 +58,7 @@ def get_minimal_markowitz(edges: Array, degrees: bool = False) -> Sequence[int]:
 
 
 def calc_markowitz_degree(vertex: int, edges: Array):
-    num_i = edges.at[0, 0, 0].get()
+    num_i, num_vo = get_shape(edges)
     in_edge_slice = edges.at[:, vertex+num_i, :].get()
     out_edge_slice = edges.at[:, 1:, vertex-1].get()      
 
@@ -64,7 +75,7 @@ def count_in_edges(edge_slice: Array):
                             lambda s: matrix_parallel(s),
                             slice)
         num_edges += _num_edges
-        return num_edges, 0
+        return num_edges, None
 
     num_edges, _ = lax.scan(loop_fn, 0, edge_slice.T)
     
@@ -79,7 +90,7 @@ def count_out_edges(edge_slice: Array):
                             lambda s: matrix_parallel(s),
                             slice)
         num_edges += _num_edges
-        return num_edges, 0
+        return num_edges, None
 
     num_edges, _ = lax.scan(loop_fn, 0, edge_slice.T)
     
