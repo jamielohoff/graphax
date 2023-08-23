@@ -20,13 +20,35 @@ def scan(f, init, xs, length=None):
     return carry, jnp.stack(ys)
 
 
+def safe_preeliminations(edges: Array, return_order: bool = False):
+    """
+    Eliminates only vertices with minimal Markowitz degree 0 and 1.
+    """
+    num_i, num_vo = get_shape(edges)
+    
+    def loop_fn(_edges, _):
+        degree, mMd_vertex = get_minimal_markowitz(_edges)
+        _edges, vertex = lax.cond(degree < 2,
+                                lambda e: (vertex_eliminate(mMd_vertex, e)[0], mMd_vertex),
+                                lambda e: (e, -1), 
+                                _edges)
+        return _edges, vertex
+    
+    it = jnp.arange(1, num_vo+1)
+    edges, preelim_order = lax.scan(loop_fn, edges, it)
+    
+    if return_order:
+        return edges, [int(p) for p in preelim_order if p > 0]
+    return edges
+
+
 def minimal_markowitz(edges: Array):
     num_i, num_vo = get_shape(edges)
     
     def loop_fn(_edges, _):
-        minimal_markowitz_vertex = get_minimal_markowitz(_edges)
-        _edges, _ = vertex_eliminate(minimal_markowitz_vertex, _edges)
-        return _edges, minimal_markowitz_vertex
+        degree, mMd_vertex = get_minimal_markowitz(_edges)
+        _edges, _ = vertex_eliminate(mMd_vertex, _edges)
+        return _edges, mMd_vertex
     
     it = jnp.arange(1, num_vo+1)
     _, idxs = lax.scan(loop_fn, edges, it)
@@ -54,7 +76,8 @@ def get_minimal_markowitz(edges: Array, degrees: bool = False) -> Sequence[int]:
     if degrees:
         print(markowitz_degrees)
     idx = jnp.sum(edges.at[1, 0, :].get())
-    return jnp.argsort(markowitz_degrees)[idx]+1
+    mMd_vertex = jnp.argsort(markowitz_degrees)[idx]+1
+    return markowitz_degrees[mMd_vertex-1], mMd_vertex
 
 
 def calc_markowitz_degree(vertex: int, edges: Array):

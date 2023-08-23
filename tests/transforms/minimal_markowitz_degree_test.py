@@ -22,13 +22,14 @@ from graphax.examples import (make_simple,
 
 # print(cross_country(order, edges)[1])
 
-edges = make_lif_SNN()
+edges, jaxpr = make_transformer_encoder()
 print(edges)
+print(jaxpr)
 num_i, num_v = gx.get_shape(edges)
 # print(edges.at[0, 0, 0:3].get())
 # print(jaxpr.eqns[31].outvars)
 # print(edges[0, num_i+32, :], edges[0, :, 31], edges[0, 35, 31])
-_, preelim_order = gx.safe_preeliminations(edges, return_preeliminated=True)
+_, preelim_order = gx.safe_preeliminations(edges, return_order=True)
 order = gx.minimal_markowitz(edges)
 _, preelim_ops = gx.cross_country(preelim_order, edges)
 print("preelimination ops", preelim_ops)

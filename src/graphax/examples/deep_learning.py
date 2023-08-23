@@ -5,6 +5,12 @@ import jax.numpy as jnp
 from ..interpreter.from_jaxpr import make_graph
 
 
+def sigmoid(x):
+    return 1. / (1. + jnp.exp(-x))
+
+def SiLU(x):
+    return x*sigmoid(x)
+
 def variance(x, axis=0):
     mu = jnp.mean(x, axis=axis)
     n = x.shape[axis]
@@ -61,7 +67,7 @@ def encoder_block(x, WQ, WK, WV, W, b, gamma, beta):
     
     a1 = x + attn(q1, k1, v1)
     c1 = layer_norm(a1, gamma, beta)
-    return jnp.tanh(W @ c1 + b)
+    return SiLU(W @ c1 + b)
 
 
 def decoder_block(x, q, k, WQ1, WK1, WV1, WQ2, WK2, WV2, W, b, gamma, beta):
@@ -78,7 +84,7 @@ def decoder_block(x, q, k, WQ1, WK1, WV1, WQ2, WK2, WV2, W, b, gamma, beta):
     
     a2 = c1 + attn(q2, k2, v2)
     c2= layer_norm(a2, gamma[1], beta[1])
-    return jnp.tanh(W @ c2 + b)
+    return SiLU(W @ c2 + b)
     
 
 # TODO this might not be correct yet!
@@ -107,7 +113,8 @@ def make_transformer_encoder():
     
     gamma = jnp.ones(2)
     beta = jnp.zeros(2)
-    return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta)
+    jaxpr = jax.make_jaxpr(transformer)(x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta)
+    return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta), jaxpr
 
 
 def make_transformer_encoder_decoder():

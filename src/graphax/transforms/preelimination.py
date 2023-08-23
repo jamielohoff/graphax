@@ -24,7 +24,7 @@ def cond(condition, true_fn, false_fn, *xs):
     else:
         return false_fn(*xs)
 
-
+# This is deprecated
 def safe_preeliminations(edges: Array, return_preeliminated: bool = False) -> Array:
     """
     Function that runs a safe-preelimination routine that eliminates all vertices

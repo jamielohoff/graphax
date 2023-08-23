@@ -341,7 +341,7 @@ def add_stop_gradient_vertex(edges, eqn, variables):
     j = variables[str(eqn.outvars[0])] - num_i - 1
 
     edges = edges.at[0, i, j].set(sparsity_type)
-    structure = jnp.concatenate([_invar_shape, _outvar_shape]) 
+    structure = jnp.zeros(4, dtype=jnp.int32) # jnp.concatenate([_invar_shape, _outvar_shape]) 
     edges = edges.at[1:, i, j].set(structure)
     return edges
 
