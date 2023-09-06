@@ -17,11 +17,13 @@ from .sparse_tensor import (SparseTensor,
                             DenseDimension, 
                             SparseDimension)
 
+
 def get_ndim(arr):
     if type(arr) is float:
         return 0
     else:
         return arr.ndim
+
 
 def make_parallel_jacobian(primal, val_out, elemental):
     primal_size = get_ndim(primal)
@@ -45,6 +47,7 @@ def make_parallel_jacobian(primal, val_out, elemental):
 
 
 elemental_rules = {}
+
 
 def defelemental(primitive, elementalrule):
     assert isinstance(primitive, core.Primitive)
@@ -86,6 +89,7 @@ defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 defelemental2(lax.exp_p, lambda out, primal: out)
 defelemental(lax.log_p, lambda x: 1./x)
 defelemental2(lax.sqrt_p, lambda out, primal: .5/out)
+defelemental2(lax.logistic_p, lambda out, primal: out*(1.-out))
 
 defelemental(lax.sin_p, lambda x: jnp.cos(x))
 defelemental(lax.asin_p, lambda x: 1./jnp.sqrt(1.0 - x**2))
@@ -100,7 +104,6 @@ defelemental(lax.cosh_p, lambda x: jnp.sinh(x))
 defelemental(lax.acosh_p, lambda x: 1./jnp.sqrt(x**2 - 1.))
 defelemental2(lax.tanh_p, lambda out, primal: 1.-out**2)
 defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
-defelemental2(lax.logistic_p, lambda out, primal: out*(1.-out))
 
 
 def add_elemental_rule(x, y):
