@@ -1,6 +1,6 @@
+import graphax as gx
 from graphax.dataset import ComputationalGraphSampler
-from graphax.core import forward_gpu, reverse_gpu
-from graphax.transforms.preelimination import safe_preeliminations_gpu, compress_graph
+from graphax.transforms import safe_preeliminations, compress
 
 
 API_KEY = "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"
@@ -18,8 +18,8 @@ gen = ComputationalGraphSampler(api_key=API_KEY,
 fn_list, graph_list, info_list = gen.sample(temperature=0.75, max_tokens=300)
 edges, info = graph_list[0]
 print(graph_list)
-edges, info = safe_preeliminations_gpu(edges, info)
-edges, info = compress_graph(edges, info)
-print(forward_gpu(edges, info))
-print(reverse_gpu(edges, info))
+edges, info = gx.safe_preeliminations(edges)
+edges, info = gx.compress(edges)
+print(gx.forward_gpu(edges))
+print(gx.reverse_gpu(edges))
 

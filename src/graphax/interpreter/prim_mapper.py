@@ -35,6 +35,9 @@ def add_mono_vertex(edges, eqn, variables):
     """
     filtered_invars = filter_invars(eqn, variables)
 
+    if len(filtered_invars) == 0:
+        return edges
+    
     _invar_shape = get_shape(filtered_invars[0])
     _outvar_shape = get_shape(eqn.outvars[0])
     # Input is singleton
@@ -85,6 +88,7 @@ vertex_registry[lax.atanh_p] = add_mono_vertex
 
 vertex_registry[lax.integer_pow_p] = add_mono_vertex
 vertex_registry[lax.sqrt_p] = add_mono_vertex
+vertex_registry[lax.rsqrt_p] = add_mono_vertex
 vertex_registry[lax.logistic_p] = add_mono_vertex
 
 # We currently included the custom derivative operator here 
@@ -355,6 +359,9 @@ def add_copy_gradient_vertex(edges, eqn, variables):
     such as squeeze, broadcast_in_dim etc.
     """
     filtered_invars = filter_invars(eqn, variables)
+    # Handle literal inputs
+    if len(filtered_invars) == 0:
+        return edges
     _invar_shape = get_shape(filtered_invars[0])
     _outvar_shape = get_shape(eqn.outvars[0])
     
@@ -369,7 +376,7 @@ def add_copy_gradient_vertex(edges, eqn, variables):
     edges = edges.at[1:, i, j].set(structure)
     return edges
 
-# TODO check if this is true!
+
 vertex_registry[lax.broadcast_in_dim_p] = add_copy_gradient_vertex
 vertex_registry[lax.squeeze_p] = add_copy_gradient_vertex
 vertex_registry[lax.reshape_p] = add_copy_gradient_vertex
@@ -381,6 +388,10 @@ vertex_registry[lax.slice_p] = add_copy_gradient_vertex
 vertex_registry[lax.dynamic_slice_p] = add_copy_gradient_vertex
 vertex_registry[lax.dynamic_update_slice_p] = add_copy_gradient_vertex
 vertex_registry[lax.convert_element_type_p] = add_copy_gradient_vertex
+
+
+# NOTE not sure about these guys
+vertex_registry[lax.pad_p] = add_copy_gradient_vertex
 
 
 def add_concatenate_vertex(edges, eqn, variables):

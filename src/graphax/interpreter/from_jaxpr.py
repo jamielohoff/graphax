@@ -1,7 +1,7 @@
 from typing import Callable, Sequence, Union
 
 import jax
-from jax._src.core import ClosedJaxpr, JaxprEqn
+from jax._src.core import ClosedJaxpr, JaxprEqn, Literal
 
 from chex import Array
 
@@ -67,7 +67,7 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
         
     is_invar_list = []
     
-    # Processing input variables
+    # Processing input variables    
     variables = {}
     counter = 1
     for invar in jaxpr.jaxpr._invars:
@@ -90,6 +90,7 @@ def make_graph(f_jaxpr: Union[ClosedJaxpr, Callable], *xs: Array) -> Array:
      
     # Processing output variables
     for outvar in jaxpr.jaxpr._outvars:
+        if type(outvar) is Literal: continue
         num_i, num_vo = get_shape(edges)
         idx = variables[str(outvar)]
         if outvar in is_invar_list:

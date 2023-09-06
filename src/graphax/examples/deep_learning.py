@@ -26,13 +26,6 @@ def attn(q, k, v):
     z = jnn.softmax(a, axis=1)
     return z @ v
 
-def make_softmax_attention():    
-    q = jnp.ones((4, 4))
-    k = jnp.ones((4, 4))
-    v = jnp.ones((4, 4))
-    return make_graph(attn, q, k, v)
-
-
 def make_Perceptron():
     def Perceptron(x, y, W1, b1, W2, b2, gamma, beta):
         y1 = W1 @ x
@@ -87,7 +80,6 @@ def decoder_block(x, q, k, WQ1, WK1, WV1, WQ2, WK2, WV2, W, b, gamma, beta):
     return SiLU(W @ c2 + b)
     
 
-# TODO this might not be correct yet!
 def make_transformer_encoder():
     def transformer(x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta):
         z1 = encoder_block(x, WQ1, WK1, WV1, W1, b1, gamma[0], beta[0])
@@ -113,8 +105,8 @@ def make_transformer_encoder():
     
     gamma = jnp.ones(2)
     beta = jnp.zeros(2)
-    jaxpr = jax.make_jaxpr(transformer)(x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta)
-    return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta), jaxpr
+    
+    return make_graph(transformer, x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma, beta)
 
 
 def make_transformer_encoder_decoder():

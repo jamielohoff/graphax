@@ -1,5 +1,8 @@
+from typing import Union
 from functools import wraps, partial
 from collections import defaultdict
+
+import numpy as np
 
 import jax
 import jax.lax as lax
@@ -9,15 +12,20 @@ import jax._src.core as core
 import jax.tree_util as jtu
 from jax.tree_util import tree_flatten, tree_unflatten
 
-from .utils import zeros_like
+from .utils import zeros_like, get_largest_tensor
 from .sparse_tensor import (SparseTensor, 
                             DenseDimension, 
                             SparseDimension)
 
+def get_ndim(arr):
+    if type(arr) is float:
+        return 0
+    else:
+        return arr.ndim
 
 def make_parallel_jacobian(primal, val_out, elemental):
-    primal_size = len(primal.shape)
-    out_size = len(val_out.shape)
+    primal_size = get_ndim(primal)
+    out_size = get_ndim(val_out)
     
     if primal_size == out_size:
         out_dims = [SparseDimension(i, val_out.aval.shape[i], i, out_size+i) 
@@ -38,7 +46,6 @@ def make_parallel_jacobian(primal, val_out, elemental):
 
 elemental_rules = {}
 
-
 def defelemental(primitive, elementalrule):
     assert isinstance(primitive, core.Primitive)
     assert not primitive.multiple_results
@@ -51,7 +58,7 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     elementals = elementalrule(*primals, **params)
     elementals = elementals if type(elementals) is tuple else (elementals,)
     elementals_out = [make_parallel_jacobian(primal, val_out, elemental) 
-                        for primal, elemental in zip(primals, elementals) if type(primal) is jax._src.interpreters.partial_eval.DynamicJaxprTracer]
+                        for primal, elemental in zip(primals, elementals) if not type(primal) in (float, np.ndarray)]
     return val_out, elementals_out
 
 
@@ -68,61 +75,70 @@ def standard_elemental2(elementalrule, primitive, primals, **params):
     elementals = elementalrule(val_out, *primals, **params)
     elementals = elementals if type(elementals) is tuple else (elementals,)
     elementals_out = [make_parallel_jacobian(primal, val_out, elemental) 
-                        for primal, elemental in zip(primals, elementals)]
+                        for primal, elemental in zip(primals, elementals) if not type(primal) in (float, np.ndarray)]
     return val_out, elementals_out
     
 # Define elemental partials
 defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
-defelemental(lax.abs_p, lambda x: x/jnp.abs(x)) # NOTE: not differentiable here!
+defelemental2(lax.abs_p, lambda out, primal: primal/out) # NOTE: not differentiable here!
 defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 
 defelemental2(lax.exp_p, lambda out, primal: out)
 defelemental(lax.log_p, lambda x: 1./x)
-defelemental(lax.sqrt_p, lambda x: .5/jnp.sqrt(x))
+defelemental2(lax.sqrt_p, lambda out, primal: .5/out)
 
 defelemental(lax.sin_p, lambda x: jnp.cos(x))
 defelemental(lax.asin_p, lambda x: 1./jnp.sqrt(1.0 - x**2))
 defelemental(lax.cos_p, lambda x: -jnp.sin(x))
 defelemental(lax.acos_p, lambda x: -1./jnp.sqrt(1.0 - x**2))
-defelemental(lax.tan_p, lambda x: 1.+jnp.tan(x)**2)
+defelemental2(lax.tan_p, lambda out, primal: 1.+out**2)
 defelemental(lax.atan_p, lambda x: 1./(1. + x**2))
 
 defelemental(lax.sinh_p, lambda x: jnp.cosh(x))
 defelemental(lax.asinh_p, lambda x: jnp.sqrt(1. + x**2))
 defelemental(lax.cosh_p, lambda x: jnp.sinh(x))
 defelemental(lax.acosh_p, lambda x: 1./jnp.sqrt(x**2 - 1.))
-defelemental(lax.tanh_p, lambda x: 1.-jnp.tanh(x)**2)
+defelemental2(lax.tanh_p, lambda out, primal: 1.-out**2)
 defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
+defelemental2(lax.logistic_p, lambda out, primal: out*(1.-out))
 
 
 def add_elemental_rule(x, y):
     return (jnp.ones_like(y), jnp.ones_like(x))
     
 defelemental(lax.add_p, add_elemental_rule)
+defelemental(jax._src.ad_util.add_any_p, add_elemental_rule)
     
     
 def mul_elemental_rule(x, y):
-    return (y, x)
-    
+    return (y, x) 
 defelemental(lax.mul_p, mul_elemental_rule)
    
         
 def sub_elemental_rule(x, y):
     return (jnp.ones_like(y), -jnp.ones_like(x))
-    
 defelemental(lax.sub_p, sub_elemental_rule)
     
     
 def div_elemental_rule(x, y):
     return (1./y, -x/y**2)
-
 defelemental(lax.div_p, div_elemental_rule)
 
 
 def atan2_elemental_rule(x, y):
-    return (y/(x**2+y**2), -x/(x**2+y**2))
-
+    abs2 = (x**2+y**2)
+    return (y/abs2, -x/abs2)
 defelemental(lax.atan2_p, atan2_elemental_rule)
+
+
+def eq_elemental_rule(x, y):
+    return (jnp.zeros_like(y), jnp.zeros_like(x))
+defelemental(lax.eq_p, eq_elemental_rule)
+
+
+def pow_elemental_rule(out, x, y):
+    return (y*x**(y-1), jnp.log(x)*out)
+defelemental2(lax.pow_p, pow_elemental_rule)
 
 
 def transpose_elemental_rule(primals, **params):
@@ -150,7 +166,7 @@ def reduce_sum_elemental_rule(primals, **params):
     axes = params["axes"]
     if axes is None:
         axes = tuple(range(len(primal.shape)))
-        new_out_dims.append(DenseDimension(0, 1, 0, True))
+        new_out_dims.append(DenseDimension(0, 1, 0))
     elif type(axes) is int:
         axes = (axes,)
     new_out_dims, new_primal_dims = [], []
@@ -160,7 +176,7 @@ def reduce_sum_elemental_rule(primals, **params):
     count = 0
     for i, size in enumerate(primal.aval.shape):
         if i in axes:
-            new_primal_dims.append(DenseDimension(i, size, count))
+            new_primal_dims.append(DenseDimension(max(i,1), size, count))
             _shape.append(size)
             count += 1
         else:
@@ -192,7 +208,7 @@ def reduce_max_elemental_rule(primals, **params):
     count = 0
     for i, size in enumerate(primal.aval.shape):
         if i in axes:
-            new_primal_dims.append(DenseDimension(i, size, count))
+            new_primal_dims.append(DenseDimension(max(i,1), size, count))
             _shape.append(size)
             count += 1
         else:
@@ -200,13 +216,12 @@ def reduce_max_elemental_rule(primals, **params):
             new_primal_dims.append(SparseDimension(l+i, size, None, i))
             
     val = jnp.zeros(_shape)
-    # TODO set to 1 at position of the maximums
+    # TODO set to 1 at position of the maximum
     return val_out, [SparseTensor(new_out_dims, new_primal_dims, val)]
     
 elemental_rules[lax.reduce_max_p] = reduce_max_elemental_rule
 
 
-# TODO most important bit!
 def dot_general_elemental_rule(primals, **params):
     val_out = lax.dot_general_p.bind(*primals, **params)
     lhs, rhs = primals
@@ -317,10 +332,15 @@ def stop_gradient_elemental_rule(primals, **params):
 elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
 
 
+def iota_rule(primals, **params):
+    val_out = lax.iota_p.bind(*primals, **params)
+    return val_out, []
+
+
 def jacve(fun, order, argnums=(0,)):
     @wraps(fun)
     def wrapped(*args, **kwargs):
-        # Make repackaging work properly with one input value only
+        # TODO Make repackaging work properly with one input value only
         flattened_args, in_tree = tree_flatten(args)
         closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
         
@@ -334,8 +354,21 @@ def jacve(fun, order, argnums=(0,)):
 
 def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):    
     env = {}
-    graph = defaultdict(lambda: defaultdict())
-    transpose_graph = defaultdict(lambda: defaultdict())
+    graph = defaultdict(lambda: defaultdict()) # Input connectivity
+    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity
+        
+    largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
+    largest_output = get_largest_tensor(jaxpr._outvars)
+    
+    # TODO check the first condition for correctness
+    if largest_input == 1 and largest_output == 1:
+        iota = None
+    elif largest_output == 1:
+        iota = jnp.ones((1, largest_input))
+    elif largest_input == 1:
+        iota = jnp.ones((largest_output, 1))
+    else:
+        iota = jnp.eye(largest_output, largest_input)     
 
     # Reads variable and corresponding traced shaped array
     def read(var):
@@ -347,34 +380,52 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
     def write(var, val):
         env[var] = val
         
-    def write_elemental(invar, outval):
+    # Writes a new elemental partial to the graph and transpose_graph
+    def write_elemental(invar, val):
         if isinstance(invar, core.Var):
-            graph[invar][eqn.outvars[0]] = outval
-            transpose_graph[eqn.outvars[0]][invar] = outval
+            graph[invar][eqn.outvars[0]] = val
+            transpose_graph[eqn.outvars[0]][invar] = val
                 
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
+    vo_vertices = []
+    counter = 1
+    var_id = {}
     # Loop though elemental partials
     for eqn in jaxpr.eqns:
-        invals = safe_map(read, eqn.invars)
+        # Treatment of intermediate variables that are also output variables
+        for outvar in eqn.outvars:
+            if type(outvar) is core.Var and outvar not in var_id.keys():
+                    var_id[outvar] = counter
+                    counter += 1
+        for invar in eqn.invars:
+            if invar in jaxpr._outvars:
+                vertex = var_id[invar]
+                vo_vertices.append(vertex)
+                
+        invals = safe_map(read, eqn.invars)              
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
+        
         primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
         safe_map(write, eqn.outvars, [primal_outvals])
+        
         invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        # print(eqn.primitive, invars, elemental_outvals, invars, elemental_outvals)
         safe_map(write_elemental, invars, elemental_outvals)
         
+    vo_vertices = set(vo_vertices) 
     if type(order) is str:
         if order == "forward" or order == "fwd":
             order = [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
-                    if eqn.outvars[0] not in jaxpr.outvars]
+                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices]
         elif order == "reverse" or order == "rev":
             order = [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
-                    if eqn.outvars[0] not in jaxpr.outvars][::-1]
+                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices][::-1]
         else:
-            raise ValueError(order + " is not a valid order identifier!")
+            raise ValueError(f"{order} is not a valid order identifier!")
 
     # Eliminate the vertices
     for vertex in order:
@@ -395,17 +446,20 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
                 
-        for in_edge in transpose_graph[eqn.outvars[0]].keys():
-            del graph[in_edge][eqn.outvars[0]]
+        # Cleanup of input and output vertices
+        if vertex not in vo_vertices:
+            for in_edge in transpose_graph[eqn.outvars[0]].keys():
+                del graph[in_edge][eqn.outvars[0]]
         for out_edge in graph[eqn.outvars[0]].keys():    
             del transpose_graph[out_edge][eqn.outvars[0]]
         
-        # Cleanup eliminated vertices            
+        # Cleanup eliminated vertices   
         del graph[eqn.outvars[0]]
-        del transpose_graph[eqn.outvars[0]]    
+        if vertex not in vo_vertices:
+            del transpose_graph[eqn.outvars[0]]    
 
     # Collect outputs 
-    jac_vals = [graph[invar][outvar].materialize_actual_shape() 
+    jac_vals = [graph[invar][outvar].materialize_actual_shape(iota) 
                 if outvar in list(graph[invar].keys()) else zeros_like(invar, outvar)
                 for outvar in jaxpr.outvars for invar in jaxpr_invars]
 

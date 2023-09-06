@@ -9,7 +9,8 @@ from graphax.examples import (make_simple,
                                 make_3d_roe_flux,
                                 make_6DOF_robot,
                                 make_cloud_schemes,
-                                make_Kerr_Sen_metric)
+                                make_Kerr_Sen_metric,
+                                make_f)
 
 
 # edges= make_simple()
@@ -22,9 +23,8 @@ from graphax.examples import (make_simple,
 
 # print(cross_country(order, edges)[1])
 
-edges, jaxpr = make_transformer_encoder()
+edges = make_f()
 print(edges)
-print(jaxpr)
 num_i, num_v = gx.get_shape(edges)
 # print(edges.at[0, 0, 0:3].get())
 # print(jaxpr.eqns[31].outvars)

@@ -1,10 +1,9 @@
 import jax
 import jax.random as jrand
 
-from graphax.dataset import Graph2File, read, get_prompt_list, LLMSampler, RandomSampler
+from graphax.dataset import Graph2File, read, RandomSampler
 
-API_KEY = "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"
-# PROMPT_LIST = get_prompt_list("./prompt_list.txt")   
+
 key = jrand.PRNGKey(42) 
 
 sampler = RandomSampler(max_info=[5,10,5], min_num_intermediates=12)

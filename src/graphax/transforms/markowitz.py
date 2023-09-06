@@ -9,17 +9,6 @@ from chex import Array
 from ..core import vertex_eliminate, get_shape
 
 
-def scan(f, init, xs, length=None):
-    if xs is None:
-        xs = [None] * length
-    carry = init
-    ys = []
-    for x in xs:
-        carry, y = f(carry, x)
-        ys.append(y)
-    return carry, jnp.stack(ys)
-
-
 def safe_preeliminations(edges: Array, return_order: bool = False):
     """
     Eliminates only vertices with minimal Markowitz degree 0 and 1.
@@ -53,7 +42,7 @@ def minimal_markowitz(edges: Array):
     it = jnp.arange(1, num_vo+1)
     _, idxs = lax.scan(loop_fn, edges, it)
 
-    return [int(i) for i in idxs]
+    return [int(i) for i in idxs if edges.at[2, 0, i-1].get() == 0]
 
 
 def get_minimal_markowitz(edges: Array, degrees: bool = False) -> Sequence[int]:

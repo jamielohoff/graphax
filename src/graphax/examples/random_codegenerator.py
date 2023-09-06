@@ -54,10 +54,10 @@ def monorule(primitive, key, outvars, invars, invals):
     val = primitive(*invals)
     return val, f"{outvars} = jnp.{name}({invars[0]})\n"
     
+    
 defmonocode(jnp.negative, monorule)
 defmonocode(jnp.exp, monorule)
 defmonocode(jnp.log, monorule)
-defmonocode(lax.logistic, monorule)
 
 defmonocode(jnp.sin, monorule)
 defmonocode(jnp.cos, monorule)
@@ -84,6 +84,7 @@ def lax_monorule(primitive, key, outvars, invars, invals):
     return val, f"{outvars} = lax.{name}({invars[0]})\n"
 
 defspecialcode(lax.stop_gradient, lax_monorule)
+defmonocode(lax.logistic, lax_monorule)
 defspecialcode(jnp.squeeze, monorule)
 
 
@@ -114,7 +115,22 @@ defreducecode(jnp.max, reduce_rule)
 defreducecode(jnp.min, reduce_rule)
 defreducecode(jnp.prod, reduce_rule)
 defreducecode(jnp.mean, reduce_rule)
-defreducecode(jnn.softmax, reduce_rule)
+
+
+def jnn_reduce_rule(primitive, key, outvars, invars, invals):
+    name = primitive.__name__
+    primal = invals[0]
+    if len(primal.shape) != 0:
+        size = primal.ndim
+        axis = int(jrand.randint(key, (), 0, size))
+        params = {"axis": axis}
+        lines = f"{outvars} = jnn.{name}({invars[0]}, axis={axis})\n"
+        val = primitive(*invals, **params)
+        return val, lines
+    else:
+        return None, ""
+
+defreducecode(jnn.softmax, jnn_reduce_rule)
 
 
 # TODO include automatic broadcasting?
@@ -139,7 +155,7 @@ def birule(primitive, key, outvar, invars, invals):
                     _shape.append(1)
             compatible = len(shape) == 0
             if compatible:
-                lines += f"_{invars[1]} = {invars[1]}.reshape({_shape})\n"
+                lines += f"_{invars[1]} = jnp.reshape({invars[1]},{_shape})\n"
                 lines += "    "
                 invars[1] = f"_{invars[1]}"
                 invals[1] = jnp.reshape(invals[1], _shape)
@@ -155,7 +171,7 @@ def birule(primitive, key, outvar, invars, invals):
                     _shape.append(1)
             compatible = len(shape) == 0
             if compatible:
-                lines += f"_{invars[0]} = jnp.reshape({invars[0]}, {_shape})\n"
+                lines += f"_{invars[0]} = jnp.reshape({invars[0]},{_shape})\n"
                 lines += "    "
                 invars[0] = f"_{invars[0]}"
                 invals[0] = jnp.reshape(invals[0], _shape)
@@ -170,7 +186,8 @@ defbicode(jnp.add, birule, ninputs=2)
 defbicode(jnp.multiply, birule, ninputs=2)
 defbicode(jnp.divide, birule, ninputs=2)
 defbicode(jnp.subtract, birule, ninputs=2)
-
+defbicode(jnp.arctan2, birule, ninputs=2)
+defbicode(jnp.power, birule, ninputs=2)
 
 def transpose_rule(primitive, key, outvar, invars, invals):   
     name = primitive.__name__
@@ -297,13 +314,16 @@ def make_random_primal(key, ndims, minval=1, maxval=5):
 jaxpr = None
 def make_random_code(key, 
                     info, 
-                    primal_p=jnp.array([.1, .5, .4]),
-                    prim_p=jnp.array([.1, .49, .05, .05, .31]),
+                    primal_p=[.1, .5, .4],
+                    primitive_p=[.1, .49, .05, .05, .31],
                     max_literals=3):
     code = "import jax\nimport jax.numpy as jnp\n"
     num_i, num_v, num_o = info
     env = {}
     count = 0
+    
+    primal_p = primal_p if type(primal_p) is jnp.ndarray else jnp.array(primal_p)
+    primitive_p = primitive_p if type(primitive_p) is jnp.ndarray else jnp.array(primitive_p)
     
     def read(var: str):
         return env[var]
@@ -344,7 +364,7 @@ def make_random_code(key,
         pkey, rkey, vkey, key = jrand.split(key, 4)
         
         # Select primitive
-        prim = sample_primitive(pkey, prim_p=prim_p)
+        prim = sample_primitive(pkey, prim_p=primitive_p)
         rule, num_inputs = primitive_code[prim]            
         
         # Select inputs
@@ -383,8 +403,9 @@ def make_random_code(key,
     del unused_vars[var]
     inputs = list(env.keys())
     unused_vars_list = list(unused_vars.values())
+    l = len(unused_vars_list)
             
-    out_idxs = jrand.choice(vkey, jnp.arange(num_i+num_literals, len(inputs)-1), (num_o-1,), replace=False)
+    out_idxs = jrand.choice(vkey, jnp.arange(num_i+num_literals, len(inputs)-1), (num_o-l-1,), replace=False)
     out_idxs = list(jnp.append(out_idxs, -1))
     outputs = [inputs[idx] for idx in out_idxs + unused_vars_list]
     
@@ -399,4 +420,131 @@ def make_random_code(key,
     del inputs, outputs, input_params, out_idxs, unused_vars, unused_vars_list
     
     return code, jaxpr  
+
+
+def make_random_derivative_code(key, 
+                                info, 
+                                primal_p=[.2, .8, .0],
+                                primitive_p=[.2, .7, .1, .0, .0],
+                                max_literals=3):
+    """
+    prim_p = (mono_prims, bi_prims, reduce_prims, special_prims, dot_general_prims)
+    """
+    code = "import jax\nimport jax.numpy as jnp\n"
+    num_i, num_v, num_o = info
+    env = {}
+    count = 0
+    
+    primal_p = primal_p if type(primal_p) is jnp.ndarray else jnp.array(primal_p)
+    primitive_p = primitive_p if type(primitive_p) is jnp.ndarray else jnp.array(primitive_p)
+    
+    def read(var: str):
+        return env[var]
+    
+    def write(var: str, val: Any):
+        env[var] = val
+        
+     # Create list of invars
+    for _ in range(num_i):
+        subkey, key = jrand.split(key, 2)
+        ndims = jrand.choice(subkey, jnp.arange(0, 3), (), p=primal_p)
+        primal = make_random_primal(key, ndims)
+        var = "v"+str(count)
+        write(var, primal)
+        count += 1
+
+    f_inputs = list(env.keys())
+    function_header = "def f(" + ",".join(f_inputs) + "):\n"
+    code += function_header
+    
+    # Add literals
+    num_literals = jrand.randint(key, (), 0, max_literals) # number of literals
+    for _ in range(num_literals):
+        subkey, key = jrand.split(key, 2)
+        literal = make_random_primal(subkey, ndims)
+        shape = literal.shape
+        var = "v"+str(count)
+        code += f"    {var} = jnp.ones({shape})\n"
+        write(var, literal)
+        count += 1
+        
+    # Adding randomly chosen equations
+    v = 0
+    inputs = list(env.keys())
+    inputs_p = [1.]*len(inputs)
+    unused_vars = {}
+    while v < num_v:
+        pkey, rkey, vkey, akey, bkey, key = jrand.split(key, 6)
+        
+        # Select primitive
+        prim = sample_primitive(pkey, prim_p=primitive_p)
+        rule, num_inputs = primitive_code[prim]            
+        
+        # Select inputs
+        _p = jnp.array(inputs_p)
+        p = _p/_p.sum()
+        
+        unused_len = len(unused_vars.keys())
+        if unused_len >= num_o and unused_len >= num_inputs:
+            choices = jnp.array(list(unused_vars.values()))
+            idxs = jrand.choice(vkey, choices, (num_inputs,), replace=False)
+        else:
+            idxs = jrand.choice(vkey, jnp.arange(0, len(inputs)), (num_inputs,), replace=False, p=p)
+        vars = [inputs[idx] for idx in idxs]
+        primals = safe_map(read, vars)
+
+        var = "v" + str(count)
+        val, lines = rule(rkey, var, vars, primals)
+        # Add source code
+        if val is not None:
+            write(var, val)
+            code += f"    " + lines
+            count += 1
+            v += 1
+            for idx in idxs:
+                inputs_p[idx] *= .5
+            inputs.append(var)
+            unused_vars[var] = len(inputs)-1
+            inputs_p.append(1.)
+            
+            for w in vars:
+                if w in unused_vars.keys():
+                    del unused_vars[w]
+        del lines, val
+        
+    # Create list of outvars and reuse unused outvars
+    del unused_vars[var]
+    inputs = list(env.keys())
+    unused_vars_list = list(unused_vars.values())
+    l = len(unused_vars_list)
+            
+    out_idxs = jrand.choice(akey, jnp.arange(num_i+num_literals, len(inputs)-1), (num_o-l-1,), replace=False)
+    out_idxs = list(jnp.append(out_idxs, -1))
+    outputs = [inputs[idx] for idx in out_idxs + unused_vars_list]
+    
+
+    code += "    return " + ",".join(outputs) + "\n"
+    
+    # Select random subset of argnums that we want to calculate the Jacobian for
+    m = jrand.randint(akey, (), 1, len(f_inputs))
+    argnums = jrand.choice(bkey, jnp.arange(0, len(f_inputs)), (m,), replace=False)
+    argnums = [str(arg) for arg in jnp.sort(argnums)]
+    
+    print(argnums)
+    
+    # Use either forward or reverse mode AD depending on the shape of the graph
+    if len(f_inputs) < len(outputs):
+        code += "jac_f = jax.jacfwd(f, argnums=(" + ",".join(argnums) + "))\n"
+    else:
+        code += "jac_f = jax.jacrev(f, argnums=(" + ",".join(argnums) + "))\n"
+        
+    code += "global jaxpr\n"
+    code += "jaxpr = jax.make_jaxpr(jac_f)(" + ",".join(f_inputs) + ")"
+
+    input_params = {v:env[v] for v in f_inputs}
+    exec(code, globals(), input_params)
+    
+    del inputs, outputs, input_params, out_idxs, unused_vars, unused_vars_list
+    
+    return code, jaxpr
 

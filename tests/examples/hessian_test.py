@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 
 import graphax as gx
+from graphax.examples.general_relativity import g
 
 # import sys
 # import jax.numpy as jnp
@@ -13,12 +14,19 @@ def f(x, y):
     w = jnp.sin(z)
     return jnp.log(w), z*w
 
-f_jac = jax.jacrev(f, argnums=(0, 1))
+g_jac = gx.jacve(g, order="fwd", argnums=(0, 1, 2, 3))
+# f_jac = jax.jacrev(f, argnums=(0, 1))
 
-jaxpr = jax.make_jaxpr(f_jac)(1., 1.)
+x = 1. # jnp.ones(2)
+y = 1. # jnp.ones(2)
+z = 1.
+w = 1.
+jaxpr = jax.make_jaxpr(g)(x, y, z, w)
 print(jaxpr)
+jaxpr = jax.make_jaxpr(g_jac)(x, y, z, w)
+print(jaxpr, len(jaxpr.eqns))
 
-edges = gx.make_graph(f_jac, 1., 1.)
+edges = gx.make_graph(g_jac, x, y, z, w)
 print(edges, edges.shape)
 # edges = gx.clean(edges)
 # edges = gx.compress(edges)
@@ -28,5 +36,9 @@ _, ops = gx.forward(edges)
 print(ops)
 
 _, ops = gx.reverse(edges)
+print(ops)
+
+order = gx.minimal_markowitz(edges)
+_, ops = gx.cross_country(order, edges)
 print(ops)
 

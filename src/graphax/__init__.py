@@ -14,7 +14,11 @@ from .transforms import (embed,
                         compress,
                         safe_preeliminations,
                         minimal_markowitz)
-from .interpreter import make_graph, jacve
+from .interpreter import make_graph, jacve, tree_allclose
+from .performance_measurements import (measure_execution_time, 
+                                        measure_execution_time_with_jax,
+                                        plot_performance,
+                                        plot_performance_over_size)
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`

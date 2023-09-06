@@ -30,9 +30,6 @@ def lif(U, I, S, a, b, threshold):
         S_next = surrogate(U_next - threshold)
         
         return U_next, I_next, S_next
-    
-def make_LIF():
-    return make_graph(lif, .1, .2, 1., .95, .9, 1.)
 
 
 # From Bellec et al. e-prop paper
@@ -43,9 +40,6 @@ def ada_lif(U, a, S, alpha, beta, rho, threshold):
         a_next = rho*a - S_next
         
         return U_next, a_next, S_next
-    
-def make_adaptive_LIF():
-    return make_graph(ada_lif, .1, .2, 1., .95, .9, .9, 1.)
 
 
 # Single SNN forward pass as done in Zenke&Neftci using time-local loss functions (e.g. regression)
