@@ -27,8 +27,8 @@ print(revres)
 
 print(tree_allclose(veres, revres))
 
-xs = [jnp.ones(())*0.01]*20
-argnums = list(range(20))
+xs = [jnp.ones(())*0.01]*15
+argnums = list(range(15))
 # print(jax.make_jaxpr(g)(*xs))
 jac_rev_g = jax.jit(jacve(g, order="rev", argnums=argnums))
 jax_rev_g = jax.jit(jax.jacrev(g, argnums=argnums))
@@ -39,8 +39,8 @@ print(len(jax.make_jaxpr(jacve(g, order="rev", argnums=argnums))(*xs).eqns))
 revres = jax_rev_g(*xs)
 veres = jac_rev_g(*xs)
 
-# for rev, ve in zip(revres, veres):
-#     print(rev, ve)
+for rev, ve in zip(revres, veres):
+    print(rev, ve)
 
 print(tree_allclose(veres, revres))
 

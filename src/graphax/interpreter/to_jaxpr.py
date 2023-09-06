@@ -168,14 +168,14 @@ def reduce_sum_elemental_rule(primals, **params):
     primal = primals[0]
     axes = params["axes"]
     if axes is None:
-        axes = tuple(range(len(primal.shape)))
+        axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0))
     elif type(axes) is int:
         axes = (axes,)
     new_out_dims, new_primal_dims = [], []
     _shape = []
     
-    l = len(val_out.aval.shape)
+    l = val_out.aval.ndim
     count = 0
     for i, size in enumerate(primal.aval.shape):
         if i in axes:
@@ -200,14 +200,14 @@ def reduce_max_elemental_rule(primals, **params):
     axes = params["axes"]
     
     if axes is None:
-        axes = tuple(range(len(primal.shape)))
+        axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0, True))
     elif type(axes) is int:
         axes = (axes,)
     new_out_dims, new_primal_dims = [], []
     _shape = []
     
-    l = len(val_out.aval.shape)
+    l = val_out.aval.ndim
     count = 0
     for i, size in enumerate(primal.aval.shape):
         if i in axes:
@@ -236,7 +236,7 @@ def dot_general_elemental_rule(primals, **params):
     rhs_contracting_dims = dimension_numbers[1]
     
     # TODO properly treat the transpose
-    if len(rhs.aval.shape) > 1:
+    if rhs.aval.ndim > 1:
         transpose_rhs = rhs.T
         # print(lhs, transpose_rhs)
         # TODO this needs generalization to higher-dimensional tensors
@@ -257,7 +257,7 @@ def dot_general_elemental_rule(primals, **params):
     
     i = 0
     for l, ld in enumerate(lhs_shape):
-        _l = l + len(val_out.aval.shape)
+        _l = l + val_out.aval.ndim
         if l in lhs_contracting_dims:
             # Contracting dimension
             dim = transpose_rhs_dims[i] # TODO take account of the transpose
@@ -324,7 +324,7 @@ def stop_gradient_elemental_rule(primals, **params):
     primal = primals[0]    
     new_out_dims, new_primal_dims = [], []
 
-    l = len(primal.shape)
+    l = primal.ndim
     for i, size in enumerate(primal.shape):
         new_out_dims.append(SparseDimension(i, size, i, i+l))
         new_primal_dims.append(SparseDimension(i+l, size, i, i))

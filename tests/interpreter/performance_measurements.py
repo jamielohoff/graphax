@@ -143,9 +143,9 @@ def measure_G():
     print("cc", ops)
     
         
-    samplesize = 500
-    duration = 1000
-    xs = [jnp.ones((20,))]*15
+    samplesize = 100
+    duration = 2
+    xs = [jnp.ones((20,20))]*15
     print(len(jax.make_jaxpr(gx.jacve(g, order="rev", argnums=list(range(15))))(*xs).eqns))
     print(len(jax.make_jaxpr(gx.jacve(g, order=order, argnums=list(range(15))))(*xs).eqns))
     gx.plot_performance(g, xs, order, "./g.png", samplesize=samplesize, loop_duration=duration)
