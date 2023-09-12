@@ -14,10 +14,10 @@ def f(x, y):
 xkey, ykey = jrand.split(key, 2)
 x = jrand.normal(xkey, (2, 3))
 y = jrand.normal(ykey, (3,))
-jaxpr = jax.make_jaxpr(jacve(f, order=[1], argnums=(0, 1)))(x, y)
+jaxpr = jax.make_jaxpr(jacve(f, order="rev", argnums=(0, 1)))(x, y)
 print(jaxpr)
 
-deriv_fn = jax.jit(jacve(f, [1], argnums=(0, 1)))
+deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
 veres = deriv_fn(x, y)
 
 revres = jax.jacrev(f, argnums=(0, 1))(x, y)
@@ -39,8 +39,8 @@ print(len(jax.make_jaxpr(jacve(g, order="rev", argnums=argnums))(*xs).eqns))
 revres = jax_rev_g(*xs)
 veres = jac_rev_g(*xs)
 
-for rev, ve in zip(revres, veres):
-    print(rev, ve)
+# for rev, ve in zip(revres, veres):
+#     print(rev, ve)
 
 print(tree_allclose(veres, revres))
 
@@ -48,19 +48,21 @@ print(tree_allclose(veres, revres))
 def f(x, y):
     z = x * y
     w = z**3
-    return z, w + z, 5*w
+    return w + z, 5*w
 
-x = 1. # jnp.ones((50, 50))
-y = 2. # *jnp.ones((50, 50))
+x = jnp.ones(()) # jnp.ones((50, 50))
+y = jnp.ones(()) # *jnp.ones((50, 50))
 jaxpr = jax.make_jaxpr(f)(x, y)
 print(jaxpr)
 
-jacs = jax.jit(jacve(f, order=[2, 1], argnums=(0, 1)))
+jacs = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+jaxpr = jax.make_jaxpr(jacve(f, order="rev", argnums=(0, 1)))(x, y)
+print(jaxpr)
 veres = jacs(x, y)
 print(veres)
 
-jacfwd_f = jax.jit(jacve(f, [1, 2]))
-jacrev_f = jax.jit(jacve(f, [2, 1]))
+jacfwd_f = jax.jit(jacve(f, order="fwd", argnums=(0, 1)))
+jacrev_f = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
 
 
 jac_f = jax.jit(jax.jacfwd(f, argnums=(0, 1)))
@@ -169,22 +171,4 @@ WV = jrand.normal(key,(10, 10))
 
 print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
 print(jax.make_jaxpr(jacve(softmax_attention, order="fwd"))(x, WQ, WK, WV))
-
-# def f(x, y):
-#     z = x * y
-#     return 3.0*z
-
-# x = jnp.ones((2, 3))
-# y = jnp.ones((3,))
-# jaxpr = jax.make_jaxpr(jacve(f, "fwd"))(x, y)
-# print(jaxpr)
-
-# jacs = jacve(f, "fwd")(x, y)
-
-# jax_jacs = jax.jacrev(f, argnums=(0, 1, 2, 3))(x, y)
-
-# print(jnp.allclose(veres, revres))
-
-# print("ve",jacs[0])
-# print("rev", jax_jacs[0])
 
