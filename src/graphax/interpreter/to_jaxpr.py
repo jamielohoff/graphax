@@ -355,7 +355,7 @@ def jacve(fun, order, argnums=(0,)):
     return wrapped
 
 
-def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):    
+def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,), count_muls=True):    
     env = {}
     graph = defaultdict(lambda: defaultdict()) # Input connectivity
     transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity
@@ -431,6 +431,8 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
             raise ValueError(f"{order} is not a valid order identifier!")
 
     # Eliminate the vertices
+    mul_counter = 0
+    add_counter = 0
     for vertex in order:
         eqn = jaxpr.eqns[vertex-1]
         for out_edge in graph[eqn.outvars[0]].keys():
@@ -440,12 +442,14 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
                 # print(in_edge, eqn.outvars[0], out_edge)
                 # print("in shape", post_val, pre_val)
                 edge_outval = post_val * pre_val
+                mul_counter += 1
                 # print("mul shape", edge_outval)
 
                 if graph.get(in_edge).get(out_edge) is not None:
                     _edge = transpose_graph[out_edge][in_edge]
                     # print("add shape", _edge)
                     edge_outval += _edge
+                    add_counter += 1
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
                 
@@ -459,7 +463,10 @@ def vertex_elimination_jaxpr(jaxpr, order, consts, *args, argnums=(0,)):
         # Cleanup eliminated vertices   
         del graph[eqn.outvars[0]]
         if vertex not in vo_vertices:
-            del transpose_graph[eqn.outvars[0]]    
+            del transpose_graph[eqn.outvars[0]]   
+            
+    if count_muls: 
+        print(f"# multiplications: {mul_counter}, # additions: {add_counter}")
 
     # Collect outputs 
     jac_vals = [graph[invar][outvar].materialize_actual_shape(iota) 

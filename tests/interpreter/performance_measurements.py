@@ -117,16 +117,15 @@ def measure_RobotArm():
     print("cc", ops)
     
     samplesize = 100
-    duration = 100
         
-    shape = (20,20)
+    shape = (80, 80)
     
     xs = [jnp.ones(shape)]*6
-    gx.plot_performance(position_angles_6DOF, xs, order, "./6DOF_Robot_Arm.png", samplesize=samplesize, loop_duration=duration)
+    gx.plot_performance(position_angles_6DOF, xs, order, "./6DOF_Robot_Arm.png", samplesize=samplesize)
     
-    shapes = [(), (3, 3), (6, 6), (10, 10), (15, 15), (20, 20), (30, 30)]
-    args = [[jnp.ones(shape)]*6 for shape in shapes]
-    gx.plot_performance_over_size(position_angles_6DOF, args, order, "./6DOF_Robot_Arm_sizes.png", samplesize=samplesize, loop_duration=duration)
+    # shapes = [(), (3, 3), (6, 6), (10, 10), (15, 15), (20, 20), (30, 30)]
+    # args = [[jnp.ones(shape)]*6 for shape in shapes]
+    # gx.plot_performance_over_size(position_angles_6DOF, args, order, "./6DOF_Robot_Arm_sizes.png", samplesize=samplesize)
     
     
 from graphax.examples.simple import make_g, g
@@ -141,19 +140,18 @@ def measure_G():
     print("reverse", ops)
     _, ops = gx.cross_country(order, edges)
     print("cc", ops)
-    
         
-    samplesize = 100
-    duration = 2
-    xs = [jnp.ones((20,20))]*15
+    samplesize = 10000
+    xs = [jnp.ones(())]*15
+    print(len(jax.make_jaxpr(gx.jacve(g, order="fwd", argnums=list(range(15))))(*xs).eqns))
     print(len(jax.make_jaxpr(gx.jacve(g, order="rev", argnums=list(range(15))))(*xs).eqns))
     print(len(jax.make_jaxpr(gx.jacve(g, order=order, argnums=list(range(15))))(*xs).eqns))
-    gx.plot_performance(g, xs, order, "./g.png", samplesize=samplesize, loop_duration=duration)
+    gx.plot_performance(g, xs, order, "./g.png", samplesize=samplesize)
     
 
 # simple()
 # measure_Helmholtz()
 # Perceptron()
-# measure_RobotArm()
-measure_G()
+measure_RobotArm()
+# measure_G()
 

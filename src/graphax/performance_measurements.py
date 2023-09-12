@@ -25,16 +25,20 @@ def measure_execution_time(f: Callable,
     """
     measurements = []
     argnums = list(range(len(args)))
-    def loop_fn(carry, x):
-        xs = [arg*0.01*carry for arg in args]
-        grad = jacve(f, order=order, argnums=argnums)(*xs)
-        jax.block_until_ready(grad)
-        carry *= 1.01
-        return carry, grad
     
-    for _ in range(samplesize):
+    grad_f = ()
+    grad_f = jax.jit(jacve(f, order=order, argnums=argnums))
+    # def loop_fn(carry, x):
+    #     xs = [arg*0.01*carry for arg in args]
+    #     grad = jacve(f, order=order, argnums=argnums)(*xs)
+    #     jax.block_until_ready(grad)
+    #     carry *= 1.01
+    #     return carry, grad
+    
+    for i in range(samplesize):
+        xs = [arg*1e-5*i for arg in args]
         st = timer()
-        out = lax.scan(loop_fn, 0.1, (), length=loop_duration)
+        out = grad_f(*xs)
         jax.block_until_ready(out)
         dt = timer() - st
         measurements.append(dt)
@@ -54,30 +58,35 @@ def measure_execution_time_with_jax(f: Callable,
     """
     fwd_measurements, rev_measurements = [], []
     argnums = list(range(len(args)))
-    def loop_fn(carry, x):
-        xs = [arg*0.01*carry for arg in args]
-        grad = jax.jacfwd(f, argnums=argnums)(*xs)
-        jax.block_until_ready(grad)
-        carry *= 1.01
-        return carry, grad
     
-    for _ in range(samplesize):
+    fwd_f = jax.jit(jax.jacfwd(f, argnums=argnums))
+    rev_f = jax.jit(jax.jacfwd(f, argnums=argnums))
+    # def loop_fn(carry, x):
+    #     xs = [arg*0.01*carry for arg in args]
+    #     grad = jax.jacfwd(f, argnums=argnums)(*xs)
+    #     jax.block_until_ready(grad)
+    #     carry *= 1.01
+    #     return carry, grad
+    
+    for i in range(samplesize):
+        xs = [arg*1e-5*i for arg in args]
         st = timer()
-        out = lax.scan(loop_fn, 0.1, (), length=loop_duration)
+        out = fwd_f(*xs)
         jax.block_until_ready(out)
         dt = timer() - st
         fwd_measurements.append(dt)
         
-    def loop_fn(carry, x):
-        xs = [arg*0.01*carry for arg in args]
-        grad = jax.jacrev(f, argnums=argnums)(*xs)
-        jax.block_until_ready(grad)
-        carry *= 1.01
-        return carry, grad
+    # def loop_fn(carry, x):
+    #     xs = [arg*0.01*carry for arg in args]
+    #     grad = jax.jacrev(f, argnums=argnums)(*xs)
+    #     jax.block_until_ready(grad)
+    #     carry *= 1.01
+    #     return carry, grad
     
-    for _ in range(samplesize):
+    for i in range(samplesize):
+        xs = [arg*1e-5*i for arg in args]
         st = timer()
-        out = lax.scan(loop_fn, 0.1, (), length=loop_duration)
+        out = rev_f(*xs)
         jax.block_until_ready(out)
         dt = timer() - st
         rev_measurements.append(dt)
