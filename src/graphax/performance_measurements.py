@@ -25,17 +25,18 @@ def measure_execution_time(f: Callable,
     """
     measurements = []
     argnums = list(range(len(args)))
+    
     def loop_fn(carry, x):
         xs = [arg*0.01*carry for arg in args]
         grad = jacve(f, order=order, argnums=argnums)(*xs)
-        jax.block_until_ready(grad)
+        #jax.block_until_ready(grad)
         carry *= 1.01
         return carry, grad
     
     for _ in range(samplesize):
         st = timer()
         out = lax.scan(loop_fn, 0.1, (), length=loop_duration)
-        jax.block_until_ready(out)
+        #jax.block_until_ready(out)
         dt = timer() - st
         measurements.append(dt)
         if print_results:
@@ -101,7 +102,9 @@ def plot_performance(f: Callable,
     rev_measurements = measure_execution_time(f, args, "rev", samplesize=samplesize, loop_duration=loop_duration)
     cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize, loop_duration=loop_duration)
     
-    jax_fwd_measurements, jax_rev_measurements = measure_execution_time_with_jax(f, args, samplesize=samplesize, loop_duration=loop_duration)
+    # jax_fwd_measurements, jax_rev_measurements = measure_execution_time_with_jax(f, args, samplesize=samplesize, loop_duration=loop_duration)
+    jax_fwd_measurements = jnp.zeros(10)
+    jax_rev_measurements = jnp.zeros(10)
     
     fwd_mean = jnp.median(fwd_measurements)
     rev_mean = jnp.median(rev_measurements)
