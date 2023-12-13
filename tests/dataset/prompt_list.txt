@@ -1,0 +1,46 @@
+Generate an arbitrary JAX function with 4 inputs and 4 outputs and a maximum of 15 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(1., 1., 1., 1.)
+Generate an arbitrary JAX function with a input vector of size 4 and 4 outputs and a maximum of 15 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(4))
+Generate an arbitrary JAX function with a input vector of size 4 and 4 outputs and a maximum of 15 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(4))
+Generate an arbitrary JAX function with a input vector of size 2 and 5 outputs and a maximum of 15 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(2))
+Generate an arbitrary JAX function with a input vector of size 8 and 2 outputs and a maximum of 5 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(8))
+Generate an arbitrary JAX function with 5 inputs and 1 output and a maximum of 10 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(1., 1., 1., 1., 1.)
+Generate an arbitrary JAX function with 10 inputs and 5 outputs and a maximum of 8 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(1., 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+Generate an arbitrary JAX function with a input vector of size 6 and 5 outputs and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(6))
+Generate an arbitrary JAX function with a input vector of size 8 and 3 outputs and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(8))
+Generate an arbitrary JAX function with a input vector of size 8 and 1 output and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(8))
+Generate an arbitrary JAX function with a input vector of size 5 and 1 output and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(5))
+Generate an arbitrary JAX function with a input vector of size 5 and 1 output and a maximum of 10 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(5))
+Generate an arbitrary JAX function with a input vector of size 5 and 2 output and a maximum of 5 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(5))
+Generate an arbitrary JAX function with a input vector of size 7 and 4 output and a maximum of 5 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(7))
+Generate an arbitrary JAX function with a input vector of size 7 and 4 output and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(7))
+Generate an arbitrary JAX function with 7 inputs and 5 outputs and a maximum of 10 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(1., 1., 1., 1., 1., 1., 1.)
+Generate an arbitrary JAX function with a input vector of size 9 and 3 output and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(9))
+Generate an arbitrary JAX function with a input vector of size 5 and 5 output and a maximum of 5 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(5))
+Generate an arbitrary JAX function with 3 inputs and 3 outputs and a maximum of 15 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(1., 1., 1.)
+Generate an arbitrary JAX function with 3 inputs and 5 outputs and a maximum of 15 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(1., 1., 1.)
+Generate an arbitrary JAX function with a input vector of size 3 and 5 output and a maximum of 15 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(3))
+Generate an arbitrary JAX function with a input vector of size 10 and 5 output and a maximum of 15 operations. Include a jnp.sum operation over multiple variables. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(10))
+Generate an arbitrary JAX function with a input vector of size 10 and 5 output and a maximum of 15 operations. Name the function 'f' and only show the source code without jit and description.
+jaxpr = jax.make_jaxpr(f)(jnp.ones(10))
