@@ -297,10 +297,9 @@ def sample_primitive(key, prim_p):
 
 def make_random_primal(key, ndims, minval=1, maxval=5):
     # Function that creates new variables for a jaxpr
-    shape = None
-    subkey, key = jrand.split(key, 2)
+    shape = ()
     if ndims == 0:
-        return jrand.uniform(subkey, ())
+        shape = ()
     elif ndims == 1:
         shape = jrand.randint(key, (1,), 2, maxval)
     elif ndims == 2:
@@ -308,15 +307,20 @@ def make_random_primal(key, ndims, minval=1, maxval=5):
     else:
         ValueError(str(ndims) + " is not a supported number of dimensions!")
         
-    return jrand.uniform(subkey, shape)
+    shape = tuple(int(s) for s in shape)
+    return f"jnp.ones({shape})", jnp.ones(shape)
 
 
-jaxpr = None
 def make_random_code(key, 
                     info, 
                     primal_p=[.1, .5, .4],
                     primitive_p=[.1, .49, .05, .05, .31],
                     max_literals=3):
+    """
+    
+    primal_p = probability for input to be a (scalar, vector, matrix)
+    primitive_p = probability for primitive to be (mono, bi, reduce, special, matmul)
+    """
     code = "import jax\nimport jax.numpy as jnp\n"
     num_i, num_v, num_o = info
     env = {}
@@ -335,9 +339,10 @@ def make_random_code(key,
     for _ in range(num_i):
         subkey, key = jrand.split(key, 2)
         ndims = jrand.choice(subkey, jnp.arange(0, 3), (), p=primal_p)
-        primal = make_random_primal(key, ndims)
+        primal_code, primal = make_random_primal(key, ndims)
         var = "v"+str(count)
         write(var, primal)
+        code += f"{var} = " + primal_code + "\n"
         count += 1
 
     f_inputs = list(env.keys())
@@ -348,11 +353,10 @@ def make_random_code(key,
     num_literals = jrand.randint(key, (), 0, max_literals) # number of literals
     for _ in range(num_literals):
         subkey, key = jrand.split(key, 2)
-        literal = make_random_primal(subkey, ndims)
-        shape = literal.shape
+        literal_code, literal = make_random_primal(subkey, ndims)
         var = "v"+str(count)
-        code += f"    {var} = jnp.ones({shape})\n"
         write(var, literal)
+        code += f"    {var} = " + literal_code + "\n"
         count += 1
         
     # Adding randomly chosen equations
@@ -414,10 +418,10 @@ def make_random_code(key,
     code += "global jaxpr\n"
     code += "jaxpr = jax.make_jaxpr(f)(" + ",".join(f_inputs) + ")"
 
-    input_params = {v:env[v] for v in f_inputs}
-    exec(code, globals(), input_params)
+    # input_params = {v:env[v] for v in f_inputs}
+    exec(code, globals())
     
-    del inputs, outputs, input_params, out_idxs, unused_vars, unused_vars_list
+    del inputs, outputs, out_idxs, unused_vars, unused_vars_list
     
     return code, jaxpr  
 
@@ -428,7 +432,7 @@ def make_random_derivative_code(key,
                                 primitive_p=[.2, .7, .1, .0, .0],
                                 max_literals=3):
     """
-    prim_p = (mono_prims, bi_prims, reduce_prims, special_prims, dot_general_prims)
+    primitives_p = (mono_prims, bi_prims, reduce_prims, special_prims, dot_general_prims)
     """
     code = "import jax\nimport jax.numpy as jnp\n"
     num_i, num_v, num_o = info
@@ -448,9 +452,10 @@ def make_random_derivative_code(key,
     for _ in range(num_i):
         subkey, key = jrand.split(key, 2)
         ndims = jrand.choice(subkey, jnp.arange(0, 3), (), p=primal_p)
-        primal = make_random_primal(key, ndims)
+        primal_code, primal = make_random_primal(key, ndims)
         var = "v"+str(count)
         write(var, primal)
+        code += f"{var} = " + primal_code + "\n"
         count += 1
 
     f_inputs = list(env.keys())
@@ -461,11 +466,10 @@ def make_random_derivative_code(key,
     num_literals = jrand.randint(key, (), 0, max_literals) # number of literals
     for _ in range(num_literals):
         subkey, key = jrand.split(key, 2)
-        literal = make_random_primal(subkey, ndims)
-        shape = literal.shape
+        literal_code, literal = make_random_primal(subkey, ndims)
         var = "v"+str(count)
-        code += f"    {var} = jnp.ones({shape})\n"
         write(var, literal)
+        code += f"    {var} = " + literal_code + "\n"
         count += 1
         
     # Adding randomly chosen equations
@@ -521,17 +525,13 @@ def make_random_derivative_code(key,
     out_idxs = jrand.choice(akey, jnp.arange(num_i+num_literals, len(inputs)-1), (num_o-l-1,), replace=False)
     out_idxs = list(jnp.append(out_idxs, -1))
     outputs = [inputs[idx] for idx in out_idxs + unused_vars_list]
-    
-
     code += "    return " + ",".join(outputs) + "\n"
     
     # Select random subset of argnums that we want to calculate the Jacobian for
     m = jrand.randint(akey, (), 1, len(f_inputs))
     argnums = jrand.choice(bkey, jnp.arange(0, len(f_inputs)), (m,), replace=False)
     argnums = [str(arg) for arg in jnp.sort(argnums)]
-    
-    print(argnums)
-    
+        
     # Use either forward or reverse mode AD depending on the shape of the graph
     if len(f_inputs) < len(outputs):
         code += "jac_f = jax.jacfwd(f, argnums=(" + ",".join(argnums) + "))\n"
@@ -541,10 +541,10 @@ def make_random_derivative_code(key,
     code += "global jaxpr\n"
     code += "jaxpr = jax.make_jaxpr(jac_f)(" + ",".join(f_inputs) + ")"
 
-    input_params = {v:env[v] for v in f_inputs}
-    exec(code, globals(), input_params)
+    # input_params = {v:env[v] for v in f_inputs}
+    exec(code, globals())
     
-    del inputs, outputs, input_params, out_idxs, unused_vars, unused_vars_list
+    del inputs, outputs, out_idxs, unused_vars, unused_vars_list
     
     return code, jaxpr
 

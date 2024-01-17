@@ -1,16 +1,12 @@
-import numpy as np
-
 import jax
 import jax.numpy as jnp
-
-from ..interpreter.from_jaxpr import make_graph
 
 
 S = lambda a, b: jnp.cos(a)*jnp.sin(b) + jnp.sin(a)*jnp.cos(b)
 C = lambda a, b: jnp.cos(a)*jnp.cos(b) - jnp.sin(a)*jnp.sin(b)
 
 # Taken from https://dergipark.org.tr/en/download/article-file/2289226
-def position_angles_6DOF(t1, t2, t3, t4, t5, t6):
+def RobotArm_6DOF(t1, t2, t3, t4, t5, t6):
     a1 = 175.
     a2 = 890.
     a3 = 50.
@@ -57,8 +53,4 @@ def position_angles_6DOF(t1, t2, t3, t4, t5, t6):
     
     pz = a2*s2 + d1 + a3*s23 - d4*c23 + d6*(s23*c4*s5 - c23*c5)
     return px, py, pz, z, y_, z__
-
-    
-def make_6DOF_robot():
-    return make_graph(position_angles_6DOF, 1., 1., 1., 1., 1., 1.)
 

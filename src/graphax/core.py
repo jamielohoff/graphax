@@ -1,313 +1,224 @@
-""" 
-GPU-friendly edge and vertex elimination procedures for Cross-Country Elimination 
-that are totally JIT-compilable. For an in-depth discussion of Cross-Country 
-Elimination and the methods described here see the book 
-`Evaluating Derivatives` by Griewank et al., 2008,
-https://doi.org/10.1137/1.9780898717761
-
-DO NOT TOUCH!
-"""
-
-from functools import partial
-from typing import Sequence, Tuple
+from typing import Callable, Sequence, Union
+from functools import wraps, partial
+from collections import defaultdict
 
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
-from chex import Array
+from jax._src.util import safe_map
+import jax._src.core as core
 
-# Every entry in the 3-dimensional tensor has the following meaning:
-# (sparsity type, Jacobian shape 1st input component == 1st component, 
-#                 Jacobain shape 2nd input component == 2nd component,
-#                 Jacobian shape 1st output component == 3rd component,
-#                 Jacobian shape 2nd output component == 4th component)
-# Thus the current implementation can only deal with scalars vectors and matrices
-# and related operations. 
-# NOTE: No support for higher-order tensors!
-
-# Sparsity types explanation:
-# 0: No edge between vertices
-# 1: Dense Jacobian, i.e. no Kronecker symbols
-# 8: For "copy" operation that keep sparsity
-#
-# Kronecker symbol between components: 
-# 2: (1, 3)
-# 3: (2, 4)
-# 4: (1, 4)
-# 5: (2, 3)
-# 6: (1, 3) and (2, 4)
-# 7: (1, 4) and (2, 3)
-
-# Row idx is incoming edge, col idx is outgoing edge
-# For meaning of the different numbers, "checkout fmas_sparsity_map()" function
-CONTRACTION_MAP =  jnp.array([[[0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0]],
-                              
-                              [[0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0]],
-                              
-                              [[0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
-                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 1, 0, 1, 1, 0, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0]],
-                              
-                              [[0, 0, 0, 0, 0, 0, 0, 0, 0],
-                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
-                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 1, 1, 1, 1, 1, 1, 1, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 1, 1, 0, 0, 1, 0, 0, 0],
-                               [0, 0, 0, 0, 0, 0, 0, 0, 0]]])    
-
-# Row idx is incoming edge, col idx is outgoing edge
-# Gives the resulting sparsity type if two hyperdimensional Jacobians
-# are multiplied with each other
-MUL_SPARSITY_MAP = jnp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
-                              [0, 1, 1, 1, 1, 1, 1, 1, 1],
-                              [0, 1, 2, 1, 4, 1, 2, 4, 2],
-                              [0, 1, 1, 3, 1, 5, 3, 5, 3],
-                              [0, 1, 1, 4, 1, 2, 4, 2, 4],
-                              [0, 1, 5, 1, 3, 1, 5, 3, 5],
-                              [0, 1, 2, 3, 4, 5, 6, 7, 6],
-                              [0, 1, 5, 4, 3, 2, 7, 6, 7],
-                              [0, 1, 2, 3, 4, 5, 6, 7, 8]])
-
-# Row idx is incoming edge, col idx is outgoing edge
-# Gives the resulting sparsity type if two hyperdimensional Jacobians
-# are added to each other
-ADD_SPARSITY_MAP = jnp.array([[0, 1, 2, 3, 4, 5, 6, 7, 8],
-                              [1, 1, 1, 1, 1, 1, 1, 1, 1],
-                              [2, 1, 2, 1, 1, 1, 2, 1, 2],
-                              [3, 1, 1, 3, 1, 1, 3, 1, 3],
-                              [4, 1, 1, 1, 4, 1, 1, 4, 4],
-                              [5, 1, 1, 1, 1, 5, 1, 5, 5],
-                              [6, 1, 2, 3, 1, 1, 6, 1, 6],
-                              [7, 1, 1, 1, 4, 5, 1, 7, 7],
-                              [8, 1, 2, 3, 4, 5, 6, 7, 8]])
+from .primitives import elemental_rules
+from .sparse.utils import zeros_like, get_largest_tensor
 
 
-Edge = Tuple[int, int]
+def tree_allclose(tree1, tree2, equal_nan: bool = False):
+    allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan)
+    is_equal = jtu.tree_map(allclose, tree1, tree2)
+    return jtu.tree_reduce(jnp.logical_and, is_equal)
+
+def jacve(fun: Callable, 
+            order: Union[Sequence[int], str], 
+            argnums: Sequence[int] = (0,),
+            count_ops: bool = False) -> Callable:
+    @wraps(fun)
+    def wrapped(*args, **kwargs):
+        # TODO Make repackaging work properly with one input value only
+        flattened_args, in_tree = jtu.tree_flatten(args)
+        closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
+        out = vertex_elimination_jaxpr(closed_jaxpr.jaxpr, 
+                                        order, 
+                                        closed_jaxpr.literals, 
+                                        *args, 
+                                        argnums=argnums,
+                                        count_ops=count_ops)
+        if count_ops: 
+            out, op_counts = out
+            out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
+            if len(closed_jaxpr.jaxpr.outvars) == 1:
+                return out[0], op_counts
+            return jtu.tree_unflatten(out_tree, out), op_counts
+        else:
+            out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
+            if len(closed_jaxpr.jaxpr.outvars) == 1:
+                return out[0]
+            return jtu.tree_unflatten(out_tree, out)
+    return wrapped
 
 
-def get_shape(edges: Array):
-    num_v = edges.shape[2]
-    num_i = edges.shape[1] - num_v - 1
-    return num_i, num_v
-
-
-def get_output_mask(edges: Array):
-    return edges.at[2, 0, :].get()
-
-
-def get_vertex_mask(edges: Array):
-    return edges.at[1, 0, :].get()
-
-
-def get_elimination_order(edges: Array):
-    return edges.at[3, 0, :].get()
-
-
-def make_empty_edges(info: Array) -> Array:
-    """
-    Creates an empty matrix fo represent the connectivity of the computational graph.
-    """
-    num_i = info[0]
-    num_v = info[1]
-    return jnp.zeros((5, num_i+num_v+1, num_v), dtype=jnp.int32)
-
-
-@partial(jax.vmap, in_axes=(0, 0))
-def sparsity_where(in_edge, out_edge):
-    # takes care of the corner cases where there already exists an edge with a 
-    # different sparsity type
-    i = in_edge.astype(jnp.int32)
-    j = out_edge.astype(jnp.int32)
-    return ADD_SPARSITY_MAP[i, j]
-
-
-@partial(jax.vmap, in_axes=(1, None))
-def sparsity_fmas_map(in_edge, out_edge):
-    """
-    TODO add documentation here!
-    """
-    i = in_edge[0].astype(jnp.int32)
-    j = out_edge[0].astype(jnp.int32)
-    new_sparsity_type = MUL_SPARSITY_MAP[i, j]
-    contraction_map = CONTRACTION_MAP[:, i, j]
+def _iota_shape(jaxpr, argnums):
+    largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
+    largest_output = get_largest_tensor(jaxpr._outvars)
     
-    masked_factors = lax.cond(jnp.sum(contraction_map) > 0,
-                                lambda a: jnp.where(contraction_map > 0, a, 1),
-                                lambda a: jnp.zeros(4, dtype=jnp.int32),
-                                out_edge[1:])
-
-    fmas = jnp.prod(in_edge[1:3])*jnp.prod(masked_factors)
-    return new_sparsity_type, fmas
-
-
-def get_fmas_jacprod(_jac_edges, fmas, col, _col, nonzero, vertex, num_i):
-    # Define aliases
-    col_ins = col.at[1:3, :].get()
-    col_outs = col.at[3:, :].get()
+    # TODO check the first condition for correctness
+    if largest_input == 1 and largest_output == 1:
+        return None
+    elif largest_output == 1:
+        return jnp.ones((1, largest_input))
+    elif largest_input == 1:
+        return jnp.ones((largest_output, 1))
+    else:
+        return jnp.eye(largest_output, largest_input) 
     
-    _col_ins = _col.at[1:3, :].get()
-    _col_outs = _col.at[3:, :].get()
+    
+def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
+    """Function that eliminates a vertex from the computational graph.
+
+    Args:
+        vertex (_type_): _description_
+        jaxpr (_type_): _description_
+        graph (_type_): _description_
+        transpose_graph (_type_): _description_
+        iota (_type_): _description_
+        vo_vertices (_type_): _description_
+        counters (_type_): _description_
+    """
+    eqn = jaxpr.eqns[vertex-1]
+    num_mul, num_add = 0, 0
+    for out_edge in graph[eqn.outvars[0]].keys():
+        post_val = graph[eqn.outvars[0]][out_edge]
+        for in_edge in transpose_graph[eqn.outvars[0]].keys():
+            pre_val = transpose_graph[eqn.outvars[0]][in_edge]
+                            
+            # Handle stuff like reshape, squeeze etc.
+            # TODO what happens if both have a copy_gradient_fn?
+            if pre_val.copy_gradient_fn is not None and post_val.copy_gradient_fn is not None:
+                raise NotImplementedError("Not implemented for two copy_gradient_fn's")
+            elif pre_val.copy_gradient_fn is not None:
+                edge_outval = pre_val.copy_gradient_fn(pre_val, post_val, iota)
+            elif post_val.copy_gradient_fn is not None:
+                edge_outval = post_val.copy_gradient_fn(pre_val, post_val, iota)
+            else:     
+                print(out_edge, eqn.outvars[0], in_edge)  
+                edge_outval = post_val * pre_val
+                num_mul += 1 # TODO adjust this!
+
+            # If there is already an edge between the two vertices, add the new
+            # edge to the existing one
+            if graph.get(in_edge).get(out_edge) is not None:
+                _edge = transpose_graph[out_edge][in_edge]
+                edge_outval += _edge
+                num_add += 1
+                
+            graph[in_edge][out_edge] = edge_outval
+            transpose_graph[out_edge][in_edge] = edge_outval
+                
+    # Cleanup of input and output vertices
+    if vertex not in vo_vertices:
+        for in_edge in transpose_graph[eqn.outvars[0]].keys():
+            del graph[in_edge][eqn.outvars[0]]
+    for out_edge in graph[eqn.outvars[0]].keys():    
+        del transpose_graph[out_edge][eqn.outvars[0]]
+    
+    # Cleanup eliminated vertices   
+    del graph[eqn.outvars[0]]
+    if vertex not in vo_vertices:
+        del transpose_graph[eqn.outvars[0]]
+
+    return num_mul, num_add
+
+
+def _checkify_order(order, jaxpr, vo_vertices):
+    if type(order) is str:
+        if order == "forward" or order == "fwd":
+            return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
+                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices]
+        elif order == "reverse" or order == "rev":
+            return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
+                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices][::-1]
+        else:
+            raise ValueError(f"{order} is not a valid order identifier!")
+    return order
+
+
+def vertex_elimination_jaxpr(jaxpr: core.Jaxpr, 
+                            order: Union[Sequence[int], str], 
+                            consts: Sequence[core.Literal], 
+                            *args, 
+                            argnums: Sequence[int] = (0,),
+                            count_ops: bool = True):    
+    env = {}
+    graph = defaultdict(lambda: defaultdict()) # Input connectivity
+    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
+    
+    iota = _iota_shape(jaxpr, argnums)
+
+    # Reads variable and corresponding traced shaped array
+    def read(var):
+        if type(var) is core.Literal:
+            return var.val
+        return env[var]
+
+    # Adds new variable and corresponding traced shaped array
+    def write(var, val):
+        env[var] = val
         
-    # Calculate fmas
-    new_sparsity_col, _fmas = sparsity_fmas_map(col, _col[:, vertex+num_i-1])
-    new_sparsity_col = sparsity_where(_col[0, :], new_sparsity_col)
-    new_sparsity_col = jnp.broadcast_to(new_sparsity_col, (1, *new_sparsity_col.shape))
-    fmas = jnp.sum(_fmas)
-    # In shape column
-    new_col_ins = jnp.where(col_ins[1] > 0, col_ins, _col_ins)
-    
-    # Out shape column
-    new_col_outs = jnp.broadcast_to(_col_outs[:, vertex+num_i-1, jnp.newaxis], _col_outs.shape)
-    new_col_outs = jnp.where(col_outs[1] > 0, new_col_outs, _col_outs)
-    new_col = jnp.concatenate((new_sparsity_col, new_col_ins, new_col_outs), axis=0)
+    # Writes a new elemental partial to the graph and transpose_graph
+    def write_elemental(outvar, invar, val):
+        if isinstance(invar, core.Var):
+            graph[invar][outvar] = val
+            transpose_graph[outvar][invar] = val
+                            
+    jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
+    safe_map(write, jaxpr.invars, args)
+    safe_map(write, jaxpr.constvars, consts)
+
+    vo_vertices = set() # contains all intermediate and output vertices
+    counter = 1
+    var_id = {}
+    # Loop though elemental partials and create an abstract representation of the
+    # computational graph
+    for eqn in jaxpr.eqns:
+        # Treatment of intermediate variables that are also output variables
+        for outvar in eqn.outvars:
+            if type(outvar) is core.Var and outvar not in var_id.keys():
+                    var_id[outvar] = counter
+                    counter += 1
+                    
+        for invar in eqn.invars:
+            if invar in jaxpr._outvars:
+                vertex = var_id[invar]
+                vo_vertices.add(vertex)
+                
+        invals = safe_map(read, eqn.invars)              
+        if eqn.primitive not in elemental_rules:
+            raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
         
-    # Set the Jacobian adjacency matrix
-    _jac_edges = lax.dynamic_update_index_in_dim(_jac_edges, new_col, nonzero, -1)
+        primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
+        safe_map(write, eqn.outvars, [primal_outvals])
+        
+        invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        # NOTE Currently only able to treat one output variable
+        _write_elemental = partial(write_elemental, eqn.outvars[0])
+        # print(eqn.outvars, invars, elemental_outvals)
+        safe_map(_write_elemental, invars, elemental_outvals)
             
-    return _jac_edges, fmas
+    # Eliminate the vertices
+    num_muls, num_adds = 0, 0
+    counts = []
+    order = _checkify_order(order, jaxpr, vo_vertices)
+    for vertex in order:
+        num_mul, num_add = _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices)
+        if count_ops:
+            counts.append((num_mul, num_add))
+            num_muls += num_mul
+            num_adds += num_add
+           
+    # Collect outputs   
+    jac_vals = [graph[invar][outvar].full(iota) 
+                if outvar in list(graph[invar].keys()) else zeros_like(invar, outvar)
+                for outvar in jaxpr.outvars for invar in jaxpr_invars]
 
-
-def vertex_eliminate(vertex: int, edges: Array) -> Tuple[Array, float]:
-    """
-    Fully JIT-compilable function that implements the vertex-elimination procedure. 
-    Vertex elimination means that we front-eliminate all incoming edges and 
-    back-eliminate all outgoing edges of a given vertex. However, the implementation
-    here does not make use of the function above to be more efficient.
-
-    Arguments:
-        vertex (int): Vertex we want to eliminate.
-        edges (Array): Matrix that describes the connectivity of the 
-                        computational graph.
-
-    Returns:
-        A tuple that contains the new edge representation of the computational
-        graph and the number of fmas (fused multiplication-addition ops).
-    """
-    num_i, num_v = get_shape(edges)
-    jac_edges = edges.at[:, 1:, :].get()
-    col = jac_edges.at[:, :, vertex-1].get()
+    # Restructure Jacobians for more complicated pytrees
+    n = len(jaxpr_invars)
+    if n > 1:
+        ratio = len(jac_vals)//len(jaxpr_invars)
+        jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
         
-    def update_edges_fn(carry, nonzero):
-        _jac_edges, fmas = carry
-        # Get the index of the operation and the 
-        _col = _jac_edges.at[:, :, nonzero].get()
-        # Calculate the fma operations and the new shapes of the Jacobians for 
-        # the respective and update the vertex
-        _jac_edges, _fmas = lax.cond(nonzero > -1, 
-                                    lambda _e, f, c, _c, nz, v: get_fmas_jacprod(_e, f, c, _c, nz, v, num_i), 
-                                    lambda _e, f, c, _c, nz, v: (_e, 0), 
-                                    _jac_edges, fmas, col, _col, nonzero, vertex)
-        fmas += _fmas        
-        carry = (_jac_edges, fmas)
-        return carry, None
-    
-    nonzeros = jnp.nonzero(jac_edges.at[0, num_i+vertex-1, :].get(),
-                           size=num_v,
-                           fill_value=-1)[0].T
-        
-    output, _ = lax.scan(update_edges_fn, (jac_edges, 0), nonzeros)
-    jac_edges, fmas = output
-    jac_edges = jac_edges.at[:, num_i+vertex-1, :].set(0)
-    jac_edges = jac_edges.at[:, :, vertex-1].set(0)
-
-    edges = edges.at[1, 0, vertex-1].set(1)
-    edges = edges.at[:, 1:, :].set(jac_edges)
-    return edges, fmas
-
-
-def cross_country(order: Sequence[int], edges: Array) -> Array:
-    """
-    Fully JIT-compilable function that implements cross-country elimination 
-    according to the given order.
-
-    Arguments:
-        edges (Array): Matrix that describes the connectivity of the 
-                        computational graph.
-
-    Returns:
-        A tuple that contains the new edge representation of the computational
-        graph and the number of fmas (fused multiplication-addition ops).
-    """
-
-    def cc_fn(carry, vertex):
-        _edges, fmas = carry
-        not_masked = jnp.logical_not(_edges.at[1, 0, vertex-1].get() > 0)
-        _edges, _fmas = lax.cond(not_masked,
-                                lambda e: vertex_eliminate(vertex, e),
-                                lambda e: (e, 0),
-                               _edges)
-        fmas += _fmas
-        carry = (_edges, fmas)
-        return carry, None
-    vertices = jnp.array(order)
-    output, _ = lax.scan(cc_fn, (edges, 0), vertices)
-    return output
-
-
-def forward(edges: Array):
-    """
-    Fully JIT-compilable function that implements forward-mode AD by 
-    eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
-    the ones that are given by vertex_mask, because these are typically the 
-    output vertices.
-
-    Arguments:
-        edges (Array): Matrix that describes the connectivity of the 
-                        computational graph.
-
-    Returns:
-        A tuple that contains the new edge representation of the computational
-        graph and the number of fmas (fused multiplication-addition ops).
-    """
-    num_i, num_vo = get_shape(edges)
-    order = jnp.arange(1, num_vo+1)
-    output = cross_country(order, edges)
-    return output
-
-
-def reverse(edges: Array):
-    """
-    Fully JIT-compilable function that implements reverse-mode AD by 
-    eliminating the vertices in sequential order 1,2,3,...,n-1,n and ignores
-    the ones that are given by vertex_mask, because these are typically the 
-    output vertices.
-
-    Arguments:
-        edges (Array): Matrix that describes the connectivity of the 
-                        computational graph.
-
-    Returns:
-        A tuple that contains the new edge representation of the computational
-        graph and the number of fmas (fused multiplication-addition ops).
-    """
-    num_i, num_vo = get_shape(edges)
-    order = jnp.arange(1, num_vo+1)[::-1]
-    output = cross_country(order, edges)
-    return output
+    if count_ops:
+        print(f"jacve order: {[(int(o), int(c[0])) for o, c in zip(order, counts)]}")
+        print(f"Elimination procedure required {num_muls} multiplications and {num_adds} additions.")
+    return jac_vals
 
