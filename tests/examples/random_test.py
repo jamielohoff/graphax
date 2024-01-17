@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax.random as jrand
 
 import graphax as gx
-from graphax.examples.random_codegenerator import make_random_code
+from graphax.code_generation.random_codegenerator import make_random_code
 
 
 info = [15, 105, 20]

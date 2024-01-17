@@ -1,16 +1,28 @@
-from graphax.core import forward, reverse
+import graphax as gx
 from graphax.examples import (make_simple,
                             make_f,  
                             make_Helmholtz, 
                             make_lighthouse, 
-                            make_hole, 
-                            make_scalar_assignment_tree)
+                            make_hole,
+                            make_cloud_schemes,
+                            make_HumanHeartDipole,
+                            make_PropaneCombustion,
+                            make_Kerr_Sen_metric,
+                            make_BlackScholes,
+                            make_BlackScholes_Jacobian)
 
 
-edges = make_Helmholtz()
-_, ops = forward(edges)
+edges = make_BlackScholes_Jacobian()
+print(edges)
+print(gx.get_shape(edges))
+_, ops = gx.forward(edges)
 print(ops)
-_, ops = reverse(edges)
+_, ops = gx.reverse(edges)
+print(ops)
+
+order = gx.minimal_markowitz(edges)
+output, ops = gx.cross_country(order, edges)
+_, ops = output
 print(ops)
 
 
