@@ -198,18 +198,27 @@ key = jrand.PRNGKey(42)
 # print(tree_allclose(veres, revres))
 
 
-def softmax_attention(X, WQ, WK, WV):
-    q = WQ @ X
-    k = WK @ X
-    v = WV @ X
-    a = q @ k.T
-    return jnn.softmax(a, axis=1) @ v
+# def softmax_attention(X, WQ, WK, WV):
+#     q = WQ @ X
+#     k = WK @ X
+#     v = WV @ X
+#     a = q @ k.T
+#     return jnn.softmax(a, axis=1) @ v
  
-x = jrand.normal(key, (10, 16))
-WQ = jrand.normal(key,(10, 10)) 
-WK = jrand.normal(key,(10, 10))
-WV = jrand.normal(key,(10, 10))
+# x = jrand.normal(key, (10, 16))
+# WQ = jrand.normal(key,(10, 10)) 
+# WK = jrand.normal(key,(10, 10))
+# WV = jrand.normal(key,(10, 10))
 
-print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
-print(jax.make_jaxpr(jacve(softmax_attention, order="fwd", argnums=(1, 2, 3)))(x, WQ, WK, WV))
+# print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
+# print(jax.make_jaxpr(jacve(softmax_attention, order="fwd", argnums=(1, 2, 3)))(x, WQ, WK, WV))
+
+
+def broadcast_add(x, y):
+    return x + y
+
+x = jnp.ones((2, 3))
+y = jnp.ones((1, 3))
+print(jax.make_jaxpr(broadcast_add)(x, y))
+print(jax.make_jaxpr(jacve(broadcast_add, order="rev", argnums=(0, 1)))(x, y))
 

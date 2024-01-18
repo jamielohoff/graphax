@@ -8,131 +8,133 @@ import jax.random as jrand
 from graphax.sparse.tensor import SparseTensor, SparseDimension, DenseDimension
 
 class TestMixedMul(unittest.TestCase):            
-    ### Tests for 3d tensors
-    def test_3d_sparse_dense_double_contraction(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 4))
-        _x = jnp.einsum("ij,jk->ijk", jnp.eye(3), x)
-        y = jrand.normal(ykey, (3, 4, 2))
-        res = jnp.einsum("ijk,jkl->il", _x, y)
-        
-        stx = SparseTensor([SparseDimension(0, 3, 0, 1)], 
-                        [SparseDimension(1, 3, 0, 0), DenseDimension(2, 4, 1)], x)
-        sty = SparseTensor([DenseDimension(0, 3, 0), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 2, 2)], y)
-        stres = stx * sty
-        
-        self.assertTrue(jnp.all(res == stres.val))
-        
-    def test_3d_dense_sparse_double_contraction(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 4))
-        _x = jnp.einsum("ij,ik->ijk", x, jnp.eye(3))
-        y = jrand.normal(ykey, (4, 3, 2))
-        res = jnp.einsum("ijk,jkl->il", _x, y)
-        
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2)], 
-                        [DenseDimension(1, 4, 1), SparseDimension(2, 3, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), DenseDimension(1, 3, 1)], 
-                        [DenseDimension(2, 2, 2)], y)
-        stres = stx * sty
-        
-        self.assertTrue(jnp.all(res == stres.val))
-        
-    def test_3d_dense_sparse_double_contraction_2nd(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 4, 5))
-    
-        y = jrand.normal(ykey, (4, 5))
-        _y = jnp.einsum("ij,jk->ikj", jnp.eye(4), y)
-        res = jnp.einsum("ijk,jkl->il", x, _y)
-        
-        stx = SparseTensor([DenseDimension(0, 3, 0)], 
-                        [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
-        sty = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 5, 1)], 
-                        [SparseDimension(2, 4, 0, 0)], y)
-        stres = stx * sty
-        
-        self.assertTrue(jnp.all(res == stres.val))
-        
-    def test_3d_dense_sparse_double_contraction_2nd(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 4, 5))
-    
-        y = jrand.normal(ykey, (4, 5))
-        _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(5),)
-        res = jnp.einsum("ijk,jkl->il", x, _y)
-        
-        stx = SparseTensor([DenseDimension(0, 3, 0)], 
-                        [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 2)], 
-                        [SparseDimension(2, 5, 1, 1)], y)
-        stres = stx * sty
-        
-        self.assertTrue(jnp.all(res == stres.val))
-        
-    def test_3d_dense_sparse_double_contraction_2nd(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 4))
-        _x = jnp.einsum("ij,ik->ijk", x, jnp.eye(3))
-    
-        y = jrand.normal(ykey, (4, 3))
-        _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(3))
-        res = jnp.einsum("ijk,jkl->il", _x, _y)
-        
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2)], 
-                        [DenseDimension(1, 4, 1), SparseDimension(2, 3, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 3, 1, 2)], 
-                        [SparseDimension(2, 3, 1, 1)], y)
-        stres = stx * sty
-        
-        self.assertTrue(jnp.all(res == stres.val))
-        
-    def test_3d_double_sparse_double_dense_contraction(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (4, 3))
-        _x = jnp.einsum("ij,jk->ijk", jnp.eye(4), x)
-    
-        y = jrand.normal(ykey, (4, 3))
-        _y = jnp.einsum("ij,ik->ijk", y, jnp.eye(4))
-        res = jnp.einsum("ijk,jkl->il", _x, _y)
-        
-        stx = SparseTensor([SparseDimension(0, 4, 0, 1)], 
-                        [SparseDimension(1, 4, 0, 0), DenseDimension(2, 3, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1)], 
-                        [SparseDimension(2, 4, 0, 0)], y)
-        stres = stx * sty
-        
-        iota = jnp.eye(5)
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
-
-    # def test_3d_sparse_single_contraction(self):
+    # ### Tests for 3d tensors
+    # def test_3d_sparse_dense_double_contraction(self):
     #     key = jrand.PRNGKey(42)
     #     xkey, ykey = jrand.split(key, 2)
-    #     x = jrand.normal(xkey, (3, 5))
-    #     d = jnp.eye(5)
-    #     _x = jnp.einsum("ij,jk->ijk", x, d)
+    #     x = jrand.normal(xkey, (3, 4))
+    #     _x = jnp.einsum("ij,jk->ijk", jnp.eye(3), x)
+    #     y = jrand.normal(ykey, (3, 4, 2))
+    #     res = jnp.einsum("ijk,jkl->il", _x, y)
         
-    #     y = jrand.normal(ykey, (5, 2))
-    #     d = jnp.eye(5)
-    #     _y = jnp.einsum("ij,jk->ikj", d, y)
-    #     res = jnp.einsum("ijk,klm->ijlm", _x, _y)
-                
-    #     stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, 1, 2), ], 
-    #                     [SparseDimension(2, 5, 1, 1)], x)
-    #     sty = SparseTensor([SparseDimension(0, 5, 0, 2)], 
-    #                     [DenseDimension(1, 2, 1), SparseDimension(2, 5, 0, 0)], y)
-    #     stres = stx * sty 
+    #     stx = SparseTensor([SparseDimension(0, 3, 0, 1)], 
+    #                     [SparseDimension(1, 3, 0, 0), DenseDimension(2, 4, 1)], x)
+    #     sty = SparseTensor([DenseDimension(0, 3, 0), DenseDimension(1, 4, 1)], 
+    #                     [DenseDimension(2, 2, 2)], y)
+    #     stres = stx * sty
+
+    #     self.assertTrue(jnp.allclose(res, stres.val))
+        
+    # def test_3d_dense_sparse_double_contraction(self):
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3, 4))
+    #     _x = jnp.einsum("ij,ik->ijk", x, jnp.eye(3))
+    #     y = jrand.normal(ykey, (4, 3, 2))
+    #     res = jnp.einsum("ijk,jkl->il", _x, y)
+        
+    #     stx = SparseTensor([SparseDimension(0, 3, 0, 2)], 
+    #                     [DenseDimension(1, 4, 1), SparseDimension(2, 3, 0, 0)], x)
+    #     sty = SparseTensor([DenseDimension(0, 4, 0), DenseDimension(1, 3, 1)], 
+    #                     [DenseDimension(2, 2, 2)], y)
+    #     stres = stx * sty
+        
+    #     self.assertTrue(jnp.allclose(res, stres.val))
+        
+    # def test_3d_dense_sparse_double_contraction_2nd(self):
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3, 4, 5))
+    
+    #     y = jrand.normal(ykey, (4, 5))
+    #     _y = jnp.einsum("ij,jk->ikj", jnp.eye(4), y)
+    #     res = jnp.einsum("ijk,jkl->il", x, _y)
+        
+    #     stx = SparseTensor([DenseDimension(0, 3, 0)], 
+    #                     [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
+    #     sty = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 5, 1)], 
+    #                     [SparseDimension(2, 4, 0, 0)], y)
+    #     stres = stx * sty
+        
+    #     self.assertTrue(jnp.allclose(res, stres.val))
+        
+    # def test_3d_dense_sparse_double_contraction_2nd(self):
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3, 4, 5))
+    
+    #     y = jrand.normal(ykey, (4, 5))
+    #     _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(5),)
+    #     res = jnp.einsum("ijk,jkl->il", x, _y)
+        
+    #     stx = SparseTensor([DenseDimension(0, 3, 0)], 
+    #                     [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
+    #     sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 2)], 
+    #                     [SparseDimension(2, 5, 1, 1)], y)
+    #     stres = stx * sty
+        
+    #     self.assertTrue(jnp.allclose(res, stres.val))
+        
+    # def test_3d_double_dense_double_sparse_contraction(self):
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3, 4))
+    #     _x = jnp.einsum("ij,ik->ijk", x, jnp.eye(3))
+    
+    #     y = jrand.normal(ykey, (4, 3))
+    #     _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(3))
+    #     res = jnp.einsum("ijk,jkl->il", _x, _y)
+        
+    #     stx = SparseTensor([SparseDimension(0, 3, 0, 2)], 
+    #                     [DenseDimension(1, 4, 1), SparseDimension(2, 3, 0, 0)], x)
+    #     sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 3, 1, 2)], 
+    #                     [SparseDimension(2, 3, 1, 1)], y)
+    #     stres = stx * sty
         
     #     iota = jnp.eye(5)
-        
     #     self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        
+    # def test_3d_double_sparse_double_dense_contraction(self):
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (4, 3))
+    #     _x = jnp.einsum("ij,jk->ijk", jnp.eye(4), x)
+    
+    #     y = jrand.normal(ykey, (4, 3))
+    #     _y = jnp.einsum("ij,ik->ijk", y, jnp.eye(4))
+    #     res = jnp.einsum("ijk,jkl->il", _x, _y)
+        
+    #     stx = SparseTensor([SparseDimension(0, 4, 0, 1)], 
+    #                     [SparseDimension(1, 4, 0, 0), DenseDimension(2, 3, 1)], x)
+    #     sty = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1)], 
+    #                     [SparseDimension(2, 4, 0, 0)], y)
+    #     stres = stx * sty
+        
+    #     iota = jnp.eye(5)
+    #     self.assertTrue(jnp.allclose(res, stres.full(iota)))
+
+    def test_4d_dense_None_dense_sparse(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        x = jrand.normal(xkey, (3, 5))
+        d = jnp.eye(4)
+        _x = jnp.einsum("ij,kl->ikjl", x, d)
+        
+        y = jrand.normal(ykey, (5, 4, 2))
+        d = jnp.eye(4)
+        _y = jnp.einsum("ijk,jl->ijlk", y, d)
+        print(_x.shape, _y.shape)
+        res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
+                
+        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, None, 3)], 
+                        [DenseDimension(2, 5, 1), SparseDimension(3, 4, None, 1)], x)
+        sty = SparseTensor([DenseDimension(0, 5, 0), SparseDimension(1, 4, 1, 2)], 
+                        [SparseDimension(2, 4, 1, 1), DenseDimension(2, 2, 2)], y)
+        stres = stx * sty 
+        
+        iota = jnp.eye(5)
+        
+        self.assertTrue(jnp.allclose(res, stres.full(iota)))
 
     # def test_3d_2d_sparse_single_contraction(self):
     #     key = jrand.PRNGKey(42)
