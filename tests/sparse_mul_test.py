@@ -34,7 +34,7 @@ class TestBroadcastMul(unittest.TestCase):
         stres = stx * sty
         
         iota = jnp.eye(4)
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_simple_sparse_dense(self):
         key = jrand.PRNGKey(42)
@@ -49,7 +49,7 @@ class TestBroadcastMul(unittest.TestCase):
         
         iota = jnp.eye(4)
         
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_simple_dense_sparse(self):
         key = jrand.PRNGKey(42)
@@ -64,7 +64,7 @@ class TestBroadcastMul(unittest.TestCase):
         
         iota = jnp.eye(4)
 
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
     
     def test_simple_Nones(self):        
         _x = jnp.eye(3)
@@ -80,7 +80,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
     def test_simple_dense_None(self): 
         key = jrand.PRNGKey(42)       
@@ -97,7 +97,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
     def test_simple_None_dense(self):        
         key = jrand.PRNGKey(42)  
@@ -114,7 +114,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     ## Tests for 3d tensors
     def test_3d_dense_single_contraction(self):
@@ -167,7 +167,7 @@ class TestBroadcastMul(unittest.TestCase):
         
         iota = jnp.eye(5)
         
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_3d_2d_sparse_single_contraction(self):
         key = jrand.PRNGKey(42)
@@ -189,7 +189,7 @@ class TestBroadcastMul(unittest.TestCase):
         
         iota = jnp.eye(5)
 
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_2d_3d_sparse_single_contraction(self):
         key = jrand.PRNGKey(42)
@@ -212,7 +212,7 @@ class TestBroadcastMul(unittest.TestCase):
         
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
     
     ### Tests for 4d tensors
     def test_4d_sparse_single_contraction(self):
@@ -240,7 +240,7 @@ class TestBroadcastMul(unittest.TestCase):
         print(stres.val, stres.val.shape, stres.val.sum())
         print(res, res.shape, res.sum())
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_4d_sparse_cross_single_contraction(self):
         key = jrand.PRNGKey(42)
@@ -259,12 +259,12 @@ class TestBroadcastMul(unittest.TestCase):
         stx = SparseTensor([SparseDimension(0, 4, 0, 3), DenseDimension(1, 3, 1)], 
                         [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
         sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(3, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_4d_softmax_sparse_single_contraction(self):
         key = jrand.PRNGKey(42)
@@ -283,13 +283,13 @@ class TestBroadcastMul(unittest.TestCase):
         stx = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1), ], 
                         [SparseDimension(2, 4, 0, 0), DenseDimension(3, 5, 2)], x)
         sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 3), ], 
-                        [DenseDimension(3, 2, 2), SparseDimension(3, 5, 1, 1)], y)
+                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 1, 1)], y)
         
         stres = stx * sty
         
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_4d_softmax_sparse_single_contraction_with_Nones(self):
         key = jrand.PRNGKey(42)
@@ -313,7 +313,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
     def test_4d_sparse_double_contraction(self):
         key = jrand.PRNGKey(42)
@@ -339,7 +339,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(15)
                 
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
     
     def test_4d_dense_double_contraction(self):
@@ -359,7 +359,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(15)
                 
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
         
     def test_4d_sparse_single_contraction_with_two_Nones(self):
@@ -384,7 +384,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
         
     def test_4d_sparse_dense_with_only_Nones(self): 
@@ -407,7 +407,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
         
     def test_4d_sparse_Nones(self): 
@@ -434,7 +434,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
         
     def test_4d_only_Nones(self):        
@@ -457,7 +457,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
         
     def test_4d_double_sparse_single_sparse_Nones(self):   
@@ -484,7 +484,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
         
     def test_4d_so_tired_of_it(self):   
@@ -511,7 +511,7 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
     def test_4d_dense_None_None_dense(self):   
         key = jrand.PRNGKey(42)
@@ -536,7 +536,57 @@ class TestBroadcastMul(unittest.TestCase):
                 
         iota = jnp.eye(5)
             
-        self.assertTrue(jnp.allclose(res, stres.full(iota)))
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
+        
+    ### Replication tests
+    def test_replication_2d(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        
+        x = jrand.normal(xkey, (4,))
+        _x = jnp.eye(4) * x
+        _x = jnp.expand_dims(_x, 2)
+        _x = jnp.tile(_x, (1, 1, 5))
+        
+        y = jrand.normal(ykey, (4, 5))
+        _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(5))
+
+
+        res = jnp.einsum("ijk,jkl->il", _x, _y)
+        
+        stx = SparseTensor([SparseDimension(0, 4, 0, 1)], 
+                        [SparseDimension(1, 4, 0, 0), DenseDimension(2, 5, None)], x)
+        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 2)], 
+                        [SparseDimension(2, 5, 1, 1)], y)
+        stres = stx * sty
+                
+        iota = jnp.eye(5)
+            
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
+        
+    def test_replication_2d_2nd(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        
+        x = jrand.normal(xkey, (4, 5))
+        _x = jnp.einsum("ij,ik->ikj", x, jnp.eye(4))
+        
+        y = jrand.normal(ykey, (5,))
+        _y = jnp.eye(5) * y
+        _y = jnp.expand_dims(_y, 0)
+        _y = jnp.tile(_y, (4, 1, 1))
+
+        res = jnp.einsum("ijk,jkl->il", _x, _y)
+        
+        stx = SparseTensor([SparseDimension(0, 4, 0, 1)], 
+                        [SparseDimension(1, 4, 0, 0), DenseDimension(2, 5, 1)], x)
+        sty = SparseTensor([DenseDimension(0, 4, None), SparseDimension(1, 5, 0, 2)], 
+                        [SparseDimension(2, 5, 0, 1)], y)
+        stres = stx * sty
+                
+        iota = jnp.eye(5)
+            
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
 
 if __name__ == '__main__':

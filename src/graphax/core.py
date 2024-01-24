@@ -83,15 +83,15 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             pre_val = transpose_graph[eqn.outvars[0]][in_edge]
                             
             # Handle stuff like reshape, squeeze etc.
-            # TODO what happens if both have a copy_gradient_fn?
-            if pre_val.copy_gradient_fn is not None and post_val.copy_gradient_fn is not None:
-                raise NotImplementedError("Not implemented for two copy_gradient_fn's")
-            elif pre_val.copy_gradient_fn is not None:
-                edge_outval = pre_val.copy_gradient_fn(pre_val, post_val, iota)
-            elif post_val.copy_gradient_fn is not None:
-                edge_outval = post_val.copy_gradient_fn(pre_val, post_val, iota)
+            # TODO what happens if both have a jac_transforms?
+            print(out_edge, eqn.outvars[0], in_edge)  
+            if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
+                raise NotImplementedError("Not implemented for two jac_transforms!")
+            elif len(pre_val.jac_transforms) > 0:
+                edge_outval = pre_val.unload_transforms(post_val, iota)
+            elif len(post_val.jac_transforms) > 0:
+                edge_outval = pre_val.prepend_transforms(post_val)
             else:     
-                print(out_edge, eqn.outvars[0], in_edge)  
                 edge_outval = post_val * pre_val
                 num_mul += 1 # TODO adjust this!
 
@@ -99,6 +99,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
+                print("add edge", out_edge, in_edge, _edge)
                 edge_outval += _edge
                 num_add += 1
                 
@@ -182,7 +183,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                 vertex = var_id[invar]
                 vo_vertices.add(vertex)
                 
-        invals = safe_map(read, eqn.invars)              
+        invals = safe_map(read, eqn.invars)            
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
         
@@ -193,8 +194,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         # NOTE Currently only able to treat one output variable
         _write_elemental = partial(write_elemental, eqn.outvars[0])
         # print(eqn.outvars, invars, elemental_outvals)
-        safe_map(_write_elemental, invars, elemental_outvals)
-            
+        safe_map(_write_elemental, invars, elemental_outvals)        
+
     # Eliminate the vertices
     num_muls, num_adds = 0, 0
     counts = []
@@ -207,7 +208,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             num_adds += num_add
            
     # Collect outputs   
-    jac_vals = [graph[invar][outvar].full(iota) 
+    jac_vals = [graph[invar][outvar].dense(iota) 
                 if outvar in list(graph[invar].keys()) else zeros_like(invar, outvar)
                 for outvar in jaxpr.outvars for invar in jaxpr_invars]
 
