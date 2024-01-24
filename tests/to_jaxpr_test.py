@@ -1,224 +1,246 @@
+import unittest
+
 import jax
 import jax.nn as jnn
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
+from jax.tree_util import tree_map
 
 from graphax import jacve, tree_allclose
-from graphax.examples.randoms import f, g
+from graphax.examples import Simple, Helmholtz, f, g
 
 
-key = jrand.PRNGKey(42)
+class GeneralADTest(unittest.TestCase): 
+    # def test_broadcast_add(self):
+    #     def broadcast_add(x, y):
+    #         return jnp.tanh(x + y)
 
-# def f(x, y):
-#     x = jnp.sin(x)
-#     x = lax.slice(x, start_indices=[0, 0], limit_indices=[2, 3])
-#     return x * y
+    #     x = 2*jnp.ones((2, 3))
+    #     y = 3*jnp.ones((1, 3))
+    #     print(jax.make_jaxpr(broadcast_add)(x, y))
+    #     print(jax.make_jaxpr(jacve(broadcast_add, order="fwd", argnums=(0, 1)))(x, y))
+    #     jac_rev = jax.jit(jacve(broadcast_add, order="fwd", argnums=(0, 1)))
+    #     veres = jac_rev(x, y)
 
-# xkey, ykey = jrand.split(key, 2)
-# x = jrand.normal(xkey, (3,3))
-# y = jrand.normal(ykey, (3,))
+    #     print(jax.make_jaxpr(jax.jacfwd(broadcast_add, argnums=(0, 1)))(x, y))
+    #     jax_jac_rev = jax.jit(jax.jacfwd(broadcast_add, argnums=(0, 1)))
+    #     revres = jax_jac_rev(x, y)
 
-# jaxpr = jax.make_jaxpr(f)(x, y)
-# print(jaxpr)
+    #     print(veres)
+    #     print(revres)
+    #     self.assertTrue(tree_allclose(veres, revres))
+        
+    # def test_broadcast_mul(self):
+    #     def broadcast_mul(x, y):
+    #         return jnp.sin(x * y)
 
-# jaxpr = jax.make_jaxpr(jacve(f, order="rev", argnums=(0, 1)))(x, y)
-# print(jaxpr)
+    #     x = jnp.arange(6).reshape((2, 3)).astype(jnp.float32)
+    #     y = jnp.arange(3).reshape((3, )).astype(jnp.float32)
+    #     print(jax.make_jaxpr(broadcast_mul)(x, y))
+    #     print(jax.make_jaxpr(jacve(broadcast_mul, order="fwd", argnums=(0, 1)))(x, y))
+    #     jac_rev = jax.jit(jacve(broadcast_mul, order="fwd", argnums=(0, 1)))
+    #     veres = jac_rev(x, y)
 
-# deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-# veres = deriv_fn(x, y)
+    #     print(jax.make_jaxpr(jax.jacfwd(broadcast_mul, argnums=(0, 1)))(x, y))
+    #     jax_jac_rev = jax.jit(jax.jacfwd(broadcast_mul, argnums=(0, 1)))
+    #     revres = jax_jac_rev(x, y)
+    #     get_shape = lambda x: x.shape
 
-# revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+    #     print(veres[1])
+    #     print(revres[0])
+        
+    #     print(tree_map(get_shape, veres), tree_map(get_shape, revres))
+    #     self.assertTrue(tree_allclose(veres, revres))
 
-# print(veres)
-# print(revres)
+    # def test_transpose(self):
+    #     def transpose(x, y):
+    #         return x.T + y
 
-# print(tree_allclose(veres, revres))
+    #     x = jnp.ones((2, 3))
+    #     y = jnp.ones((3, 2))
+    #     jac_fwd = jax.jit(jacve(transpose, order="fwd", argnums=(0, 1)))
+    #     veres = jac_fwd(x, y)[0]
 
-# def f(x, y):
-#     z = x @ y
-#     return jnp.sin(z)
+    #     revres = jax.jacrev(transpose)(x, y)
 
-# xkey, ykey = jrand.split(key, 2)
-# x = jrand.normal(xkey, (2, 3))
-# y = jrand.normal(ykey, (3,))
-# jaxpr = jax.make_jaxpr(jacve(f, order="rev", argnums=(0, 1)))(x, y)
-# print(jaxpr)
+    #     self.assertTrue(tree_allclose(veres, revres))
 
-# deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-# veres = deriv_fn(x, y)
+    # def test_slicing(self):
+    #     def f(x, y):
+    #         x = jnp.sin(x)
+    #         x = lax.slice(x, start_indices=[0, 0], limit_indices=[2, 3])
+    #         return x * y
 
-# revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3,3))
+    #     y = jrand.normal(ykey, (3,))
 
-# print(veres)
-# print(revres)
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
 
-# print(tree_allclose(veres, revres))
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
 
-# xs = [jnp.ones(())*0.01]*15
-# argnums = list(range(15))
-# # print(jax.make_jaxpr(g)(*xs))
-# jac_rev_g = jax.jit(jacve(g, order="rev", argnums=argnums))
-# jax_rev_g = jax.jit(jax.jacrev(g, argnums=argnums))
+    #     self.assertTrue(tree_allclose(veres, revres))
 
-# print(len(jax.make_jaxpr(jax.jacrev(g, argnums=argnums))(*xs).eqns))
-# print(len(jax.make_jaxpr(jacve(g, order="rev", argnums=argnums))(*xs).eqns))
+    # def test_matmul(self):
+    #     def f(x, y):
+    #         z = x @ y
+    #         return jnp.sin(z)
 
-# revres = jax_rev_g(*xs)
-# veres = jac_rev_g(*xs)
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (2, 3))
+    #     y = jrand.normal(ykey, (3,))
 
-# # for rev, ve in zip(revres, veres):
-# #     print(rev, ve)
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
 
-# print(tree_allclose(veres, revres))
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
 
+    #     self.assertTrue(tree_allclose(veres, revres))
 
-# def f(x, y):
-#     z = x * y
-#     w = z**3
-#     return w + z, 5*w
+    # def test_simple(self):
+    #     x = jnp.ones((50, 50))
+    #     y = jnp.ones((50, 50))
 
-# x = jnp.ones((50, 50))
-# y = jnp.ones((50, 50))
-# jaxpr = jax.make_jaxpr(f)(x, y)
-# print(jaxpr)
+    #     jacrev_f = jax.jit(jacve(Simple, order="rev", argnums=(0, 1), count_ops=True))
+    #     veres = jacrev_f(x, y)
 
-# jacrev_f = jax.jit(jacve(f, order="rev", argnums=(0, 1), count_ops=True))
-# jaxpr = jax.make_jaxpr(jacrev_f)(x, y)
-# print(jaxpr)
-# veres = jacrev_f(x, y)
-# print(veres)
+    #     jac_f = jax.jit(jax.jacrev(Simple, argnums=(0, 1)))
+    #     revres = jac_f(x, y)
 
-# jac_f = jax.jit(jax.jacrev(f, argnums=(0, 1)))
-# revres = jac_f(x, y)
-# print(revres)
-# print(tree_allclose(veres, revres))
+    #     self.assertTrue(tree_allclose(veres, revres))
 
+    # def test_Helmholtz(self):
+    #     x = jnp.array([0.05, 0.15, 0.25, 0.35]) # jnp.ones(4)/2000. # 
 
-# def Helmholtz(x):
-#     return x*jnp.log(x / (1. + -jnp.sum(x)))
+    #     jac_cc = jax.jit(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))
+    #     veres = jac_cc(x)
 
-# x = jnp.array([0.05, 0.15, 0.25, 0.35]) # jnp.ones(4)/2000. # 
+    #     jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz))
+    #     jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz))
+    #     revres = jax_jac_rev(x)
+    #     self.assertTrue(tree_allclose(veres, revres))
 
-# print(jax.make_jaxpr(Helmholtz)(x))
+    # def test_NeuralNetwork(self):
+    #     def NeuralNetwork(x, W1, b1, W2, b2, y):
+    #         y1 = W1 @ x
+    #         z1 = y1 + b1
+    #         a1 = jnp.tanh(z1)
+            
+    #         y2 = W2 @ a1
+    #         z2 = y2 + b2
+    #         a2 = jnp.tanh(z2)
+    #         d = a2 - y
+    #         return .5*jnp.sum(d**2)
 
-# jac_cc = jax.jit(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))
-# # print(jax.make_jaxpr(jacve(Helmholtz, order=[2, 5, 4, 3, 1]))(x))
-# veres = jac_cc(x)
+    #     key = jrand.PRNGKey(42)
 
+    #     x = jnp.ones(4)
+    #     y = jrand.normal(key, (4,))
 
-# jax_jac_fwd = jax.jit(jax.jacfwd(Helmholtz))
-# jax_jac_rev = jax.jit(jax.jacfwd(Helmholtz))
-# revres = jax_jac_rev(x)
+    #     w1key, b1key, key = jrand.split(key, 3)
+    #     W1 = jrand.normal(w1key, (8, 4))
+    #     b1 = jrand.normal(b1key, (8,))
 
-# # TODO management of vector derivatives and so on
-# print(veres)
-# print(revres)
-# print(tree_allclose(veres, revres))
+    #     w2key, b2key, key = jrand.split(key, 3)
+    #     W2 = jrand.normal(w2key, (4, 8))
+    #     b2 = jrand.normal(b2key, (4,))
 
-# print(revres)
-# print(veres)
+    #     jac_rev = jax.jit(jacve(NeuralNetwork, order="rev", argnums=(1, 2, 3, 4)))
+    #     veres = jac_rev(x, W1, b1, W2, b2, y)
 
-# def transpose(x, y):
-#     return x.T + y
+    #     jax_jac_rev = jax.jit(jax.jacrev(NeuralNetwork, argnums=(1, 2, 3, 4)))
+    #     revres = jax_jac_rev(x, W1, b1, W2, b2, y)
 
-# x = jnp.ones((2, 3))
-# y = jnp.ones((3, 2))
-# # print(jax.make_jaxpr(jacve(transpose, [1]))(x, y))
-# jac_fwd = jax.jit(jacve(transpose, order="fwd", argnums=(0, 1)))
-# veres = jac_fwd(x, y)[0]
-# print(veres)
+    #     self.assertTrue(tree_allclose(veres, revres))
+        
+    # def test_f(self):
+    #     a = jnp.ones(4)
+    #     b = jnp.ones((2, 3))
+    #     c = jnp.ones((4, 4))
+    #     d = jnp.ones((3, 3))
+    #     e = jnp.ones((4, 1))
+    #     xs = [a, b, c, d, e]
 
-# revres = jax.jacrev(transpose)(x, y)
-# print(revres)
+    #     deriv_fn = jax.jit(jacve(f, order="fwd", argnums=(0, 1, 2, 3, 4)))
+    #     veres = deriv_fn(*xs)
 
-# print(tree_allclose(veres, revres))
+    #     revres = jax.jacrev(f, argnums=(0, 1, 2, 3, 4))(*xs)
 
-
-# def NeuralNetwork(x, W1, b1, W2, b2, y):
-#     y1 = W1 @ x
-#     z1 = y1 + b1
-#     a1 = jnp.tanh(z1)
+    #     self.assertTrue(tree_allclose(veres, revres))
     
-#     y2 = W2 @ a1
-#     z2 = y2 + b2
-#     a2 = jnp.tanh(z2)
-#     d = a2 - y
-#     return .5*jnp.sum(d**2)
+    # def test_softmax_attention_fwd(self):
+    #     def softmax_attention(X, WQ, WK, WV):
+    #         q = WQ @ X
+    #         k = WK @ X
+    #         v = WV @ X
+    #         a = q @ k.T
+    #         return jnn.softmax(a, axis=1) @ v
+        
+    #     x = jnp.arange(160, dtype=jnp.float32).reshape(10, 16)
+    #     WQ = .2*jnp.arange(100, dtype=jnp.float32).reshape(10, 10) 
+    #     WK = .33*jnp.arange(100, dtype=jnp.float32)[::-1].reshape(10, 10)
+    #     WV = .5*jnp.arange(100, dtype=jnp.float32).reshape(10, 10)
+
+    #     print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
+
+    #     # print("jax jaxpr", jax.make_jaxpr(jax.jacfwd(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
+    #     jax_jac_rev = jax.jit(jax.jacfwd(softmax_attention, argnums=(1, 2, 3)))
+    #     revres = jax_jac_rev(x, WQ, WK, WV)
+
+    #     # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="fwd", argnums=(1, 2, 3)))(x, WQ, WK, WV))
+    #     jac_rev = jax.jit(jacve(softmax_attention, order="fwd", argnums=(1, 2, 3)))
+    #     veres = jac_rev(x, WQ, WK, WV)
+        
+    #     print("ve", veres[2].sum())
+    #     print("jax", revres[2].sum())
+
+    #     self.assertTrue(tree_allclose(veres[0], revres[0]))
+
+    def test_softmax_attention_rev(self):
+        def softmax_attention(X, WQ, WK, WV):
+            q = WQ @ X
+            k = WK @ X
+            v = WV @ X
+            a = q @ k.T
+            return jnn.softmax(a, axis=1) @ v
+        
+        x = jnp.arange(16000, dtype=jnp.float32).reshape(100, 160)
+        WQ = .2*jnp.arange(10000, dtype=jnp.float32).reshape(100, 100) 
+        WK = .33*jnp.arange(10000, dtype=jnp.float32)[::-1].reshape(100, 100)
+        WV = .5*jnp.arange(10000, dtype=jnp.float32).reshape(100, 100)
+
+        print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
+
+        # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
+        jax_jac_rev = jax.jit(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))
+        revres = jax_jac_rev(x, WQ, WK, WV)
+
+        # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
+        jac_rev = jax.jit(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))
+        veres = jac_rev(x, WQ, WK, WV)
+        
+        print("ve", veres[2].sum())
+        print("jax", revres[2].sum())
+        
+        import time
+        
+        st = time.time()
+        for i in range(50):
+            veres = jac_rev(x, WQ, WK, WV)
+        print("ve time", time.time() - st)
+        
+        st = time.time()
+        for i in range(50):
+            revres = jax_jac_rev(x, WQ, WK, WV)
+        print("jax time", time.time() - st)
+
+        self.assertTrue(tree_allclose(veres[0], revres[0]))
 
 
-# key = jrand.PRNGKey(42)
-
-# x = jnp.ones(4)
-# y = jrand.normal(key, (4,))
-
-# w1key, b1key, key = jrand.split(key, 3)
-# W1 = jrand.normal(w1key, (8, 4))
-# b1 = jrand.normal(b1key, (8,))
-
-
-# w2key, b2key, key = jrand.split(key, 3)
-# W2 = jrand.normal(w2key, (4, 8))
-# b2 = jrand.normal(b2key, (4,))
-# # print(jax.make_jaxpr(NeuralNetwork)(x, W1, b1, W2, b2, y))
-
-# # print(jax.make_jaxpr(jacve(NeuralNetwork, order=[9, 8, 7, 6, 5, 4, 3, 2, 1]))(x, W1, b1, W2, b2, y))
-# jac_rev = jax.jit(jacve(NeuralNetwork, order="rev", argnums=(0, 1, 2, 3, 4, 5)))
-# veres = jac_rev(x, W1, b1, W2, b2, y)
-
-# # print(jax.make_jaxpr(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))(x, W1, b1, W2, b2, y))
-# jax_jac_rev = jax.jit(jax.jacrev(NeuralNetwork, argnums=(0, 1, 2, 3, 4, 5)))
-# revres = jax_jac_rev(x, W1, b1, W2, b2, y)
-
-# print(revres[1], veres[1])
-
-# print(tree_allclose(veres, revres))
-
-# from graphax.examples.randoms import f
-
-# a = jnp.ones(4)
-# b = jnp.ones((2, 3))
-# c = jnp.ones((4, 4))
-# d = jnp.ones((3, 3))
-# e = jnp.ones((4, 1))
-# xs = [a, b, c, d, e]
-
-
-# jaxpr = jax.make_jaxpr(f)(*xs)
-# print(jaxpr)
-
-# deriv_fn = jax.jit(jacve(f, order="fwd", argnums=(0, 1)))
-# veres = deriv_fn(*xs)
-
-# revres = jax.jacrev(f, argnums=(0, 1))(*xs)
-
-# print(veres)
-# print(revres)
-
-# print(tree_allclose(veres, revres))
-
-
-# def softmax_attention(X, WQ, WK, WV):
-#     q = WQ @ X
-#     k = WK @ X
-#     v = WV @ X
-#     a = q @ k.T
-#     return jnn.softmax(a, axis=1) @ v
- 
-# x = jrand.normal(key, (10, 16))
-# WQ = jrand.normal(key,(10, 10)) 
-# WK = jrand.normal(key,(10, 10))
-# WV = jrand.normal(key,(10, 10))
-
-# print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
-# print(jax.make_jaxpr(jacve(softmax_attention, order="fwd", argnums=(1, 2, 3)))(x, WQ, WK, WV))
-
-
-def broadcast_add(x, y):
-    return x + y
-
-x = jnp.ones((2, 3))
-y = jnp.ones((1, 3))
-print(jax.make_jaxpr(broadcast_add)(x, y))
-print(jax.make_jaxpr(jacve(broadcast_add, order="rev", argnums=(0, 1)))(x, y))
+if __name__ == '__main__':
+    unittest.main()
 

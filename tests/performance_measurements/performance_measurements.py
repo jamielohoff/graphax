@@ -163,6 +163,10 @@ def measure_f():
     
     gx.plot_performance(f, xs, "./f.png", samplesize=samplesize)
     
+    
+def measure_softmax_attention():
+    pass
+    
 
 # simple()
 # measure_Helmholtz()
