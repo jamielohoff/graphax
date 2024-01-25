@@ -208,10 +208,10 @@ class GeneralADTest(unittest.TestCase):
             a = q @ k.T
             return jnn.softmax(a, axis=1) @ v
         
-        x = jnp.arange(16000, dtype=jnp.float32).reshape(100, 160)
-        WQ = .2*jnp.arange(10000, dtype=jnp.float32).reshape(100, 100) 
-        WK = .33*jnp.arange(10000, dtype=jnp.float32)[::-1].reshape(100, 100)
-        WV = .5*jnp.arange(10000, dtype=jnp.float32).reshape(100, 100)
+        x = jnp.arange(200, dtype=jnp.float32).reshape(10, 20)
+        WQ = .2*jnp.arange(100, dtype=jnp.float32).reshape(10, 10) 
+        WK = .33*jnp.arange(100, dtype=jnp.float32)[::-1].reshape(10, 10)
+        WV = .5*jnp.arange(100, dtype=jnp.float32).reshape(10, 10)
 
         print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
 
@@ -227,18 +227,86 @@ class GeneralADTest(unittest.TestCase):
         print("jax", revres[2].sum())
         
         import time
+        import matplotlib.pyplot as plt
         
-        st = time.time()
-        for i in range(50):
+        ve_data, jax_data = [], []
+        for d in [1, 2, 4, 8]:
+            x = jnp.arange(20*d*10*d, dtype=jnp.float32).reshape(10*d, 20*d)
+            WQ = .2*jnp.arange(100*d**2, dtype=jnp.float32).reshape(10*d, 10*d) 
+            WK = .33*jnp.arange(100*d**2, dtype=jnp.float32)[::-1].reshape(10*d, 10*d)
+            WV = .5*jnp.arange(100*d**2, dtype=jnp.float32).reshape(10*d, 10*d)
+            
             veres = jac_rev(x, WQ, WK, WV)
-        print("ve time", time.time() - st)
-        
-        st = time.time()
-        for i in range(50):
             revres = jax_jac_rev(x, WQ, WK, WV)
-        print("jax time", time.time() - st)
+            
+            st = time.time()
+            for i in range(50):
+                veres = jac_rev(x, WQ, WK, WV)
+            ve_data.append((time.time() - st)/50)
+            
+            st = time.time()
+            for i in range(50):
+                revres = jax_jac_rev(x, WQ, WK, WV)
+            jax_data.append((time.time() - st)/50)
+            
+        plt.plot([1, 2, 4, 8], ve_data, label="ve")
+        plt.plot([1, 2, 4, 8], jax_data, label="jax")
+        plt.legend()
+        plt.imsave("cpu_softmax_attention.png", plt.gcf())
 
         self.assertTrue(tree_allclose(veres[0], revres[0]))
+        
+    # def test_two_layer_transformer(self):
+    #     def softmax_attention(X, WQ, WK, WV):
+    #         q = WQ @ X
+    #         k = WK @ X
+    #         v = WV @ X
+    #         a = q @ k.T
+    #         return jnn.softmax(a, axis=1) @ v
+        
+    #     def MLP(X, W, b):
+    #         return jnp.tanh(W @ X + b)
+        
+    #     def transformer(X, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label):
+    #         X = softmax_attention(X, WQ1, WK1, WV1)
+    #         X = MLP(X, W1, b1)
+    #         X = softmax_attention(X, WQ2, WK2, WV2)
+    #         X = MLP(X, W2, b2)
+    #         return .5*(X-label)**2
+        
+    #     key = jrand.PRNGKey(42)
+        
+    #     x = jnp.arange(160, dtype=jnp.float32).reshape(10, 16)
+    #     WQ1 = .2*jnp.arange(100, dtype=jnp.float32).reshape(10, 10) 
+    #     WK1 = .33*jnp.arange(100, dtype=jnp.float32)[::-1].reshape(10, 10)
+    #     WV1 = .5*jnp.arange(100, dtype=jnp.float32).reshape(10, 10)
+        
+    #     W1 = jrand.normal(key, (10, 10))
+    #     b1 = jrand.normal(key, (10, 1))
+        
+    #     WQ2 = .2*jnp.arange(100, dtype=jnp.float32).reshape(10, 10) 
+    #     WK2 = .33*jnp.arange(100, dtype=jnp.float32)[::-1].reshape(10, 10)
+    #     WV2 = .5*jnp.arange(100, dtype=jnp.float32).reshape(10, 10)
+        
+    #     W2 = jrand.normal(key, (5, 10))
+    #     b2 = jrand.normal(key, (5, 1))
+        
+    #     label = jnp.arange(5*16, dtype=jnp.float32).reshape(5, 16)
+        
+    #     print(jax.make_jaxpr(transformer)(x, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label))
+        
+    #     # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
+    #     jax_jac_rev = jax.jit(jax.jacrev(transformer, argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)))
+    #     revres = jax_jac_rev(x, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label)
+
+    #     # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
+    #     jac_rev = jax.jit(jacve(transformer, order="rev", argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)))
+    #     veres = jac_rev(x, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label)
+        
+        
+    #     self.assertTrue(True)
+        
+        
 
 
 if __name__ == '__main__':
