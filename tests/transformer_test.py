@@ -88,11 +88,12 @@ class TransformerTest(unittest.TestCase):
     #     self.assertTrue(tree_allclose(veres, revres))
         
     def test_multihead_attention_block(self):
-        num_heads = 6
-        seq_len = 20
-        embedding_dim = 10
-        dk = 10
+        num_heads = 8
+        seq_len = 64
+        embedding_dim = 64
+        dk = 128//num_heads
 
+        ### Weights for self-attention layer
         key = jrand.PRNGKey(42)
         qkey, kkey, vkey, okey, key = jrand.split(key, 5)
         qkey, kkey, vkey, okey, key = jrand.split(key, 5)
@@ -103,9 +104,9 @@ class TransformerTest(unittest.TestCase):
         
         # Weights for MLP layer
         W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (10, embedding_dim))
-        b1 = jnp.zeros((10, 1), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 10))
+        W1 = glorot(W1key, (1024, embedding_dim))
+        b1 = jnp.zeros((1024, 1), dtype=jnp.float32)
+        W2 = glorot(W2key, (embedding_dim, 1024))
         b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
         
         x = jrand.normal(key, (embedding_dim, seq_len))
