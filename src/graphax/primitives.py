@@ -1,4 +1,5 @@
 from functools import partial
+import copy
 
 import numpy as np
 
@@ -33,6 +34,7 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
     primal = primals[i]
     primal_size = get_ndim(primal)
     out_size = get_ndim(val_out)
+
     if len(primals) == 1:
         if primal_size == 0 and out_size == 0:
             # Singletons
@@ -76,8 +78,12 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
                     if type(d) is SparseDimension:
                         _d = out_dims[d.other_id]
                         _d.other_id += 1
-
             return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
+        elif type(elemental) is float or elemental.size == 1:
+            out_dims = [SparseDimension(i, e, None, out_size+i)
+                        for i, e in enumerate(primal.aval.shape)]
+            primal_dims = [SparseDimension(out_size+i, e, None, i)
+                            for i, e in enumerate(primal.aval.shape)]
         else:
             out_dims = [SparseDimension(i, e, i, out_size+i)
                         for i, e in enumerate(primal.aval.shape)]
@@ -153,15 +159,16 @@ defelemental2(lax.tanh_p, lambda out, primal: 1.-out**2)
 defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
 
 defelemental(lax.erf_p, lambda x: 2.*jnp.exp(-x**2)/jnp.sqrt(jnp.pi))
+# TODO implement this such that it becomes more efficient, i.e. through the
+# use of jac_transform
+defelemental2(lax.stop_gradient_p, lambda out, primal: jnp.zeros_like(out))
 
-# TODO this can be made more efficient
 def add_elemental_rule(x, y):
     return (jnp.ones_like(y), jnp.ones_like(x))
     
 defelemental(lax.add_p, add_elemental_rule)
 defelemental(jax._src.ad_util.add_any_p, add_elemental_rule)
 
-# TODO this can also be made more efficient
 def sub_elemental_rule(x, y):
     return (jnp.ones_like(y), -jnp.ones_like(x))
 defelemental(lax.sub_p, sub_elemental_rule)
@@ -212,7 +219,7 @@ elemental_rules[lax.transpose_p] = transpose_elemental_rule
 # TODO Create a general reduce rule with a custom derivative!
 def reduce_sum_elemental_rule(primals, **params):
     val_out = lax.reduce_sum_p.bind(*primals, **params)
-    
+        
     primal = primals[0]
     axes = params["axes"]
     if axes is None:
@@ -220,8 +227,7 @@ def reduce_sum_elemental_rule(primals, **params):
         new_out_dims.append(DenseDimension(0, 1, 0))
     elif type(axes) is int:
         axes = (axes,)
-    new_out_dims, new_primal_dims = [], []
-    _shape = []
+    new_out_dims, new_primal_dims, shape = [], [], []
                 
     l = val_out.aval.ndim
     count = 0
@@ -230,14 +236,14 @@ def reduce_sum_elemental_rule(primals, **params):
             idx = len(new_out_dims) + len(new_primal_dims)
             idx = max(idx, 1) if val_out.ndim > 0 else idx
             new_primal_dims.append(DenseDimension(idx, size, count))
-            _shape.append(size)
+            shape.append(size)
             count += 1
         else:
-            new_out_dims.append(SparseDimension(i, size, None, l+i))
-            new_primal_dims.append(SparseDimension(l+i, size, None, i))
+            ll = len(new_out_dims)
+            new_out_dims.append(SparseDimension(ll, size, None, l+i))
+            new_primal_dims.append(SparseDimension(l+i, size, None, ll))
             
-    val = jnp.ones(_shape)
-    print(SparseTensor(new_out_dims, new_primal_dims, val))
+    val = jnp.ones(shape)
     return val_out, [SparseTensor(new_out_dims, new_primal_dims, val)]
     
 elemental_rules[lax.reduce_sum_p] = reduce_sum_elemental_rule
@@ -248,30 +254,35 @@ def reduce_max_elemental_rule(primals, **params):
 
     primal = primals[0]
     axes = params["axes"]
+    shape = list(val_out.aval.shape)
     
     if axes is None:
         axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0, True))
     elif type(axes) is int:
         axes = (axes,)
-    new_out_dims, new_primal_dims = [], []
-    _shape = []
+    new_out_dims, new_primal_dims, _shape = [], [], []
     
     l = val_out.aval.ndim
-    count = 0
     for i, size in enumerate(primal.aval.shape):
         if i in axes:
+            shape.insert(i, 1)
             idx = len(new_out_dims) + len(new_primal_dims)
-            new_primal_dims.append(DenseDimension(max(idx, 1), size, count))
+            idx = max(idx, 1) if val_out.ndim > 0 else idx
+            new_primal_dims.append(DenseDimension(idx, size, i))
             _shape.append(size)
-            count += 1
         else:
-            new_out_dims.append(SparseDimension(i, size, None, l+i))
-            new_primal_dims.append(SparseDimension(l+i, size, None, i))
+            ll = len(new_out_dims)
+            new_out_dims.append(SparseDimension(ll, size, i, l+i))
+            new_primal_dims.append(SparseDimension(l+i, size, i, ll))
             
-    new_val = jnp.zeros(_shape)
-    # TODO set to 1 at position of the maximum
-    return val_out, [SparseTensor(new_out_dims, new_primal_dims, new_val)]
+    _val_out = val_out.reshape(shape)
+    new_val = jnp.where(primal == _val_out, 1, 0) 
+    # NOTE: Normalization is important if the maximum is not unique
+    norm = jnp.sum(new_val, axis=axes, keepdims=True)
+    new_val = new_val / norm 
+    print("reduce_max", _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val)))
+    return val_out, [_swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))]
     
 elemental_rules[lax.reduce_max_p] = reduce_max_elemental_rule
 
@@ -281,29 +292,33 @@ def reduce_min_elemental_rule(primals, **params):
     
     primal = primals[0]
     axes = params["axes"]
+    print("reduce_min", val_out)
     
     if axes is None:
         axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0, True))
     elif type(axes) is int:
         axes = (axes,)
-    new_out_dims, new_primal_dims = [], []
-    _shape = []
+    new_out_dims, new_primal_dims, _shape = [], [], []
     
     l = val_out.aval.ndim
     count = 0
     for i, size in enumerate(primal.aval.shape):
         if i in axes:
-            new_primal_dims.append(DenseDimension(max(i,1), size, count))
+            idx = len(new_out_dims) + len(new_primal_dims)
+            idx = max(idx, 1) if val_out.ndim > 0 else idx
+            new_primal_dims.append(DenseDimension(idx, size, i))
             _shape.append(size)
             count += 1
         else:
-            new_out_dims.append(SparseDimension(i, size, None, l+i))
-            new_primal_dims.append(SparseDimension(l+i, size, None, i))
+            ll = len(new_out_dims)
+            new_out_dims.append(SparseDimension(ll, size, i, l+i))
+            new_primal_dims.append(SparseDimension(l+i, size, i, ll))
             
-    val = jnp.zeros(_shape)
-    # TODO set to 1 at position of the minimum
-    return val_out, [SparseTensor(new_out_dims, new_primal_dims, val)]
+    new_val = jnp.where(primal == val_out, 1, 0) 
+    norm = jnp.sum(new_val, axis=axes, keepdims=True)
+    new_val = new_val/norm
+    return val_out, [_swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))]
     
 elemental_rules[lax.reduce_min_p] = reduce_min_elemental_rule
 
@@ -321,10 +336,12 @@ def dot_general_elemental_rule(primals, **params):
     
     # TODO properly treat the transpose
     if rhs.aval.ndim > 1:
-        transpose_rhs = rhs.T
-        # print(lhs, transpose_rhs)
+        # .T is a complete inversion from (s1, s2, s3, ...) to (s3, s2, s1, ...)
+        transpose_rhs = rhs.T 
+
         # TODO this needs generalization to higher-dimensional tensors
-        transpose_rhs_dims = [1-d for d in dimension_numbers[1]]
+        # transpose_rhs_dims = [1-d for d in dimension_numbers[1]]
+        transpose_rhs_dims = list(range(len(rhs.aval.shape)))[::-1]
     else:
         transpose_rhs = rhs
         transpose_rhs_dims = rhs_contracting_dims
@@ -339,59 +356,46 @@ def dot_general_elemental_rule(primals, **params):
     lhs_primal_dims, rhs_primal_dims = [], []
     lhs_out_dims, rhs_out_dims = [], []
     
+    print("test", transpose_rhs_dims)
+    print(rhs.aval.shape, transpose_rhs.aval.shape)
+    
     i = 0
-    for l, ld in enumerate(lhs_shape):
-        _l = l + val_out.aval.ndim
-        if l in lhs_contracting_dims:
+    for lid, ld in enumerate(lhs_shape):
+        other_lid = lid + len(out_shape)
+        if lid in lhs_contracting_dims:
             # Contracting dimension
-            dim = transpose_rhs_dims[i] # TODO take account of the transpose
-            lhs_primal_dims.append(DenseDimension(_l, transpose_rhs.aval.shape[dim], dim))
+            dim = transpose_rhs_dims[rhs_contracting_dims[i]]
+            lhs_primal_dims.append(DenseDimension(other_lid, transpose_rhs.aval.shape[dim], dim))
             i += 1
         else:
-            lhs_primal_dims.append(SparseDimension(_l, lhs_jac_shape[i], None, l))
-            lhs_out_dims.append(SparseDimension(l, lhs_jac_shape[i], None, _l))
-            rhs_out_dims.append(DenseDimension(i, ld, l))
+            lhs_primal_dims.append(SparseDimension(other_lid, lhs_jac_shape[i], None, lid))
+            lhs_out_dims.append(SparseDimension(len(lhs_out_dims), lhs_jac_shape[i], None, other_lid))
+            rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid))
           
     j = 0   
-    for r, rd in enumerate(rhs_shape):
-        _r = r + len(val_out.aval.shape)
-        if r in rhs_contracting_dims:
+    for rid, rd in enumerate(rhs_shape):
+        other_rid = rid + len(out_shape)
+        if rid in rhs_contracting_dims:
             # Contracting dimension
             dim = lhs_contracting_dims[j]
-            rhs_primal_dims.append(DenseDimension(_r, lhs.aval.shape[dim], dim))
+            rhs_primal_dims.append(DenseDimension(other_rid, lhs_shape[dim], dim))
             j += 1
         else:
-            rhs_primal_dims.append(SparseDimension(_r, rhs_jac_shape[j], None, r))
-            rhs_out_dims.append(SparseDimension(r, rhs_jac_shape[j], None, _r))
-            lhs_out_dims.append(DenseDimension(j, rd, transpose_rhs_dims.index(r)))
+            jj = j + len(out_shape)
+            rhs_primal_dims.append(SparseDimension(other_rid, rhs_jac_shape[jj], None, rid))
+            rhs_out_dims.append(SparseDimension(len(rhs_out_dims), rhs_jac_shape[jj], None, other_rid))
+            lhs_out_dims.append(DenseDimension(len(lhs_out_dims), rd, transpose_rhs_dims.index(rid)))
         
     lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, transpose_rhs)
     rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)   
+    print("dot_general", lhs_tensor, rhs_tensor)
+    
+    lhs_tensor = _swap_back_axes(lhs_tensor)
+    rhs_tensor = _swap_back_axes(rhs_tensor)
         
     return val_out, [lhs_tensor, rhs_tensor]
 
 elemental_rules[lax.dot_general_p] = dot_general_elemental_rule
-
-
-# TODO simplify this by terminating the edges instead of using zeros_like
-def stop_gradient_elemental_rule(primals, **params):
-    # Broadcasting adds sparse dimensions of size 1
-    # and another sparse dimension for the variables
-    val_out = lax.stop_gradient_p.bind(*primals, **params)
-    
-    primal = primals[0]    
-    new_out_dims, new_primal_dims = [], []
-
-    l = primal.ndim
-    for i, size in enumerate(primal.shape):
-        new_out_dims.append(SparseDimension(i, size, i, i+l))
-        new_primal_dims.append(SparseDimension(i+l, size, i, i))
-
-    val = jnp.zeros(primal.aval.shape)
-    return val_out, [SparseTensor(new_out_dims, new_primal_dims, val)]
-    
-elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
-
 
 def iota_elemental_rule(primals, **params):
     val_out = lax.iota_p.bind(*primals, **params)
@@ -479,6 +483,7 @@ elemental_rules[lax.slice_p] = slice_elemental_rule
 def broadcast_elemental_rule(primals, **params):
     # TODO fix the case where we only have a single broadcast operation
     # Broadcasting adds DenseDimensions of size 1
+    print(primals, params)
     val_out = lax.broadcast_in_dim_p.bind(*primals, **params)
             
     # TODO This guy needs major revision
@@ -492,32 +497,46 @@ def broadcast_elemental_rule(primals, **params):
             rm_dims = [d for d in range(val_out.ndim) 
                        if d not in params["broadcast_dimensions"]]
 
-            new_out_dims = list(post.out_dims)
-            new_primal_dims = list(post.primal_dims)
+            new_out_dims = list(copy.deepcopy(post.out_dims))
+            new_primal_dims = list(copy.deepcopy(post.primal_dims))
             _rm_dims = []
             for dim in rm_dims:
                 if new_primal_dims[dim].val_dim is not None:
                     _rm_dims.append(new_primal_dims[dim].val_dim)
                 if type(new_primal_dims[dim]) is DenseDimension:
+                    has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
                     del new_primal_dims[dim]
-                
                     for d in new_primal_dims[dim:]:
                         d.id -= 1
                         if type(d) is SparseDimension:
                             _d = new_out_dims[d.other_id]
                             _d.other_id -= 1
+                            # if d.val_dim is not None and has_smaller_dims:
+                            #     d.val_dim -= 1
+                            #     _d.val_dim -= 1
+                        else:
+                            if d.val_dim is not None and has_smaller_dims:
+                                d.val_dim -= 1
+                        
                 else:
                     id = new_primal_dims[dim].id
                     other_id = new_primal_dims[dim].other_id
-                    del new_primal_dims[dim]
                     old_dim = new_out_dims[other_id]
                     new_out_dims[other_id] = DenseDimension(old_dim.id, old_dim.size, None)
+                    has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
+                    del new_primal_dims[dim]
                     for d in new_out_dims + new_primal_dims:
                         if d.id > id:
                             d.id -= 1
                             if type(d) is SparseDimension:
                                 _d = new_out_dims[d.other_id]
                                 _d.other_id -= 1
+                                if d.val_dim is not None and has_smaller_dims:
+                                    d.val_dim -= 1
+                                    _d.val_dim -= 1
+                            else:
+                                if d.val_dim is not None and has_smaller_dims:
+                                    d.val_dim -= 1
                     
             new_out_dims = tuple(new_out_dims)
             new_primal_dims = tuple(new_primal_dims)
@@ -534,4 +553,27 @@ def broadcast_elemental_rule(primals, **params):
 
     
 elemental_rules[lax.broadcast_in_dim_p] = broadcast_elemental_rule
+
+
+# TODO simplify this by terminating the edges instead of using zeros_like
+# def stop_gradient_elemental_rule(primals, **params):
+#     # Broadcasting adds sparse dimensions of size 1
+#     # and another sparse dimension for the variables
+#     val_out = lax.stop_gradient_p.bind(*primals, **params)
+    
+#     def stop_grad(pre, post, iota):
+#         print("### pre", pre, post)
+#         if pre.val is None:
+#             pre.val = None
+#             return pre
+#         elif type(pre.val) is float:
+#             pre.val = 0.
+#             return pre
+#         else:
+#             pre.val = jnp.zeros_like(pre.val)
+#             return pre
+    
+#     return val_out, [SparseTensor([], [], None, [stop_grad])]
+    
+# elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
 
