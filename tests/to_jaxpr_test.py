@@ -252,7 +252,7 @@ class GeneralADTest(unittest.TestCase):
         plt.plot([1, 2, 4, 8], ve_data, label="ve")
         plt.plot([1, 2, 4, 8], jax_data, label="jax")
         plt.legend()
-        plt.imsave("cpu_softmax_attention.png", plt.gcf())
+        plt.savefig("gpu_softmax_attention.png")
 
         self.assertTrue(tree_allclose(veres[0], revres[0]))
         
