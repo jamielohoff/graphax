@@ -13,7 +13,8 @@ import numpy as np
 from graphax import jacve, tree_allclose
 
 from _transformer import (multihead_softmax_attention, MLP, layer_norm, glorot, 
-                        make_positional_encoding, softmax_ce_loss, gelu)
+                        make_positional_encoding, softmax_ce_loss, gelu,
+                        multihead_attention_block)
 
 
 positional_encoding = make_positional_encoding(32, 16)
@@ -27,40 +28,149 @@ def transformer(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2,
     X = jnp.concatenate((CT, X), axis=1)
     X = positional_encoding(X)
     
-    X += multihead_softmax_attention(X, WQ1, WK1, WV1, WO1)
-    X = layer_norm(X)
-    X += MLP(X, W1, b1, W2, b2)
-    X = layer_norm(X)
-    
-    X += multihead_softmax_attention(X, WQ2, WK2, WV2, WO2)
-    X = layer_norm(X)
-    X += MLP(X, W3, b3, W4, b4)
-    X = layer_norm(X)
+    X = multihead_attention_block(X, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
+    X = multihead_attention_block(X, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
     
     X = X[:, 0]
     return W6 @ gelu(W5 @ X + b5) + b6
 
 
+
+
+
 class TransformerTest(unittest.TestCase): 
-    def test_softmax_0(self):
-        def f(x, y):
-            return jnp.sin(jnn.softmax(x @ y, axis=0))
+    # ### Test of the utility building blocks
+    # def test_cross_entropy(self):            
+
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (32, 10))
+    #     y = jrand.normal(ykey, (32, 10))
         
+    #     print(jax.make_jaxpr(softmax_ce_loss)(x, y))
+        
+    #     deriv_fn = jax.jit(jacve(softmax_ce_loss, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
+
+    #     revres = jax.jacrev(softmax_ce_loss, argnums=(0, 1))(x, y)
+        
+    #     print(veres)
+    #     print(revres)
+
+    #     self.assertTrue(tree_allclose(veres, revres))
+        
+    # def test_MLP(self):
+    #     seq_len = 20
+    #     embedding_dim = 15
+        
+    #     # Weights for MLP layers
+    #     key = jrand.PRNGKey(42)
+    #     W1key, W2key, key = jrand.split(key, 3)
+    #     W1 = glorot(W1key, (10, embedding_dim))
+    #     b1 = jnp.zeros((10, 1), dtype=jnp.float32)
+    #     W2 = glorot(W2key, (embedding_dim, 10))
+    #     b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+        
+    #     x = jrand.normal(key, (embedding_dim, seq_len))
+        
+    #     print(jax.make_jaxpr(MLP)(x, W1, b1, W2, b2))
+        
+    #     deriv_fn = jax.jit(jacve(MLP, order="rev", argnums=(1, 2, 3, 4)))
+    #     veres = deriv_fn(x, W1, b1, W2, b2)
+
+    #     revres = jax.jacrev(MLP, argnums=(1, 2, 3, 4))(x, W1, b1, W2, b2)
+        
+    #     print("err1", jnp.abs(veres[0] - revres[0]).sum())
+    #     print("err2", jnp.abs(veres[1] - revres[1]).sum())
+    #     print("err3", jnp.abs(veres[2] - revres[2]).sum())
+    #     print("err4", jnp.abs(veres[3] - revres[3]).sum())
+        
+    #     self.assertTrue(tree_allclose(veres, revres))
+        
+    def test_multihead_attention_block(self):
+        num_heads = 6
+        seq_len = 20
+        embedding_dim = 10
+        dk = 10
+
         key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (2, 3))
-        y = jrand.normal(ykey, (3, 4))
-
-        print(jax.make_jaxpr(f)(x, y))
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
-
-        revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO = glorot(okey, (embedding_dim, dk*num_heads))
         
-        print("ve", veres[0])
-        print("jax", revres[0])
+        # Weights for MLP layer
+        W1key, W2key, key = jrand.split(key, 3)
+        W1 = glorot(W1key, (10, embedding_dim))
+        b1 = jnp.zeros((10, 1), dtype=jnp.float32)
+        W2 = glorot(W2key, (embedding_dim, 10))
+        b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+        
+        x = jrand.normal(key, (embedding_dim, seq_len))
+        
+        print(jax.make_jaxpr(multihead_attention_block)(x, WQ, WK, WV, WO, W1, b1, W2, b2))
+        
+        argnums = range(1, 9)
+        deriv_fn = jax.jit(jacve(multihead_attention_block, order="rev", argnums=argnums))
+        veres = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
 
-        self.assertTrue(tree_allclose(veres, revres))        
+        jax_deriv_fn = jax.jit(jax.jacrev(multihead_attention_block, argnums=argnums))
+        revres = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        
+        print("err1", jnp.abs(veres[0] - revres[0]).sum())
+        print("err2", jnp.abs(veres[1] - revres[1]).sum())
+        print("err3", jnp.abs(veres[2] - revres[2]).sum())
+        print("err4", jnp.abs(veres[3] - revres[3]).sum())
+        
+        print("err5", jnp.abs(veres[4] - revres[4]).sum())
+        print("err6", jnp.abs(veres[5] - revres[5]).sum())
+        print("err7", jnp.abs(veres[6] - revres[6]).sum())
+        print("err8", jnp.abs(veres[7] - revres[7]).sum())
+        
+        import matplotlib.pyplot as plt
+        import time
+        
+        out = jax.jit(deriv_fn)(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        st = time.time()
+        for i in range(50):
+            out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        print("graphax time", time.time() - st)
+        
+        jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        st = time.time()
+        for i in range(50):
+            out = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        print("jax time", time.time() - st)
+        
+        
+            
+        
+        
+        
+        self.assertTrue(tree_allclose(veres, revres))
+            
+    # ### Test all the softmax attention crap
+    # def test_softmax_0(self):
+    #     def f(x, y):
+    #         return jnp.sin(jnn.softmax(x @ y, axis=0))
+        
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (2, 3))
+    #     y = jrand.normal(ykey, (3, 4))
+
+    #     print(jax.make_jaxpr(f)(x, y))
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
+
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+        
+    #     print("ve", veres[0])
+    #     print("jax", revres[0])
+
+    #     self.assertTrue(tree_allclose(veres, revres))        
         
     # def test_softmax_1(self):
     #     def f(x, y):
@@ -80,26 +190,7 @@ class TransformerTest(unittest.TestCase):
     #     print(revres[1])
 
     #     self.assertTrue(tree_allclose(veres, revres))
-        
-    # def test_cross_entropy(self):            
-
-    #     key = jrand.PRNGKey(42)
-    #     xkey, ykey = jrand.split(key, 2)
-    #     x = jrand.normal(xkey, (32, 10))
-    #     y = jrand.normal(ykey, (32, 10))
-        
-    #     print(jax.make_jaxpr(softmax_ce_loss)(x, y))
-        
-    #     deriv_fn = jax.jit(jacve(softmax_ce_loss, order="fwd", argnums=(0, )))
-    #     veres = deriv_fn(x, y)
-
-    #     revres = jax.jacrev(softmax_ce_loss, argnums=(0,))(x, y)
-        
-    #     print(veres)
-    #     print(revres)
-
-    #     self.assertTrue(tree_allclose(veres, revres))
-    
+            
     # def test_softmax_self_attention_fwd(self):
     #     def softmax_attention(X, WQ, WK, WV):
     #         q = WQ @ X
@@ -208,9 +299,7 @@ class TransformerTest(unittest.TestCase):
     #     print("jax", revres[2].sum())
         
     #     self.assertTrue(tree_allclose(veres, revres))
-        
-    # def test_MLP()
-    
+            
     # def test_vmap_multihead_attention(self):
     #     batchsize = 16
     #     num_heads = 6

@@ -26,9 +26,12 @@ def make_positional_encoding(seq_len, embedding_dim):
 
 
 ### Softmax cross-entropy loss
+def _log_softmax(logits, axis=0):
+    return logits - jnp.log(jnp.sum(jnp.exp(logits), axis=axis))
+
 @jax.vmap
 def softmax_ce_loss(logits, labels):
-    return -jnp.sum(labels*jnn.log_softmax(logits, axis=0))
+    return -jnp.sum(labels*_log_softmax(logits, axis=0))
 
 
 ### Glorot initialization
@@ -38,7 +41,7 @@ def glorot(key, shape):
 
 ### GELU activation function
 def gelu(x):
-    return x/2*(1 + lax.erf(x/jnp.sqrt(2)))
+    return x/2*(1 + lax.erf(x/jnp.sqrt(2.0)))
 
 
 ### Multi-head self-attention
@@ -61,16 +64,22 @@ def MLP(X, W1, b1, W2, b2):
     return _project(W2, out) + b2
 
 
-### Softmax cross-entropy loss
-@jax.vmap
-def softmax_ce_loss(logits, labels):
-    return -jnp.sum(labels*jnn.log_softmax(logits, axis=0))
-
-
 ### Layer normalization
+def variance(X, axis=0):
+    return jnp.mean(jnp.square(X - jnp.mean(X, axis=axis)), axis=axis)
 @jax.vmap
 def layer_norm(X):  
     mean = jnp.mean(X, axis=0)
-    var = jnp.var(X, axis=0)
+    var = variance(X, axis=0)
     return (X - mean)/jnp.sqrt(var + 1e-7)
+
+
+### Attention Block
+def multihead_attention_block(X, WQ, WK, WV, WO, W1, b1, W2, b2):
+    out = layer_norm(X)
+    out = multihead_softmax_attention(out, WQ, WK, WV, WO)
+    out = out + X
+    out = layer_norm(out)
+    out = MLP(out, W1, b1, W2, b2)
+    return out + X
 

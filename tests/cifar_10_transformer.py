@@ -63,15 +63,15 @@ b2 = jnp.zeros((embedding_dim, 1))
 
 W3key, W4key, key = jrand.split(key, 3)
 W3 = glorot(W3key, (1024, embedding_dim))
-b3 = jnp.zeros((1024, 1))
+b3 = jnp.zeros((1024, 1), dtype=jnp.float32)
 W4 = glorot(W4key, (embedding_dim, 1024))
-b4 = jnp.zeros((embedding_dim, 1))
+b4 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
 
 W5key, W6key, key = jrand.split(key, 3)
 W5 = glorot(W5key, (256, embedding_dim))
-b5 = jnp.zeros(256)
+b5 = jnp.zeros(256, dtype=jnp.float32)
 W6 = glorot(W6key, (10, 256))
-b6 = jnp.zeros(10)
+b6 = jnp.zeros(10, dtype=jnp.float32)
 
 # Weights for class token
 CT = jrand.normal(key, (embedding_dim, 1))
