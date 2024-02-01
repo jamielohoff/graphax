@@ -49,7 +49,7 @@ def multihead_softmax_attention(X, WQ, WK, WV, WO):
     q = WQ @ X
     k = WK @ X
     v = WV @ X
-    a = q @ k.T
+    a = q @ k.T / jnp.sqrt(k.shape[0])
     out = jnn.softmax(a, axis=0) @ v
     return WO @ out 
 
