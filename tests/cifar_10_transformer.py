@@ -2,6 +2,7 @@ from functools import partial
 import tqdm
 
 import jax
+import jax.lax as lax
 import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jrand
@@ -15,7 +16,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 
-batchsize = 16
+batchsize = 32
 num_heads = 6
 dk = 128
 
@@ -37,6 +38,10 @@ testset = datasets.CIFAR10(root='./data', train=False,
                             download=True, transform=transform)
 testloader = DataLoader(testset, batch_size=batchsize,
                         shuffle=False, num_workers=2)
+
+
+def gelu(x):
+    return x/2*(1 + lax.erf(x/jnp.sqrt(2)))
 
 
 def multihead_softmax_attention(X, WQ, WK, WV, WO):
@@ -64,9 +69,13 @@ WV2 = jrand.normal(vkey, (dk*num_heads, embedding_dim))
 WO2 = jrand.normal(okey, (embedding_dim, dk*num_heads))
 
 
-def MLP(X, W1, b1, W2, b2):
-    out = jnp.tanh(W1 @ X + b1)
-    return jnp.tanh(W2 @ out + b2)
+def MLP1(X, W1, b1, W2, b2):
+    out = gelu(W1 @ X + b1)
+    return gelu(W2 @ out + b2)
+
+def MLP2(X, W1, b1, W2, b2):
+    out = gelu(W1 @ X + b1)
+    return W2 @ out + b2
 
 
 W1key, b1key, W2key, b2key, key = jrand.split(key, 5)
@@ -85,27 +94,51 @@ CT = jrand.normal(key, (embedding_dim, 1))
 
 
 ### Softmax cross-entropy loss
+@jax.vmap
 def softmax_ce_loss(logits, labels):
+    print(logits.shape, labels.shape)
     return -jnp.sum(labels*jnn.log_softmax(logits, axis=0))
 
 
+### Positional encoding
+n = 10000
+pe = np.zeros((embedding_dim, seq_len))
+position = np.arange(0, seq_len, dtype=np.float32)[None, :]
+div_term = np.power(n, jnp.arange(0, embedding_dim, 2) / embedding_dim)[:, None]
+pe[0::2, :] = np.sin(position * div_term)
+pe[1::2, :] = np.cos(position * div_term)
+pe = jnp.array(pe)
+
+
+def positional_encoding(xs):
+    print(xs.shape, pe[:xs.shape[0], :].shape)
+    return xs + pe[:xs.shape[0], :]
+
+
 # Transformer model
-@partial(jax.vmap, in_axes=(0, 0, None, None, None, None, None, None, None, None, 
+@partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, 
                             None, None, None, None, None, None, None, None, None))
-def transformer(X, label, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
+def transformer(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
                 W1, b1, W2, b2, W3, b3, W4, b4, CT):
     X = jnp.concatenate((CT, X), axis=1)
+    X = positional_encoding(X)
     X = multihead_softmax_attention(X, WQ1, WK1, WV1, WO1)
-    X = MLP(X, W1, b1, W2, b2)
+    X = MLP1(X, W1, b1, W2, b2)
     X = multihead_softmax_attention(X, WQ2, WK2, WV2, WO2)
-    X = MLP(X, W3, b3, W4, b4)
-    print(X.shape, label)
-    return softmax_ce_loss(X[:, 0], label)
+    X = MLP2(X, W3, b3, W4, b4)
+    return X[:, 0]
 
 
-def model(X, labels, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
+def model(X, label, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
             W1, b1, W2, b2, W3, b3, W4, b4, CT):
-    return transformer(X, labels, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2,
+    out = transformer(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2,
+                        W1, b1, W2, b2, W3, b3, W4, b4, CT)
+    return softmax_ce_loss(out, label)
+
+
+def batched_model(X, labels, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
+            W1, b1, W2, b2, W3, b3, W4, b4, CT):
+    return model(X, labels, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2,
                         W1, b1, W2, b2, W3, b3, W4, b4, CT).sum()
     
 
@@ -117,48 +150,50 @@ def subdivide(img, tiles = (4, 4)):
     return jnp.array([h.flatten() for g in grid for h in g]).transpose(1, 0)
 
 
-### Positional encoding
-n = 10000
-pe = np.zeros((embedding_dim, seq_len-1))
-position = np.arange(0, seq_len-1, dtype=np.float32)[None, :]
-div_term = np.power(n, jnp.arange(0, embedding_dim, 2) / embedding_dim)[:, None]
-pe[0::2, :] = np.sin(position * div_term)
-pe[1::2, :] = np.cos(position * div_term)
-pe = jnp.array(pe)
-
-@jax.vmap
-def positional_encoding(xs):
-    return xs + pe[:xs.shape[0], :]
+@jax.jit
+def get_accuracy(batch, label):
+    xs = subdivide(batch)
+    pred = jnp.argmax(transformer(xs, *weights), axis=1)
+    return jnp.sum(pred == label)/pred.shape[0]
 
 
 ### Training loop
 @jax.jit
 def train(batch, labels, weights, opt_state):
-    labels = jnn.one_hot(labels, 10)
+    one_hot_labels = jnn.one_hot(labels, 10)
     xs = subdivide(batch)
-    xs = positional_encoding(xs)
     argnums = range(2, 19)
-    loss = model(xs, labels, *weights)
-    grads = jax.jacrev(model, argnums=argnums)(xs, labels, *weights)
+    loss = batched_model(xs, one_hot_labels, *weights)
+    grads = jax.jacrev(batched_model, argnums=argnums)(xs, one_hot_labels, *weights)
     
     updates, opt_state = optim.update(grads, opt_state)
     weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
-    
+
     return loss, weights
 
 ### Preparing optimizer and weights
 weights = (WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2,
             W1, b1, W2, b2, W3, b3, W4, b4, CT)
 
-optim = optax.adam(1e-3)
+optim = optax.adam(5e-4)
 opt_state = optim.init(weights)
 
 # Training loop
 pbar = tqdm.tqdm(range(100))
 for epoch in pbar:
-    for (batch, labels) in tqdm.tqdm(trainloader):
-        batch = batch.numpy()
-        labels = labels.numpy()
-        loss, weights = train(batch, labels, weights, opt_state)
-        pbar.set_description(f"loss: {loss}")
+    # for (batch, labels) in tqdm.tqdm(trainloader):
+    #     batch = batch.numpy()
+    #     labels = labels.numpy()
+    #     loss, weights, acc = train(batch, labels, weights, opt_state)
+        
+    #     pbar.set_description(f"loss: {loss}, accuracy: {acc}")
+        
+    if epoch % 1 == 0:
+        accs = []
+        for (batch, labels) in tqdm.tqdm(testloader):
+            batch = batch.numpy()
+            labels = labels.numpy()
+            acc = get_accuracy(batch, labels)
+            accs.append(acc)
+        print(f"Test accuracy: {np.mean(accs)}")
     
