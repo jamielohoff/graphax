@@ -102,15 +102,7 @@ class SparseTensor:
     
     def __mul__(self, _tensor):
         return _mul(self, _tensor)
-    
-    # TODO simplify sparse_add and remove this function
-    def materialize_dimensions(self, dims: Sequence[int]) -> Array:
-        if len(dims) == 0:
-            return self.val
-        dims = sorted(dims, reverse=True)
-        dims = [d if d <= self.val.ndim else -1 for d in dims]
-        return jnp.expand_dims(self.val, axis=dims)
-                
+                    
     def dense(self, iota: Array) -> Array:
         """
         Materializes tensor to actual dense shape.
@@ -225,6 +217,8 @@ def _get_fully_materialized_shape(st: SparseTensor) -> Tuple[int]:
     def out_dim_fn(d: Dimension) -> int:
         if d.val_dim is None:
             return 1
+        elif d.size != st.val.shape[d.val_dim]:
+            return 1 # NOTE we need this case because SparseDimensions can be matrialized without the correct d.size property
         else:
             return d.size
         
@@ -258,8 +252,9 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
-    """                      
-    print(lhs, rhs)                         
+    """
+    print("lhs", lhs)
+    print("rhs", rhs)                                             
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -285,9 +280,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
-    """              
-    print("sparse_add")
-    print(lhs, rhs)                                 
+    """                                           
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -568,7 +561,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
                         
         # ld is replicating        
         elif ld.val_dim is None and type(ld) is DenseDimension:
-            new_val_dim = _get_val_dim(lhs, ld.id)
+            new_val_dim = _get_val_dim_when_swapped(lhs, ld.id) # cannot use this here!
 
             lhs_shape.insert(new_val_dim, 1)
             ld.val_dim = new_val_dim
@@ -710,7 +703,7 @@ def _get_output_tensor(lhs: SparseTensor,
         if type(rd) is DenseDimension:
             new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, rd.val_dim))
         else:
-            idx = rd.other_id
+            idx = rd.other_id - r
             ld = lhs.primal_dims[idx]
             if type(ld) is DenseDimension:
                 new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, ld.size, ld.val_dim))                 
@@ -741,7 +734,7 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                         broadcasting multiplication of `lhs.val` and `rhs.val`.
     """  
     print("pure_broadcast_mul") 
-    # print("input", lhs, rhs)                                         
+                                        
     ### Calculate output tensor
     if lhs.val is None and rhs.val is None:
         return _get_output_tensor(lhs, rhs, None)
@@ -756,13 +749,12 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         # Add padding
         lhs, rhs = _pad_tensors(lhs, rhs)
                 
-        # print("lhs", lhs, lhs.val.shape)
-        # print("rhs", rhs, rhs.val.shape)
+        print("lhs", lhs, lhs.val.shape)
+        print("rhs", rhs, rhs.val.shape)
             
         assert _checkify_broadcast_compatibility(lhs.val, rhs.val), f"Shapes {lhs.val.shape} and {rhs.val.shape} not compatible for broadcast multiplication!"
         new_val = lhs.val * rhs.val
         out = _get_output_tensor(lhs, rhs, new_val)
-        print("out", out)
         res = _swap_back_axes(out)
         print("res", res, res.val.shape)
         return res
@@ -779,6 +771,21 @@ def _get_val_dim(st: SparseTensor, id: int) -> int:
                 i += 1
             else:
                 if d.id < d.other_id:
+                    i += 1
+    return i
+
+
+def _get_val_dim_when_swapped(st: SparseTensor, id: int) -> int:
+    """TODO add docstring
+    """
+    dims = st.out_dims + st.primal_dims
+    i = 0
+    for d in dims[:id]:
+        if d.val_dim is not None:
+            if type(d) is DenseDimension:
+                i += 1
+            else:
+                if d.id > d.other_id:
                     i += 1
     return i
     
@@ -899,8 +906,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         else:
             lcontracting_axes.append(ld.val_dim)
             rcontracting_axes.append(rd.val_dim)
-    print(lcontracting_axes, rcontracting_axes)
-    print(lreplication_ids, rreplication_ids)
     # Reshape lhs.val and rhs.val for tiling and replicate along the 
     # respective dimensions for dpt_product
     if len(lreplication_ids) > 0:
@@ -956,25 +961,19 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             else:
                 lcontracting_axes.append(ld.val_dim)
                 rcontracting_axes.append(rd.val_dim)
-                
-    print(lcontracting_axes, rcontracting_axes)
-    print(lreplication_ids, rreplication_ids)
     
     if len(lreplication_ids) > 0:
         lhs = _replicate_along_axis(lhs, lreplication_ids)
     if len(rreplication_ids) > 0:
         rhs = _replicate_along_axis(rhs, rreplication_ids)
         
-    print(lhs.val, rhs.val)
     # Get the contracting axes after the tiling
     if len(lreplication_ids) > 0 or len(rreplication_ids) > 0:
         lcontracting_axes, rcontracting_axes = _get_contracting_axes(lhs, rhs)
     
-    print("contracting axes", lcontracting_axes, rcontracting_axes)
     dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
     dimension_numbers = (dimension_numbers, ((), ()))
     new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
-    print(new_val.shape)
     
     lbroadcasting_axes, rbroadcasting_axes, pos = [], [], []
     # Then we do broadcasting by extracting diagonals from the contracted tensor
@@ -1023,7 +1022,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                         val_dim = rd.val_dim - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) + lhs.val.ndim - sum([1 for lc in lcontracting_axes])
                     else:
                         val_dim = ld.val_dim - sum([1 for lc in lcontracting_axes if lc < ld.val_dim])
-                    new_primal_dims.insert(rd.other_id-r, DenseDimension(rd.other_id, ld.size, val_dim))
+                    new_primal_dims.insert(rd.other_id-r, DenseDimension(rd.other_id-r+l, ld.size, val_dim))
                 else:
                     val_dim = None
                     if ld.val_dim is not None:
@@ -1034,14 +1033,9 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     new_out_dims.insert(ld.other_id, SparseDimension(ld.other_id, ld.size, val_dim, rd.other_id-r+l))
                     new_primal_dims.insert(rd.other_id-r, SparseDimension(rd.other_id-r+l, ld.size, val_dim, ld.other_id))
     
-    print("broadcasting", lbroadcasting_axes, rbroadcasting_axes)
-    print("pos", pos)
-    
     for (lb, rb, p) in zip(lbroadcasting_axes, rbroadcasting_axes, pos):
         new_val = jnp.diagonal(new_val, axis1=lb, axis2=rb)
         new_val = jnp.moveaxis(new_val, -1, p) # TODO do the moveaxes with a single transpose!
-
-    print("diag", new_val.shape)
     
     # Take care of the old dimensions
     for ld in lhs.out_dims:
@@ -1051,28 +1045,28 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                 val_dim = sum([1 for d in new_out_dims[:ld.id] if d.val_dim is not None])
             new_out_dims.insert(ld.id, DenseDimension(ld.id, ld.size, ld.val_dim))
     
-    
     for rd in rhs.primal_dims:
         if type(rd) is DenseDimension:
-            # TODO this needs some adjustment in the val_dim property as well
-            # since val_dim might change due to contractions etc.
-            num_new_out_val_dims = sum([1 for d in new_out_dims if d.val_dim is not None])
-            num_new_out_val_dims += sum([1 for d in new_primal_dims[:rd.id] if type(d) is DenseDimension and d.val_dim is not None])
-            num_old_out_val_dims = sum([1 for ld, rd in zip(lhs.primal_dims, rhs.out_dims) if type(rd) is DenseDimension and type(ld) is DenseDimension and ld.val_dim is not None and rd.val_dim is not None])
-            
-            a = sum([1 for d in lhs.out_dims if d.val_dim is not None])
-            b = len(lcontracting_axes)
-            c = len(lbroadcasting_axes)
             
             val_dim = None
             if rd.val_dim is not None:
-                val_dim = rd.val_dim - num_old_out_val_dims + num_new_out_val_dims # - b + a - c # 
-            print("test", num_new_out_val_dims, num_old_out_val_dims)
-            print(a, b, c)
+                # TODO this needs some adjustment in the val_dim property as well
+                # since val_dim might change due to contractions etc.
+                num_old_lhs_out_dims = sum([1 for ld in lhs.out_dims if type(ld) is DenseDimension and ld.val_dim is not None])
+                num_old_rhs_out_dims = sum([1 for rd in rhs.out_dims if rd.val_dim is not None])
+                num_sparse_dims = sum([1 for ld, rd in zip(lhs.primal_dims, rhs.out_dims) if (type(ld) is SparseDimension or type(rd) is SparseDimension) and (ld.val_dim is not None or rd.val_dim is not None)])
+
+                val_dim = rd.val_dim + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, val_dim))
-    
-    print("res_", SparseTensor(new_out_dims, new_primal_dims, new_val))
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
+
+
+def _materialize_dimensions(st: SparseTensor, dims: Sequence[int]) -> Array:
+    if len(dims) == 0:
+        return st.val
+    dims = sorted(dims, reverse=True)
+    dims = [d if d <= st.val.ndim else -1 for d in dims]
+    return jnp.expand_dims(st.val, axis=dims)
 
 
 def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
@@ -1095,11 +1089,9 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
     count = 0       
-    
-    ltiling, rtiling = [], []
-    
+                    
     # Check the dimensionality of the 'out_dims' of both tensors
-    for i, (ld, rd) in enumerate(zip(lhs.out_dims, rhs.out_dims)):
+    for ld, rd in zip(lhs.out_dims, rhs.out_dims):
         if ld.val_dim is None and rd.val_dim is None:
             dim = None
         elif ld.val_dim is not None and rd.val_dim is None:
@@ -1115,12 +1107,11 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             count += 1
             
         if type(ld) is SparseDimension and type(rd) is SparseDimension and ld.other_id == rd.other_id:
-            new_out_dims.append(SparseDimension(i, ld.size, dim, ld.other_id))
+            new_out_dims.append(SparseDimension(ld.id, ld.size, dim, ld.other_id))
             _lshape.append(1)
             _rshape.append(1)
         else:
             if type(ld) is SparseDimension:
-                _lshape.append(ld.size)
                 _rshape.append(1)
             elif type(rd) is SparseDimension:
                 _rshape.append(ld.size)
@@ -1128,15 +1119,14 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             else:
                 _lshape.append(1)
                 _rshape.append(1)
-            new_out_dims.append(DenseDimension(i, ld.size, dim))
-    print("out", _lshape, _rshape)
+            new_out_dims.append(DenseDimension(ld.id, ld.size, dim))
     # Check the dimensionality of the 'primal_dims' of both tensors        
-    for i, (ld, rd) in enumerate(zip(lhs.primal_dims, rhs.primal_dims), start=len(new_out_dims)):                 
+    for (ld, rd) in zip(lhs.primal_dims, rhs.primal_dims):                 
         if type(ld) is SparseDimension and type(rd) is SparseDimension and ld.other_id == rd.other_id:
             dim = new_out_dims[ld.other_id].val_dim
-            new_primal_dims.append(SparseDimension(i, ld.size, dim, ld.other_id))
-            _lshape.append(1)
-            _rshape.append(1)
+            new_primal_dims.append(SparseDimension(ld.id, ld.size, dim, ld.other_id))
+            # _lshape.append(1)
+            # _rshape.append(1)
         else:            
             if ld.val_dim is None and rd.val_dim is None:
                 dim = None
@@ -1154,17 +1144,21 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             
             if type(ld) is SparseDimension:
                 _lshape.append(ld.size)
+                if ld.val_dim is not None:
+                    ldims.append(dim)
                 _rshape.append(1)
             elif type(rd) is SparseDimension:
                 _rshape.append(rd.size)
+                if rd.val_dim is not None:
+                    rdims.append(dim)
                 _lshape.append(1)
             else:
                 _lshape.append(1)
                 _rshape.append(1)
-            new_primal_dims.append(DenseDimension(i, ld.size, dim))
+            new_primal_dims.append(DenseDimension(ld.id, ld.size, dim))
                         
-    lhs_val = lhs.materialize_dimensions(ldims)
-    rhs_val = rhs.materialize_dimensions(rdims)
+    lhs_val = _materialize_dimensions(lhs, ldims)
+    rhs_val = _materialize_dimensions(rhs, rdims)
     
     ltiling = [1]*len(lhs_val.shape)
     rtiling = [1]*len(rhs_val.shape)
@@ -1178,31 +1172,20 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         elif type(rd) is DenseDimension and rd.val_dim is None and ld.val_dim is not None:
             rtiling[i] = ld.size
     
-    # TODO add tiling here!
-    print("tiling", ltiling, rtiling)
-    print("shapes", lhs_val.shape, rhs_val.shape)
-    
     if sum(ltiling) > len(ltiling):
         lhs_val = jnp.tile(lhs_val, ltiling)
     if sum(rtiling) > len(rtiling):
         rhs_val = jnp.tile(rhs_val, rtiling)
         
-    print("shapes", lhs_val.shape, rhs_val.shape)
-    print("_lshape", _lshape) 
-    print("_rshape", _rshape)
-    
     # We need to materialize sparse dimensions for addition
-    if len(_lshape) != 0:
-        print(len(lhs.out_dims))
-        
+    if sum(_lshape) > len(_lshape):        
         iota = jnp.bool_(eye_like(_lshape, len(lhs.out_dims)))
         lhs_val = jnp.where(iota, lhs_val, 0.)
-    if len(_rshape) != 0:
+    if sum(_rshape) > len(_rshape):
         iota = jnp.bool_(eye_like(_rshape, len(rhs.out_dims)))
-        rhs = jnp.where(iota, rhs_val, 0.)
+        rhs_val = jnp.where(iota, rhs_val, 0.)
     
-    val = lhs_val + rhs_val
-    
-    return SparseTensor(new_out_dims, new_primal_dims, val)
+    new_val = lhs_val + rhs_val
+    return SparseTensor(new_out_dims, new_primal_dims, new_val)
     
     

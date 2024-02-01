@@ -30,18 +30,21 @@ def eye_like(shape, out_len):
         else:
             return jnp.eye(out_size, primal_size).reshape(*out_shape, *primal_shape)
     else:
-        l = len(out_shape)
-        val = 1.
-        for i, o in enumerate(out_shape):
-            j = primal_shape.index(o)
-            _shape = [1]*len(shape)
-            _shape[i] = o
-            _shape[l+j] = o
-            if o == 1:
-                kronecker = jnp.ones((1, 1)).reshape(_shape)
-            else: 
-                kronecker = jnp.eye(o).reshape(_shape)
-            val *= kronecker
+        out_size = reduce((lambda x, y: x*y), out_shape)
+        val = jnp.eye(out_size).reshape(*out_shape, *primal_shape)
+        
+        # l = len(out_shape)
+        # val = 1.
+        # for i, o in enumerate(out_shape):
+        #     j = primal_shape.index(o) # this does not work for repeated elements
+        #     _shape = [1]*len(shape)
+        #     _shape[i] = o
+        #     _shape[l+j] = o
+        #     if o == 1:
+        #         kronecker = jnp.ones((1, 1)).reshape(_shape)
+        #     else: 
+        #         kronecker = jnp.eye(o).reshape(_shape)
+        #     val *= kronecker
         return val
 
 
@@ -57,6 +60,7 @@ def eye_like_copy(shape, out_len, iota):
         elif primal_size == 1:
             return jnp.ones(tuple(out_shape)+(1,))
         else:
+            print(out_size, primal_size)
             sub_iota = lax.slice(iota, (0, 0), (out_size, primal_size))
             return sub_iota.reshape(*out_shape, *primal_shape)
     else:
@@ -78,7 +82,7 @@ def eye_like_copy(shape, out_len, iota):
         return val
     
     
-def get_largest_tensor(args):
-    sizes = [arg.aval.size for arg in args]
+def get_largest_tensor(tensors):
+    sizes = [t.aval.size for t in tensors]
     return max(sizes)    
 

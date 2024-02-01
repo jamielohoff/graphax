@@ -51,7 +51,7 @@ def jacve(fun: Callable,
 def _iota_shape(jaxpr, argnums):
     largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
     largest_output = get_largest_tensor(jaxpr._outvars)
-    
+        
     # TODO check the first condition for correctness
     if largest_input == 1 and largest_output == 1:
         return None
@@ -81,15 +81,19 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
         post_val = graph[eqn.outvars[0]][out_edge]
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
             pre_val = transpose_graph[eqn.outvars[0]][in_edge]
-                            
+            
             # Handle stuff like reshape, squeeze etc.
             # TODO what happens if both have a jac_transforms?
             print(out_edge, eqn.outvars[0], in_edge)  
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
-                raise NotImplementedError("Not implemented for two jac_transforms!")
+                pre_val = pre_val.prepend_transforms(post_val)
+                edge_outval = pre_val.unload_transforms(post_val, iota)
             elif len(pre_val.jac_transforms) > 0:
+                print("unloading")
                 edge_outval = pre_val.unload_transforms(post_val, iota)
             elif len(post_val.jac_transforms) > 0:
+                print("prepending")
+                print(pre_val, post_val)
                 edge_outval = pre_val.prepend_transforms(post_val)
             else:     
                 edge_outval = post_val * pre_val
@@ -99,7 +103,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
-                print("add edge", out_edge, in_edge, _edge)
+                print("add edge", out_edge, in_edge, _edge, edge_outval)
                 edge_outval += _edge
                 num_add += 1
                 
@@ -207,6 +211,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             num_muls += num_mul
             num_adds += num_add
            
+    # TODO offload all jac_transforms to the output variable before densification!
     # Collect outputs   
     jac_vals = [graph[invar][outvar].dense(iota) 
                 if outvar in list(graph[invar].keys()) else zeros_like(invar, outvar)

@@ -587,6 +587,29 @@ class TestBroadcastMul(unittest.TestCase):
         iota = jnp.eye(5)
             
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
+        
+    def test_3d_4d_sparse(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        
+        x = jrand.normal(xkey, (4, 5))
+        _x = jnp.einsum("ij,ik->ijk", x, jnp.eye(4))
+        
+        y = jrand.normal(ykey, (5, 4, 3))
+        _y = jnp.einsum("ijk,il->ijlk", y, jnp.eye(5))
+
+        print(_x.shape, _y.shape)
+        res = jnp.einsum("ijk,jklm->ilm", _x, _y)
+        
+        stx = SparseTensor([SparseDimension(0, 4, 0, 2)], 
+                        [DenseDimension(1, 5, 1), SparseDimension(2, 4, 0, 0)], x)
+        sty = SparseTensor([SparseDimension(0, 5, 0, 2), DenseDimension(1, 4, 1)], 
+                        [SparseDimension(2, 5, 0, 0), DenseDimension(3, 3, 2)], y)
+        stres = stx * sty
+                
+        iota = jnp.eye(5)
+            
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
 
 if __name__ == '__main__':
