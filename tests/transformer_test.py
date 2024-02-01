@@ -87,65 +87,67 @@ class TransformerTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres))
         
-    # def test_multihead_attention_block(self):
-    #     num_heads = 8
-    #     seq_len = 32
-    #     embedding_dim = 32
-    #     dk = 32//num_heads
+    def test_multihead_attention_block(self):
+        # TODO investigate errors between gradients computed by vertex elimination
+        # and errors computed through jax
+        num_heads = 8
+        seq_len = 32
+        embedding_dim = 32
+        dk = 64//num_heads
 
-    #     ### Weights for self-attention layer
-    #     key = jrand.PRNGKey(42)
-    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-    #     WQ = glorot(qkey, (dk*num_heads, embedding_dim))
-    #     WK = glorot(kkey, (dk*num_heads, embedding_dim))
-    #     WV = glorot(vkey, (dk*num_heads, embedding_dim))
-    #     WO = glorot(okey, (embedding_dim, dk*num_heads))
+        ### Weights for self-attention layer
+        key = jrand.PRNGKey(42)
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO = glorot(okey, (embedding_dim, dk*num_heads))
         
-    #     # Weights for MLP layer
-    #     W1key, W2key, key = jrand.split(key, 3)
-    #     W1 = glorot(W1key, (1024, embedding_dim))
-    #     b1 = jnp.zeros((1024, 1), dtype=jnp.float32)
-    #     W2 = glorot(W2key, (embedding_dim, 1024))
-    #     b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+        # Weights for MLP layer
+        W1key, W2key, key = jrand.split(key, 3)
+        W1 = glorot(W1key, (1024, embedding_dim))
+        b1 = jnp.zeros((1024, 1), dtype=jnp.float32)
+        W2 = glorot(W2key, (embedding_dim, 1024))
+        b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
         
-    #     x = jrand.normal(key, (embedding_dim, seq_len))
+        x = jrand.normal(key, (embedding_dim, seq_len))
         
-    #     print(jax.make_jaxpr(multihead_attention_block)(x, WQ, WK, WV, WO, W1, b1, W2, b2))
+        print(jax.make_jaxpr(multihead_attention_block)(x, WQ, WK, WV, WO, W1, b1, W2, b2))
         
-    #     argnums = range(1, 9)
-    #     deriv_fn = jax.jit(jacve(multihead_attention_block, order="rev", argnums=argnums))
-    #     veres = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        argnums = range(1, 9)
+        deriv_fn = jax.jit(jacve(multihead_attention_block, order="rev", argnums=argnums))
+        veres = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
 
-    #     jax_deriv_fn = jax.jit(jax.jacrev(multihead_attention_block, argnums=argnums))
-    #     revres = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        jax_deriv_fn = jax.jit(jax.jacrev(multihead_attention_block, argnums=argnums))
+        revres = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
         
-    #     print("err1", jnp.abs(veres[0] - revres[0]).sum())
-    #     print("err2", jnp.abs(veres[1] - revres[1]).sum())
-    #     print("err3", jnp.abs(veres[2] - revres[2]).sum())
-    #     print("err4", jnp.abs(veres[3] - revres[3]).sum())
+        print("err1", jnp.abs(veres[0] - revres[0]).mean())
+        print("err2", jnp.abs(veres[1] - revres[1]).mean())
+        print("err3", jnp.abs(veres[2] - revres[2]).mean())
+        print("err4", jnp.abs(veres[3] - revres[3]).mean())
         
-    #     print("err5", jnp.abs(veres[4] - revres[4]).sum())
-    #     print("err6", jnp.abs(veres[5] - revres[5]).sum())
-    #     print("err7", jnp.abs(veres[6] - revres[6]).sum())
-    #     print("err8", jnp.abs(veres[7] - revres[7]).sum())
+        print("err5", jnp.abs(veres[4] - revres[4]).mean())
+        print("err6", jnp.abs(veres[5] - revres[5]).mean())
+        print("err7", jnp.abs(veres[6] - revres[6]).mean())
+        print("err8", jnp.abs(veres[7] - revres[7]).mean())
         
-    #     import matplotlib.pyplot as plt
-    #     import time
+        import matplotlib.pyplot as plt
+        import time
         
-    #     out = jax.jit(deriv_fn)(x, WQ, WK, WV, WO, W1, b1, W2, b2)
-    #     st = time.time()
-    #     for i in range(50):
-    #         out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
-    #     print("graphax time", time.time() - st)
+        out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        st = time.time()
+        for i in range(50):
+            out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        print("graphax time", time.time() - st)
         
-    #     jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
-    #     st = time.time()
-    #     for i in range(50):
-    #         out = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
-    #     print("jax time", time.time() - st)
+        jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        st = time.time()
+        for i in range(50):
+            out = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        print("jax time", time.time() - st)
         
-        # self.assertTrue(tree_allclose(veres, revres))
+        self.assertTrue(tree_allclose(veres, revres))
             
     # ### Test all the softmax attention crap
     # def test_softmax_0(self):
@@ -258,36 +260,36 @@ class TransformerTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres))
     
-    def test_multihead_attention(self):
-        num_heads = 1
-        seq_len = 32
-        embedding_dim = 32
-        dk = 32//num_heads
+    # def test_multihead_attention(self):
+    #     num_heads = 1
+    #     seq_len = 32
+    #     embedding_dim = 32
+    #     dk = 32//num_heads
         
-        key = jrand.PRNGKey(42)
-        x = jrand.normal(key, (embedding_dim, seq_len))
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO = glorot(okey, (embedding_dim, dk*num_heads))
+    #     key = jrand.PRNGKey(42)
+    #     x = jrand.normal(key, (embedding_dim, seq_len))
+    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+    #     WQ = glorot(qkey, (dk*num_heads, embedding_dim))
+    #     WK = glorot(kkey, (dk*num_heads, embedding_dim))
+    #     WV = glorot(vkey, (dk*num_heads, embedding_dim))
+    #     WO = glorot(okey, (embedding_dim, dk*num_heads))
 
-        print(jax.make_jaxpr(multihead_softmax_attention)(x, WQ, WK, WV, WO))
+    #     print(jax.make_jaxpr(multihead_softmax_attention)(x, WQ, WK, WV, WO))
 
-        # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
-        jax_jac_rev = jax.jit(jax.jacrev(multihead_softmax_attention, argnums=(1, 2, 3, 4)))
-        revres = jax_jac_rev(x, WQ, WK, WV, WO)
+    #     # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
+    #     jax_jac_rev = jax.jit(jax.jacrev(multihead_softmax_attention, argnums=(1, 2, 3, 4)))
+    #     revres = jax_jac_rev(x, WQ, WK, WV, WO)
 
-        # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
-        jac_rev = jax.jit(jacve(multihead_softmax_attention, order="rev", argnums=(1, 2, 3, 4)))
-        veres = jac_rev(x, WQ, WK, WV, WO)
+    #     # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
+    #     jac_rev = jax.jit(jacve(multihead_softmax_attention, order="rev", argnums=(1, 2, 3, 4)))
+    #     veres = jac_rev(x, WQ, WK, WV, WO)
         
-        print("err1", jnp.abs(veres[0] - revres[0]).sum())
-        print("err2", jnp.abs(veres[1] - revres[1]).sum())
-        print("err3", jnp.abs(veres[2] - revres[2]).sum())
-        print("err4", jnp.abs(veres[3] - revres[3]).sum())
+    #     print("err1", jnp.abs(veres[0] - revres[0]).sum())
+    #     print("err2", jnp.abs(veres[1] - revres[1]).sum())
+    #     print("err3", jnp.abs(veres[2] - revres[2]).sum())
+    #     print("err4", jnp.abs(veres[3] - revres[3]).sum())
         
-        self.assertTrue(tree_allclose(veres, revres))
+    #     self.assertTrue(tree_allclose(veres, revres))
             
     # def test_vmap_multihead_attention(self):
     #     batchsize = 16

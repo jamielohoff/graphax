@@ -550,18 +550,18 @@ def broadcast_elemental_rule(primals, **params):
                 return post*pre
     return val_out, [SparseTensor([], [], None, [broadcast_transform])]
 
-    
 elemental_rules[lax.broadcast_in_dim_p] = broadcast_elemental_rule
 
-def broadcast_elemental_rule(primals, **params):
+
+def squeeze_elemental_rule(primals, **params):
     # NOTE: squeeze is basically just the inverse operation to broadcast_in_dim
     # since it just adds a DenseDimension of size 1
     print(primals, params)
     val_out = lax.squeeze_p.bind(*primals, **params)
             
-    def broadcast_transform(pre, post, iota):
+    def squeeze_transform(pre, post, iota):
         if post.val is None:
-            pre.jac_transform = [broadcast_transform]
+            pre.jac_transform = [squeeze_transform]
             return pre
         else:
             print("old post", post)
@@ -612,7 +612,7 @@ def broadcast_elemental_rule(primals, **params):
             new_out_dims = tuple(new_out_dims)
             new_primal_dims = tuple(new_primal_dims)
             if len(_rm_dims) > 0:
-                new_val = jnp.squeeze(post.val, axis=_rm_dims)
+                new_val = jnp.broadcast_in_dim(post.val, axis=_rm_dims)
             else:
                 new_val = post.val
             post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
@@ -620,7 +620,9 @@ def broadcast_elemental_rule(primals, **params):
                 return post
             else:
                 return post*pre
-    return val_out, [SparseTensor([], [], None, [broadcast_transform])]
+    return val_out, [SparseTensor([], [], None, [squeeze_transform])]
+
+elemental_rules[lax.squeeze_p] = squeeze_elemental_rule
 
     
 def convert_element_type_rule(primals, **params):
