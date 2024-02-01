@@ -565,18 +565,18 @@ def squeeze_elemental_rule(primals, **params):
             return pre
         else:
             print("old post", post)
-            rm_dims = [d for d in range(val_out.ndim) 
+            new_dims = [d for d in range(val_out.ndim) 
                        if d not in params["dimensions"]]
 
             new_out_dims = list(copy.deepcopy(post.out_dims))
             new_primal_dims = list(copy.deepcopy(post.primal_dims))
             _rm_dims = []
-            for dim in rm_dims:
+            for dim in new_dims:
                 if new_primal_dims[dim].val_dim is not None:
                     _rm_dims.append(new_primal_dims[dim].val_dim)
                 if type(new_primal_dims[dim]) is DenseDimension:
                     has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
-                    del new_primal_dims[dim]
+                    del new_primal_dims[dim]# do an insert here instead
                     for d in new_primal_dims[dim:]:
                         d.id -= 1
                         if type(d) is SparseDimension:

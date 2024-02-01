@@ -87,22 +87,93 @@ class TransformerTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres))
         
-    def test_multihead_attention_block(self):
+    # def test_multihead_attention_block(self):
+    #     # TODO investigate errors between gradients computed by vertex elimination
+    #     # and errors computed through jax
+    #     num_heads = 8
+    #     seq_len = 32
+    #     embedding_dim = 32
+    #     dk = 64//num_heads
+
+    #     ### Weights for self-attention layer
+    #     key = jrand.PRNGKey(42)
+    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+    #     WQ = glorot(qkey, (dk*num_heads, embedding_dim))
+    #     WK = glorot(kkey, (dk*num_heads, embedding_dim))
+    #     WV = glorot(vkey, (dk*num_heads, embedding_dim))
+    #     WO = glorot(okey, (embedding_dim, dk*num_heads))
+        
+    #     # Weights for MLP layer
+    #     W1key, W2key, key = jrand.split(key, 3)
+    #     W1 = glorot(W1key, (1024, embedding_dim))
+    #     b1 = jnp.zeros((1024, 1), dtype=jnp.float32)
+    #     W2 = glorot(W2key, (embedding_dim, 1024))
+    #     b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+        
+    #     x = jrand.normal(key, (embedding_dim, seq_len))
+        
+    #     print(jax.make_jaxpr(multihead_attention_block)(x, WQ, WK, WV, WO, W1, b1, W2, b2))
+        
+    #     argnums = range(1, 9)
+    #     deriv_fn = jax.jit(jacve(multihead_attention_block, order="rev", argnums=argnums))
+    #     veres = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+
+    #     jax_deriv_fn = jax.jit(jax.jacrev(multihead_attention_block, argnums=argnums))
+    #     revres = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        
+    #     print("err1", jnp.abs(veres[0] - revres[0]).mean())
+    #     print("err2", jnp.abs(veres[1] - revres[1]).mean())
+    #     print("err3", jnp.abs(veres[2] - revres[2]).mean())
+    #     print("err4", jnp.abs(veres[3] - revres[3]).mean())
+        
+    #     print("err5", jnp.abs(veres[4] - revres[4]).mean())
+    #     print("err6", jnp.abs(veres[5] - revres[5]).mean())
+    #     print("err7", jnp.abs(veres[6] - revres[6]).mean())
+    #     print("err8", jnp.abs(veres[7] - revres[7]).mean())
+        
+    #     import matplotlib.pyplot as plt
+    #     import time
+        
+    #     out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     st = time.time()
+    #     for i in range(50):
+    #         out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     print("graphax time", time.time() - st)
+        
+    #     jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     st = time.time()
+    #     for i in range(50):
+    #         out = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     print("jax time", time.time() - st)
+        
+    #     self.assertTrue(tree_allclose(veres, revres))
+        
+    def test_multihead_attention_2_blocks(self):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
         num_heads = 8
-        seq_len = 32
+        seq_len = 16
         embedding_dim = 32
-        dk = 64//num_heads
+        dk = 32//num_heads
+        
+        def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
+                            WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
+            x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
+            return multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
 
         ### Weights for self-attention layer
         key = jrand.PRNGKey(42)
         qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        WQ1 = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK1 = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV1 = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO1 = glorot(okey, (embedding_dim, dk*num_heads))
+        
         qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO = glorot(okey, (embedding_dim, dk*num_heads))
+        WQ2 = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK2 = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV2 = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO2 = glorot(okey, (embedding_dim, dk*num_heads))
         
         # Weights for MLP layer
         W1key, W2key, key = jrand.split(key, 3)
@@ -111,16 +182,26 @@ class TransformerTest(unittest.TestCase):
         W2 = glorot(W2key, (embedding_dim, 1024))
         b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
         
+        W3key, W4key, key = jrand.split(key, 3)
+        W3 = glorot(W3key, (1024, embedding_dim))
+        b3 = jnp.zeros((1024, 1), dtype=jnp.float32)
+        W4 = glorot(W4key, (embedding_dim, 1024))
+        b4 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+        
+        weights = (WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
+                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+        
         x = jrand.normal(key, (embedding_dim, seq_len))
         
-        print(jax.make_jaxpr(multihead_attention_block)(x, WQ, WK, WV, WO, W1, b1, W2, b2))
+        print(jax.make_jaxpr(multiple_blocks)(x, *weights))
         
-        argnums = range(1, 9)
-        deriv_fn = jax.jit(jacve(multihead_attention_block, order="rev", argnums=argnums))
-        veres = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        argnums = list(range(1, 17))
+        print(argnums)
+        deriv_fn = jax.jit(jacve(multiple_blocks, order="rev", argnums=argnums))
+        veres = deriv_fn(x, *weights)
 
-        jax_deriv_fn = jax.jit(jax.jacrev(multihead_attention_block, argnums=argnums))
-        revres = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        jax_deriv_fn = jax.jit(jax.jacrev(multiple_blocks, argnums=argnums))
+        revres = jax_deriv_fn(x, *weights)
         
         print("err1", jnp.abs(veres[0] - revres[0]).mean())
         print("err2", jnp.abs(veres[1] - revres[1]).mean())
@@ -132,20 +213,30 @@ class TransformerTest(unittest.TestCase):
         print("err7", jnp.abs(veres[6] - revres[6]).mean())
         print("err8", jnp.abs(veres[7] - revres[7]).mean())
         
+        print("err9", jnp.abs(veres[8] - revres[8]).mean())
+        print("err10", jnp.abs(veres[9] - revres[9]).mean())
+        print("err11", jnp.abs(veres[10] - revres[10]).mean())
+        print("err12", jnp.abs(veres[11] - revres[11]).mean())
+        
+        print("err13", jnp.abs(veres[12] - revres[12]).mean())
+        print("err14", jnp.abs(veres[13] - revres[13]).mean())
+        print("err15", jnp.abs(veres[14] - revres[14]).mean())
+        print("err16", jnp.abs(veres[15] - revres[15]).mean())
+        
         import matplotlib.pyplot as plt
         import time
         
-        out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+        out = jax_deriv_fn(x, *weights)
         st = time.time()
         for i in range(50):
-            out = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
-        print("graphax time", time.time() - st)
-        
-        jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
-        st = time.time()
-        for i in range(50):
-            out = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+            out = jax_deriv_fn(x, *weights)
         print("jax time", time.time() - st)
+        
+        out = deriv_fn(x, *weights)
+        st = time.time()
+        for i in range(50):
+            out = deriv_fn(x, *weights)
+        print("graphax time", time.time() - st)
         
         self.assertTrue(tree_allclose(veres, revres))
             
