@@ -8,8 +8,6 @@ import jax.numpy as jnp
 import jax.random as jrand
 from jax.tree_util import tree_map
 
-import numpy as np
-
 from graphax import jacve, tree_allclose
 
 from _transformer import (multihead_softmax_attention, MLP, layer_norm, glorot, 
@@ -91,9 +89,9 @@ class TransformerTest(unittest.TestCase):
     #     # TODO investigate errors between gradients computed by vertex elimination
     #     # and errors computed through jax
     #     num_heads = 8
-    #     seq_len = 32
-    #     embedding_dim = 32
-    #     dk = 64//num_heads
+    #     seq_len = 16
+    #     embedding_dim = 16
+    #     dk = 32//num_heads
 
     #     ### Weights for self-attention layer
     #     key = jrand.PRNGKey(42)
@@ -111,15 +109,16 @@ class TransformerTest(unittest.TestCase):
     #     b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
         
     #     x = jrand.normal(key, (embedding_dim, seq_len))
-        
-    #     print(jax.make_jaxpr(multihead_attention_block)(x, WQ, WK, WV, WO, W1, b1, W2, b2))
+    #     weights = (WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     # print(jax.make_jaxpr(multihead_attention_block)(x, *weights))
         
     #     argnums = range(1, 9)
+    #     print(jax.make_jaxpr(jacve(multihead_attention_block, order="rev", argnums=argnums))(x, *weights))
     #     deriv_fn = jax.jit(jacve(multihead_attention_block, order="rev", argnums=argnums))
-    #     veres = deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     veres = deriv_fn(x, *weights)
 
     #     jax_deriv_fn = jax.jit(jax.jacrev(multihead_attention_block, argnums=argnums))
-    #     revres = jax_deriv_fn(x, WQ, WK, WV, WO, W1, b1, W2, b2)
+    #     revres = jax_deriv_fn(x, *weights)
         
     #     print("err1", jnp.abs(veres[0] - revres[0]).mean())
     #     print("err2", jnp.abs(veres[1] - revres[1]).mean())
@@ -152,14 +151,15 @@ class TransformerTest(unittest.TestCase):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
         num_heads = 8
-        seq_len = 1024
-        embedding_dim = 2048
-        dk = 2048//num_heads
+        seq_len = 4*256
+        embedding_dim = 4*512
+        dk = 4*512//num_heads
         
         def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
                             WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
             x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
             x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+            x = x[:, 0]
             return x.sum()
 
         # Weights for self-attention layer
@@ -253,10 +253,12 @@ class TransformerTest(unittest.TestCase):
     #     y = jrand.normal(ykey, (3, 4))
 
     #     print(jax.make_jaxpr(f)(x, y))
+    #     print(jax.make_jaxpr(jacve(f, order="rev", argnums=(0, 1)))(x, y))
     #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
     #     veres = deriv_fn(x, y)
 
-    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+    #     # print(jax.make_jaxpr(jax.jacrev(f, argnums=(0, 1)))(x, y))
+    #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
         
     #     print("ve", veres[0])
     #     print("jax", revres[0])
