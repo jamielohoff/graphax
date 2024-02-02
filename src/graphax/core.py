@@ -188,8 +188,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     vo_vertices = set() # contains all intermediate and output vertices
     counter = 1
     var_id = {}
-    # Loop though elemental partials and create an abstract representation of the
-    # computational graph
+    # Loop though elemental partials and create an abstract representation of
+    # the computational graph
     for eqn in jaxpr.eqns:
         # Treatment of intermediate variables that are also output variables
         for outvar in eqn.outvars:
@@ -202,22 +202,58 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                 vertex = var_id[invar]
                 vo_vertices.add(vertex)
                 
-        invals = safe_map(read, eqn.invars)            
-        if eqn.primitive not in elemental_rules:
-            raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
+        invals = safe_map(read, eqn.invars)              
         
         if eqn.primitive is lax.stop_gradient_p:
             primal_outvals = lax.stop_gradient_p.bind(*invals, **eqn.params)
             safe_map(write, eqn.outvars, [primal_outvals])
         else:
+            if eqn.primitive not in elemental_rules:
+                raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
+            
             primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
             safe_map(write, eqn.outvars, [primal_outvals])
             
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
             # NOTE: Currently only able to treat one output variable
             _write_elemental = partial(write_elemental, eqn.outvars[0])
-            safe_map(_write_elemental, invars, elemental_outvals)        
-
+            safe_map(_write_elemental, invars, elemental_outvals)
+            
+    # Prune the computational graph
+    print("looking for dead vertices...")
+    has_dead_vertices = True
+    for i, invar in enumerate(jaxpr.invars):
+        if i not in argnums:
+            for in_edge in transpose_graph[invar].keys():
+                del graph[in_edge][invar]
+            for out_edge in graph[invar].keys():   
+                del transpose_graph[out_edge][invar]   
+                
+            del graph[invar]
+            del transpose_graph[invar]
+        
+    already_deleted = []
+    while has_dead_vertices:
+        to_delete = []
+        for eqn in jaxpr.eqns:
+            o = eqn.outvars[0]
+            if o not in jaxpr.outvars and o not in already_deleted:
+                if len(graph[o]) == 0 or len(transpose_graph[o]) == 0:
+                    to_delete.append(o) 
+                    
+        if len(to_delete) > 0:
+            for o in to_delete:
+                for in_edge in transpose_graph[o].keys():
+                    del graph[in_edge][o]
+                for out_edge in graph[o].keys():   
+                    del transpose_graph[out_edge][o]   
+                    
+                del graph[o]
+                del transpose_graph[o] 
+            already_deleted.extend(to_delete)
+        else:
+            has_dead_vertices = False
+        
     # Eliminate the vertices
     num_muls, num_adds = 0, 0
     counts = []

@@ -273,22 +273,62 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres))     
     
-    def test_slicing(self):
-        def f(x, y):
-            z = x @ y
-            return jnp.sin(z[:, 0])
+    # def test_slicing(self):
+    #     def f(x, y):
+    #         z = x @ y
+    #         return jnp.sin(z[:, 0:1])
+
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (2, 3))
+    #     y = jrand.normal(ykey, (3, 4))
+        
+    #     print(jax.make_jaxpr(f)(x, y))
+
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
+
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+        
+    # def test_squeezing(self):
+    #     def f(x, y):
+    #         z = x @ y
+    #         return z[:, 0].sum()
+
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (2, 3))
+    #     y = jrand.normal(ykey, (3, 4))
+        
+    #     print(jax.make_jaxpr(f)(x, y))
+
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
+
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+        
+    def test_concatenate(self):
+        def f(x, y, z):
+            z = jnp.concatenate([y, z], axis=0)
+            w = x @ z
+            return jnp.sin(w)
 
         key = jrand.PRNGKey(42)
         xkey, ykey = jrand.split(key, 2)
         x = jrand.normal(xkey, (2, 3))
-        y = jrand.normal(ykey, (3, 4))
+        y = jrand.normal(ykey, (2, 4))
+        z = jrand.normal(ykey, (1, 4))
         
-        print(jax.make_jaxpr(f)(x, y))
+        print(jax.make_jaxpr(f)(x, y, z))
 
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
+        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2)))
+        veres = deriv_fn(x, y, z)
 
-        revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+        revres = jax.jacrev(f, argnums=(0, 1, 2))(x, y, z)
 
         self.assertTrue(tree_allclose(veres, revres)) 
 

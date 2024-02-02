@@ -150,8 +150,8 @@ class SparseTensor:
         tiling = [tile_dim_fn(d) for d in self.out_dims+self.primal_dims]
 
         val = self.val.reshape(shape)
-        index_map = jnp.bool_(eye_like_copy(eye_shape, len(self.out_dims), iota))
-        val = jnp.where(index_map, val, 0.)
+        index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
+        val = index_map*val
         return jnp.tile(val, tiling)
     
     def unload_transforms(self, _tensor, iota):
@@ -1179,11 +1179,11 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         
     # We need to materialize sparse dimensions for addition
     if sum(_lshape) > len(_lshape):        
-        iota = jnp.bool_(eye_like(_lshape, len(lhs.out_dims)))
-        lhs_val = jnp.where(iota, lhs_val, 0.)
+        iota = eye_like(_lshape, len(lhs.out_dims))
+        lhs_val = iota * lhs_val
     if sum(_rshape) > len(_rshape):
-        iota = jnp.bool_(eye_like(_rshape, len(rhs.out_dims)))
-        rhs_val = jnp.where(iota, rhs_val, 0.)
+        iota = eye_like(_rshape, len(rhs.out_dims))
+        rhs_val = iota*rhs_val
     
     new_val = lhs_val + rhs_val
     return SparseTensor(new_out_dims, new_primal_dims, new_val)
