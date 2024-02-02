@@ -253,8 +253,8 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
     """
-    print("lhs", lhs)
-    print("rhs", rhs)                                             
+    # print("lhs", lhs)
+    # print("rhs", rhs)                                             
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -733,7 +733,7 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         broadcasting multiplication of `lhs.val` and `rhs.val`.
     """  
-    print("pure_broadcast_mul") 
+    # print("pure_broadcast_mul") 
                                         
     ### Calculate output tensor
     if lhs.val is None and rhs.val is None:
@@ -749,14 +749,14 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         # Add padding
         lhs, rhs = _pad_tensors(lhs, rhs)
                 
-        print("lhs", lhs, lhs.val.shape)
-        print("rhs", rhs, rhs.val.shape)
+        # print("lhs", lhs, lhs.val.shape)
+        # print("rhs", rhs, rhs.val.shape)
             
         assert _checkify_broadcast_compatibility(lhs.val, rhs.val), f"Shapes {lhs.val.shape} and {rhs.val.shape} not compatible for broadcast multiplication!"
         new_val = lhs.val * rhs.val
         out = _get_output_tensor(lhs, rhs, new_val)
         res = _swap_back_axes(out)
-        print("res", res, res.val.shape)
+        # print("res", res, res.val.shape)
         return res
     
     
@@ -886,7 +886,7 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the dense dot-product multiplication of `lhs.val` and `rhs.val`.
     """
-    print("dot_product_mul")
+    # print("dot_product_mul")
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
     new_out_dims = lhs.out_dims
@@ -943,7 +943,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: _description_
     """
     new_out_dims, new_primal_dims = [], []
-    print("mixed_mul")
+    # print("mixed_mul")
     l, r = len(lhs.out_dims), len(rhs.out_dims)
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []

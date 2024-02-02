@@ -112,7 +112,6 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     elementals_out = [make_parallel_jacobian(i, primals, val_out, elemental) 
                         for i, elemental in enumerate(elementals) 
                         if not type(primals[i]) in (float, np.ndarray, np.float32)]
-    print(primitive, elementals_out)
     return val_out, elementals_out
 
 
@@ -354,10 +353,7 @@ def dot_general_elemental_rule(primals, **params):
     
     lhs_primal_dims, rhs_primal_dims = [], []
     lhs_out_dims, rhs_out_dims = [], []
-    
-    print("test", transpose_rhs_dims)
-    print(rhs.aval.shape, transpose_rhs.aval.shape)
-    
+        
     i = 0
     for lid, ld in enumerate(lhs_shape):
         other_lid = lid + len(out_shape)
@@ -387,7 +383,6 @@ def dot_general_elemental_rule(primals, **params):
         
     lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, transpose_rhs)
     rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)   
-    print("dot_general", lhs_tensor, rhs_tensor)
     
     lhs_tensor = _swap_back_axes(lhs_tensor)
     rhs_tensor = _swap_back_axes(rhs_tensor)
@@ -482,7 +477,6 @@ elemental_rules[lax.slice_p] = slice_elemental_rule
 def broadcast_elemental_rule(primals, **params):
     # TODO fix the case where we only have a single broadcast operation
     # Broadcasting adds DenseDimensions of size 1
-    print(primals, params)
     val_out = lax.broadcast_in_dim_p.bind(*primals, **params)
             
     # TODO This guy needs major revision
@@ -492,7 +486,7 @@ def broadcast_elemental_rule(primals, **params):
             pre.jac_transform = [broadcast_transform]
             return pre
         else:
-            print("old post", post)
+            # print("old post", post)
             rm_dims = [d for d in range(val_out.ndim) 
                        if d not in params["broadcast_dimensions"]]
 
@@ -556,7 +550,6 @@ elemental_rules[lax.broadcast_in_dim_p] = broadcast_elemental_rule
 def squeeze_elemental_rule(primals, **params):
     # NOTE: squeeze is basically just the inverse operation to broadcast_in_dim
     # since it just adds a DenseDimension of size 1
-    print(primals, params)
     val_out = lax.squeeze_p.bind(*primals, **params)
             
     def squeeze_transform(pre, post, iota):
@@ -564,7 +557,7 @@ def squeeze_elemental_rule(primals, **params):
             pre.jac_transform = [squeeze_transform]
             return pre
         else:
-            print("old post", post)
+            # print("old post", post)
             new_dims = [d for d in range(val_out.ndim) 
                        if d not in params["dimensions"]]
 
