@@ -152,9 +152,9 @@ class TransformerTest(unittest.TestCase):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
         num_heads = 8
-        seq_len = 64
-        embedding_dim = 64
-        dk = 64//num_heads
+        seq_len = 128
+        embedding_dim = 512
+        dk = 512//num_heads
         
         def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
                             WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
@@ -162,7 +162,7 @@ class TransformerTest(unittest.TestCase):
             x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
             return x.sum()
 
-        ### Weights for self-attention layer
+        # Weights for self-attention layer
         key = jrand.PRNGKey(42)
         qkey, kkey, vkey, okey, key = jrand.split(key, 5)
         WQ1 = glorot(qkey, (dk*num_heads, embedding_dim))
@@ -197,7 +197,8 @@ class TransformerTest(unittest.TestCase):
         print(jax.make_jaxpr(multiple_blocks)(x, *weights))
         
         argnums = list(range(1, 17))
-        print(argnums)
+        
+        print(jax.make_jaxpr(jacve(multiple_blocks, order="rev", argnums=argnums))(x, *weights))
         deriv_fn = jax.jit(jacve(multiple_blocks, order="rev", argnums=argnums))
         veres = deriv_fn(x, *weights)
 
