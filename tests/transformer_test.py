@@ -152,14 +152,15 @@ class TransformerTest(unittest.TestCase):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
         num_heads = 8
-        seq_len = 16
-        embedding_dim = 32
-        dk = 32//num_heads
+        seq_len = 64
+        embedding_dim = 64
+        dk = 64//num_heads
         
         def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
                             WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
             x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
-            return multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+            x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+            return x.sum()
 
         ### Weights for self-attention layer
         key = jrand.PRNGKey(42)
