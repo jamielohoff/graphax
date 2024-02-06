@@ -78,7 +78,6 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
                     if type(d) is SparseDimension:
                         _d = out_dims[d.other_id]
                         _d.other_id += 1
-            print(SparseTensor(out_dims, primal_dims, elemental))
             return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
         elif type(elemental) is float or elemental.size == 1:
             out_dims = [SparseDimension(i, e, None, out_size+i)
@@ -110,7 +109,6 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     val_out = primitive.bind(*primals, **params)
     elementals = elementalrule(*primals, **params)
     elementals = elementals if type(elementals) is tuple else (elementals,)
-    print(primitive)
     elementals_out = [make_parallel_jacobian(i, primals, val_out, elemental) 
                         for i, elemental in enumerate(elementals) 
                         if not type(primals[i]) in (float, np.ndarray, np.float32)]
@@ -347,6 +345,7 @@ def dot_general_elemental_rule(primals, **params):
     lhs_primal_dims, rhs_primal_dims = [], []
         
     i, ii = 0, 0
+    batch_dim_counter = 0
     for lid, ld in enumerate(lhs_shape):
         other_lid = lid + len(out_shape)
         if lid in lhs_contracting_dims:
@@ -360,10 +359,11 @@ def dot_general_elemental_rule(primals, **params):
                 # with a valid `val_dim`
                 dim = rhs_batch_dims[ii]
                 ii += 1
-                lhs_out_dims.insert(0, SparseDimension(0, ld, dim, other_lid))
-                lhs_primal_dims.append(SparseDimension(other_lid, ld, dim, 0))
-                
-                for d in lhs_out_dims[1:]:
+                # TODO do not just use 0 here so that we can use multiple batch dimensions
+                lhs_out_dims.insert(batch_dim_counter, SparseDimension(batch_dim_counter, ld, dim, other_lid))
+                lhs_primal_dims.append(SparseDimension(other_lid, ld, dim, batch_dim_counter))
+                batch_dim_counter += 1
+                for d in lhs_out_dims[batch_dim_counter:]:
                     d.id += 1
             else:
                 # Otherwise, we can just set `val_dim`` to None
@@ -372,6 +372,7 @@ def dot_general_elemental_rule(primals, **params):
                 rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid)) # TODO need to use insert here!
           
     j, jj = 0, 0   
+    batch_dim_counter = 0
     for rid, rd in enumerate(rhs_shape):
         other_rid = rid + len(out_shape)
         if rid in rhs_contracting_dims:
@@ -385,10 +386,10 @@ def dot_general_elemental_rule(primals, **params):
                 # with a valid `val_dim`
                 dim = lhs_batch_dims[jj]
                 jj += 1
-                rhs_out_dims.insert(0, SparseDimension(0, rd, dim, other_rid))
-                rhs_primal_dims.append(SparseDimension(other_rid, rd, dim, 0))
-                
-                for d in rhs_out_dims[1:]:
+                rhs_out_dims.insert(batch_dim_counter, SparseDimension(batch_dim_counter, rd, dim, other_rid))
+                rhs_primal_dims.append(SparseDimension(other_rid, rd, dim, batch_dim_counter))
+                batch_dim_counter += 1
+                for d in rhs_out_dims[batch_dim_counter:]:
                     d.id += 1
             else:
                 # Otherwise, we can just set `val_dim`` to None
@@ -520,13 +521,6 @@ def broadcast_elemental_rule(primals, **params):
                         if type(d) is SparseDimension:
                             _d = new_out_dims[d.other_id]
                             _d.other_id -= 1
-                            # if d.val_dim is not None and has_smaller_dims:
-                            #     d.val_dim -= 1
-                            #     _d.val_dim -= 1
-                        else:
-                            if d.val_dim is not None and has_smaller_dims:
-                                # d.val_dim -= 1
-                                continue
                         
                 else:
                     id = new_primal_dims[dim].id
@@ -577,6 +571,7 @@ def squeeze_elemental_rule(primals, **params):
         else:
             new_dims = params["dimensions"]
 
+            print("old post", post)
             new_out_dims = list(copy.deepcopy(post.out_dims))
             new_primal_dims = list(copy.deepcopy(post.primal_dims))
             for dim in new_dims:
@@ -604,53 +599,53 @@ def squeeze_elemental_rule(primals, **params):
 elemental_rules[lax.squeeze_p] = squeeze_elemental_rule
 
 
-def concatenate_elemental_rule(primals, **params):
-    # NOTE: squeeze is basically just the inverse operation to broadcast_in_dim
-    # since it just adds a DenseDimension of size 1
-    val_out = lax.concatenate_p.bind(*primals, **params)
+# def concatenate_elemental_rule(primals, **params):
+#     # NOTE: squeeze is basically just the inverse operation to broadcast_in_dim
+#     # since it just adds a DenseDimension of size 1
+#     val_out = lax.concatenate_p.bind(*primals, **params)
     
-    print(params)
-    dim = params["dimension"]
+#     print(params)
+#     dim = params["dimension"]
     
-    count = primals[0].shape[dim]
-    slices = {primals[0]: [0, primals[0].shape[dim]]}
-    _count = primals[0].shape[dim]
-    for val in primals[1:]:
-        count += val.shape[dim]
-        slices[val] = [_count, count]
-        _count = count
-    print(slices)
+#     count = primals[0].shape[dim]
+#     slices = {primals[0]: [0, primals[0].shape[dim]]}
+#     _count = primals[0].shape[dim]
+#     for val in primals[1:]:
+#         count += val.shape[dim]
+#         slices[val] = [_count, count]
+#         _count = count
+#     print(slices)
     
-    def concatenate_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = [concatenate_transform]
-            return pre
-        else:
-            new_out_dims = list(copy.deepcopy(post.out_dims))
-            new_primal_dims = list(copy.deepcopy(post.primal_dims))
-            for dim in new_dims:
-                val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
-                val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
-                new_primal_dims.insert(dim, DenseDimension(dim, 1, val_dim))
-                for d in new_primal_dims[dim:]:
-                    d.id += 1
-                    if d.val_dim is not None:
-                        d.val_dim += 1
-                    if type(d) is SparseDimension:
-                        _d = new_out_dims[d.other_id]
-                        _d.other_id += 1
-                        if _d.val_dim is not None:
-                            _d.val_dim += 1
+#     def concatenate_transform(pre, post, iota):
+#         if post.val is None:
+#             pre.jac_transform = [concatenate_transform]
+#             return pre
+#         else:
+#             new_out_dims = list(copy.deepcopy(post.out_dims))
+#             new_primal_dims = list(copy.deepcopy(post.primal_dims))
+#             for dim in new_dims:
+#                 val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
+#                 val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
+#                 new_primal_dims.insert(dim, DenseDimension(dim, 1, val_dim))
+#                 for d in new_primal_dims[dim:]:
+#                     d.id += 1
+#                     if d.val_dim is not None:
+#                         d.val_dim += 1
+#                     if type(d) is SparseDimension:
+#                         _d = new_out_dims[d.other_id]
+#                         _d.other_id += 1
+#                         if _d.val_dim is not None:
+#                             _d.val_dim += 1
                 
-            new_val = jnp.expand_dims(post.val, axis=new_dims)
-            post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
-            if pre.val is None:
-                return post
-            else:
-                return post*pre
-    return val_out, [SparseTensor([], [], None, [concatenate_transform]) for p in primals]
+#             new_val = jnp.expand_dims(post.val, axis=new_dims)
+#             post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
+#             if pre.val is None:
+#                 return post
+#             else:
+#                 return post*pre
+#     return val_out, [SparseTensor([], [], None, [concatenate_transform]) for p in primals]
 
-elemental_rules[lax.concatenate_p] = concatenate_elemental_rule
+# elemental_rules[lax.concatenate_p] = concatenate_elemental_rule
 
     
 def convert_element_type_rule(primals, **params):
