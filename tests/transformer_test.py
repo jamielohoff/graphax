@@ -151,9 +151,9 @@ class TransformerTest(unittest.TestCase):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
         num_heads = 8
-        seq_len = 4*256
-        embedding_dim = 4*512
-        dk = 4*512//num_heads
+        seq_len = 16*256
+        embedding_dim = 16*512
+        dk = 16*512//num_heads
         
         def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
                             WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
