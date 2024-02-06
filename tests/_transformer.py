@@ -53,20 +53,18 @@ def _proj_head(W, X, num_heads: int = 8):
     return jnp.reshape(W @ X, (X.shape[-1], num_heads, -1))
 
 def multihead_softmax_attention(X, WQ, WK, WV, WO, num_heads: int = 8):
-    print("X shape", X.shape)
     q = _proj_head(WQ, X, num_heads=num_heads)
     k = _proj_head(WK, X, num_heads=num_heads)
     v = _proj_head(WV, X, num_heads=num_heads)
-    print("q shape", q.shape)
     out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=1)(q, k, v)
     out = jnp.reshape(out, (-1, X.shape[-1]))
-    print("out shape", WO.shape, out.shape)
     return WO @ out    
 
+# TODO make this work with graphax.
 def efficient_multihead_softmax_attention(X, W, WO, num_heads: int = 8):
     qkv = _proj_head(W, X, num_heads=num_heads)
-    q, k, v = jnp.split(qkv, 3, axis=2)
-    out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=(1, 1, 1))(q, k, v)
+    q, k, v = jnp.split(qkv, 3, axis=-1) # NOTE: implementing like this requires the support for multiple outputs in graphax
+    out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=1)(q, k, v)
     out = jnp.reshape(out, (X.shape[-1], -1))
     return WO @ out  
 

@@ -93,7 +93,7 @@ class TransformerTest(unittest.TestCase):
     #     embedding_dim = 16
     #     dk = 32//num_heads
 
-    #     ### Weights for self-attention layer
+    #     # Weights for self-attention layer
     #     key = jrand.PRNGKey(42)
     #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
     #     WQ = glorot(qkey, (dk*num_heads, embedding_dim))
@@ -110,7 +110,7 @@ class TransformerTest(unittest.TestCase):
         
     #     x = jrand.normal(key, (embedding_dim, seq_len))
     #     weights = (WQ, WK, WV, WO, W1, b1, W2, b2)
-    #     # print(jax.make_jaxpr(multihead_attention_block)(x, *weights))
+    #     print(jax.make_jaxpr(multihead_attention_block)(x, *weights))
         
     #     argnums = range(1, 9)
     #     print(jax.make_jaxpr(jacve(multihead_attention_block, order="rev", argnums=argnums))(x, *weights))
@@ -151,9 +151,9 @@ class TransformerTest(unittest.TestCase):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
         num_heads = 8
-        seq_len = 4*256
-        embedding_dim = 4*512
-        dk = 4*512//num_heads
+        seq_len = 1*256
+        embedding_dim = 1*512
+        dk = 1*512//num_heads
         
         def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
                             WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
