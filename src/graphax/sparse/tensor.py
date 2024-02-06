@@ -124,8 +124,8 @@ class SparseTensor:
                 return d.size
             else:
                 return 1
+            
         eye_shape = [eye_dim_fn(d) for d in self.out_dims+self.primal_dims]
-        
         # If tensor consists only out of Kronecker Delta's, we can just reshape
         # the eye matrix to the shape of the tensor and return it
         if self.val is None: 
@@ -151,8 +151,7 @@ class SparseTensor:
 
         val = self.val.reshape(shape)
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
-        val = index_map*val
-        return jnp.tile(val, tiling)
+        return jnp.tile(index_map*val, tiling)
     
     def unload_transforms(self, _tensor, iota):
         for transform in self.jac_transforms:
@@ -187,13 +186,13 @@ def _checkify_tensor(st: SparseTensor) -> bool:
     matching_size += all([d.size == st.val.shape[d.val_dim] or d.size == 1 
                         if d.val_dim is not None and type(d) is SparseDimension
                         else True for d in st.out_dims + st.primal_dims])
-    
+        
     # Quick check if all id's are unique, fails for certain combinations though
     # TODO Needs O(nlog(n)) proper algorithmic check!
     dims = st.out_dims+st.primal_dims
     n = len(dims)
     matching_id = sum([d.id for d in dims]) == n*(n-1)//2
-    
+        
     return matching_size and matching_id
     
 
@@ -253,8 +252,8 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
     """
-    # print("lhs", lhs)
-    # print("rhs", rhs)                                             
+    print("lhs", lhs)
+    print("rhs", rhs)                                             
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -970,11 +969,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     # Get the contracting axes after the tiling
     if len(lreplication_ids) > 0 or len(rreplication_ids) > 0:
         lcontracting_axes, rcontracting_axes = _get_contracting_axes(lhs, rhs)
-    
-    dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
-    dimension_numbers = (dimension_numbers, ((), ()))
-    new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
-    
+        
     lbroadcasting_axes, rbroadcasting_axes, pos = [], [], []
     # Then we do broadcasting by extracting diagonals from the contracted tensor
     # TODO split calculation of Dimension objects and val property!
@@ -986,11 +981,10 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             # Kronecker deltas
             if ld.val_dim is not None and rd.val_dim is not None:
                 lval_dim = ld.val_dim - sum([1 for lc in lcontracting_axes if lc < ld.val_dim])
-                rval_dim = rd.val_dim - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) + lhs.val.ndim - sum([1 for lc in lcontracting_axes])
-                
-                lbroadcasting_axes.append(lval_dim)
-                rbroadcasting_axes.append(rval_dim)
                 pos.append(lval_dim)
+                
+                lbroadcasting_axes.append(ld.val_dim)
+                rbroadcasting_axes.append(rd.val_dim)
                 # The following cases cover ...
                 if type(rd) is DenseDimension:
                     new_out_dims.insert(ld.other_id, DenseDimension(ld.other_id, ld.size, lval_dim))
@@ -1032,10 +1026,22 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
                     new_out_dims.insert(ld.other_id, SparseDimension(ld.other_id, ld.size, val_dim, rd.other_id-r+l))
                     new_primal_dims.insert(rd.other_id-r, SparseDimension(rd.other_id-r+l, ld.size, val_dim, ld.other_id))
+                    
+    dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
+    batch_dimensions = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse this guys here to handle the SparseDimensions
+    dimension_numbers = (dimension_numbers, batch_dimensions)
+    new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
     
-    for (lb, rb, p) in zip(lbroadcasting_axes, rbroadcasting_axes, pos):
-        new_val = jnp.diagonal(new_val, axis1=lb, axis2=rb)
-        new_val = jnp.moveaxis(new_val, -1, p) # TODO do the moveaxes with a single transpose!
+    permutation =[None]*new_val.ndim
+    j = 0
+    for i in range(new_val.ndim):
+        if i < len(pos):
+            permutation[pos[i]] = i
+        else:
+            while permutation[j] is not None:
+                j += 1
+            permutation[j] = i
+    new_val = jnp.transpose(new_val, permutation)
     
     # Take care of the old dimensions
     for ld in lhs.out_dims:
@@ -1050,8 +1056,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             
             val_dim = None
             if rd.val_dim is not None:
-                # TODO this needs some adjustment in the val_dim property as well
-                # since val_dim might change due to contractions etc.
+                # TODO add documentation here
                 num_old_lhs_out_dims = sum([1 for ld in lhs.out_dims if type(ld) is DenseDimension and ld.val_dim is not None])
                 num_old_rhs_out_dims = sum([1 for rd in rhs.out_dims if rd.val_dim is not None])
                 num_sparse_dims = sum([1 for ld, rd in zip(lhs.primal_dims, rhs.out_dims) if (type(ld) is SparseDimension or type(rd) is SparseDimension) and (ld.val_dim is not None or rd.val_dim is not None)])

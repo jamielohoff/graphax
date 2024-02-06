@@ -93,7 +93,7 @@ class TransformerTest(unittest.TestCase):
     #     embedding_dim = 16
     #     dk = 32//num_heads
 
-    #     ### Weights for self-attention layer
+    #     # Weights for self-attention layer
     #     key = jrand.PRNGKey(42)
     #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
     #     WQ = glorot(qkey, (dk*num_heads, embedding_dim))
@@ -110,7 +110,7 @@ class TransformerTest(unittest.TestCase):
         
     #     x = jrand.normal(key, (embedding_dim, seq_len))
     #     weights = (WQ, WK, WV, WO, W1, b1, W2, b2)
-    #     # print(jax.make_jaxpr(multihead_attention_block)(x, *weights))
+    #     print(jax.make_jaxpr(multihead_attention_block)(x, *weights))
         
     #     argnums = range(1, 9)
     #     print(jax.make_jaxpr(jacve(multihead_attention_block, order="rev", argnums=argnums))(x, *weights))

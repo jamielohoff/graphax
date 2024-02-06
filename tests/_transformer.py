@@ -45,13 +45,28 @@ def gelu(x):
 
 
 ### Multi-head self-attention
-def multihead_softmax_attention(X, WQ, WK, WV, WO):
-    q = WQ @ X
-    k = WK @ X
-    v = WV @ X
+def softmax_attn(q, k, v):
     a = q @ k.T / jnp.sqrt(k.shape[0])
-    out = jnn.softmax(a, axis=0) @ v
-    return WO @ out 
+    return jnn.softmax(a, axis=0) @ v
+
+def _proj_head(W, X, num_heads: int = 8):
+    return jnp.reshape(W @ X, (X.shape[-1], num_heads, -1))
+
+def multihead_softmax_attention(X, WQ, WK, WV, WO, num_heads: int = 8):
+    q = _proj_head(WQ, X, num_heads=num_heads)
+    k = _proj_head(WK, X, num_heads=num_heads)
+    v = _proj_head(WV, X, num_heads=num_heads)
+    out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=1)(q, k, v)
+    out = jnp.reshape(out, (-1, X.shape[-1]))
+    return WO @ out    
+
+# TODO make this work with graphax.
+def efficient_multihead_softmax_attention(X, W, WO, num_heads: int = 8):
+    qkv = _proj_head(W, X, num_heads=num_heads)
+    q, k, v = jnp.split(qkv, 3, axis=-1) # NOTE: implementing like this requires the support for multiple outputs in graphax
+    out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=1)(q, k, v)
+    out = jnp.reshape(out, (X.shape[-1], -1))
+    return WO @ out  
 
 
 ### MLP implementation
