@@ -21,7 +21,7 @@ from _transformer import (multihead_attention_block, glorot, gelu,
                         make_positional_encoding, softmax_ce_loss)   
 
 
-epochs = 10
+epochs = 25
 batchsize = 256
 num_heads = 8
 dk = 256
@@ -132,13 +132,9 @@ def train(batch, labels, weights, opt_state):
     argnums = range(2, len(weights) + 2)
     loss = batched_model(xs, one_hot_labels, *weights)
     grads = gx.jacve(batched_model, order="rev", argnums=argnums)(xs, one_hot_labels, *weights)
-    
-    print([w.shape for w in weights])
-    print([g.shape for g in grads])
         
     updates, opt_state = optim.update(grads, opt_state)
     weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
-    print([w.shape for w in weights])
     return loss, weights
 
 optim = optax.adam(3e-4)
