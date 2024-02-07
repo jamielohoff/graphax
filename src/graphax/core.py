@@ -101,7 +101,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             
             # Handle stuff like reshape, squeeze etc.
             # TODO what happens if both have a jac_transforms?
-            print(out_edge, eqn.outvars[0], in_edge)  
+            # print(out_edge, eqn.outvars[0], in_edge)  
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
                 pre_val = pre_val.prepend_transforms(post_val)
                 edge_outval = pre_val.unload_transforms(post_val, iota)
