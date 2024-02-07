@@ -1,3 +1,4 @@
+import time
 import unittest
 from functools import partial
 
@@ -10,30 +11,9 @@ from jax.tree_util import tree_map
 
 from graphax import jacve, tree_allclose
 
-from _transformer import (multihead_softmax_attention, MLP, layer_norm, glorot, 
+from _transformer import (make_weights, glorot, 
                         make_positional_encoding, softmax_ce_loss, gelu,
                         multihead_attention_block)
-
-
-positional_encoding = make_positional_encoding(32, 16)
-
-### Transformer model
-@partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, 
-                            None, None, None, None, None, None, None, None, None,
-                            None, None, None, None))
-def transformer(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
-                W1, b1, W2, b2, W3, b3, W4, b4, W5, b5, W6, b6, CT):
-    X = jnp.concatenate((CT, X), axis=1)
-    X = positional_encoding(X)
-    
-    X = multihead_attention_block(X, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
-    X = multihead_attention_block(X, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
-    
-    X = X[:, 0]
-    return W6 @ gelu(W5 @ X + b5) + b6
-
-
-
 
 
 class TransformerTest(unittest.TestCase): 
@@ -491,9 +471,7 @@ class TransformerTest(unittest.TestCase):
     #     self.assertTrue(tree_allclose(veres, revres))
         
     def test_vmap_transformer(self):
-        # TODO investigate errors between gradients computed by vertex elimination
-        # and errors computed through jax
-        batchsize = 256
+        batchsize = 8
         s = 1
         num_heads = 8
         seq_len = s*16
@@ -504,72 +482,51 @@ class TransformerTest(unittest.TestCase):
         
         @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, None,
                                         None, None, None, None, None, None, None, None, None,
-                                        None, None, None))
+                                        None, None, None, None, None, None, None, None, None,
+                                        None, None))
         def multiple_blocks(x, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
-                            WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6):
+                                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
+                                    WQ3, WK3, WV3, WO3, W5, b5, W6, b6, 
+                                    W7, b7, W8, b8):
             x = jnp.concatenate((CT, x), axis=1)
             x = positional_encoding(x)
             
             x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
             x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+            x = multihead_attention_block(x, WQ3, WK3, WV3, WO3, W5, b5, W6, b6)
             x = x[:, 0]
-            return W6 @ gelu(W5 @ x + b5) + b6
+            return W8 @ gelu(W7 @ x + b7) + b8
         
         def transformer(x, labels, *weights):
             out = multiple_blocks(x, *weights)
             return softmax_ce_loss(out, labels).sum()
 
         # Weights for self-attention layers
-        key = jrand.PRNGKey(42)
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ1 = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK1 = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV1 = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO1 = glorot(okey, (embedding_dim, dk*num_heads))
-        
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ2 = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK2 = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV2 = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO2 = glorot(okey, (embedding_dim, dk*num_heads))
-        
-        # Weights for MLP layers
-        W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (512, embedding_dim))
-        b1 = jnp.zeros((512,), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 512))
-        b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
-        
-        W3key, W4key, key = jrand.split(key, 3)
-        W3 = glorot(W3key, (512, embedding_dim))
-        b3 = jnp.zeros((512,), dtype=jnp.float32)
-        W4 = glorot(W4key, (embedding_dim, 512))
-        b4 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
-        
+        key = jrand.PRNGKey(42)        
         W5key, W6key, key = jrand.split(key, 3)
-        W5 = glorot(W5key, (256, embedding_dim))
-        b5 = jnp.zeros(256, dtype=jnp.float32)
-        W6 = glorot(W6key, (10, 256))
-        b6 = jnp.zeros(10, dtype=jnp.float32)
+        W7 = glorot(W5key, (256, embedding_dim))
+        b7 = jnp.zeros(256, dtype=jnp.float32)
+        W8 = glorot(W6key, (10, 256))
+        b8 = jnp.zeros(10, dtype=jnp.float32)
         
         CT = jrand.normal(key, (embedding_dim, 1))
         
-        weights = (CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
-                        WQ2, WK2, WV2, WO2, W3, b3, W4, b4,
-                        W5, b5, W6, b6)
+        weights = make_weights(key, 3, dk, num_heads, embedding_dim)
+        weights = [CT] + weights + [W7, b7, W8, b8]
+        weights = tuple(weights)
         
         x = jrand.normal(key, (batchsize, embedding_dim, seq_len))
         labels = jrand.normal(key, (batchsize, 10))
         
-        print(jax.make_jaxpr(transformer)(x, labels, *weights))
+        jaxpr = jax.make_jaxpr(transformer)(x, labels, *weights)
         
-        argnums = list(range(2, 19))
+        argnums = list(range(2, len(weights) + 2))
         
-        print(jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, labels, *weights))
+        jacve_jaxpr = jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, labels, *weights)
         deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
         veres = deriv_fn(x, labels, *weights)
 
-        print(jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, labels, *weights))
+        jax_jaxpr = jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, labels, *weights)
         jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
         revres = jax_deriv_fn(x, labels, *weights)
         
@@ -594,20 +551,24 @@ class TransformerTest(unittest.TestCase):
         print("err15", jnp.abs(veres[14] - revres[14]).mean())
         print("err16", jnp.abs(veres[15] - revres[15]).mean())
         print("err17", jnp.abs(veres[16] - revres[16]).mean())
-        
-        import time
-        
-        out = jax_deriv_fn(x, labels, *weights)
+                
         st = time.time()
         for i in range(50):
             out = jax_deriv_fn(x, labels, *weights)
         print("jax time", time.time() - st)
         
-        out = deriv_fn(x, labels, *weights)
         st = time.time()
         for i in range(50):
             out = deriv_fn(x, labels, *weights)
         print("graphax time", time.time() - st)
+        
+        from graphax.sparse.utils import count_muls
+        
+        num_muls = sum([count_muls(p) for p in jaxpr.jaxpr.eqns])
+        num_dots_jacve = sum([count_muls(p) for p in jacve_jaxpr.jaxpr.eqns])
+        num_dots_jax = sum([count_muls(p) for p in jax_jaxpr.jaxpr.eqns])
+        
+        print(num_dots_jacve - num_muls, num_dots_jax - num_muls)
         
         self.assertTrue(tree_allclose(veres, revres))
         

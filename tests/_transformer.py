@@ -100,3 +100,25 @@ def multihead_attention_block(X, WQ, WK, WV, WO, W1, b1, W2, b2):
     out = MLP(out, W1, b1, W2, b2)
     return out + X
 
+
+# Generate weights for attention blocks and MLP layers
+def make_weights(key, num_attn_blocks: int = 2, dk: int = 512, num_heads: int = 8, embedding_dim: int = 512):
+    weights = []
+    for _ in range(num_attn_blocks):
+        # Weigths for self-attention
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO = glorot(okey, (embedding_dim, dk*num_heads))
+        
+        # Weights for MLP layers
+        W1key, W2key, key = jrand.split(key, 3)
+        W1 = glorot(W1key, (1024, embedding_dim))
+        b1 = jnp.zeros((1024,))
+        W2 = glorot(W2key, (embedding_dim, 1024))
+        b2 = jnp.zeros((embedding_dim,))
+        
+        weights.extend([WQ, WK, WV, WO, W1, b1, W2, b2])
+    return weights
+

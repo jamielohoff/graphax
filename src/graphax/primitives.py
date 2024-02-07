@@ -133,6 +133,7 @@ def standard_elemental2(elementalrule, primitive, primals, **params):
                         if not type(primals[i]) in (float, np.ndarray, np.float32)]
     return val_out, elementals_out
     
+    
 # Define elemental partials
 defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
 defelemental2(lax.abs_p, lambda out, primal: primal/out) # NOTE: not differentiable here!
@@ -159,9 +160,6 @@ defelemental2(lax.tanh_p, lambda out, primal: 1.-out**2)
 defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
 
 defelemental(lax.erf_p, lambda x: 2.*jnp.exp(-x**2)/jnp.sqrt(jnp.pi))
-# TODO implement this such that it becomes more efficient, i.e. through the
-# use of jac_transform
-# defelemental2(lax.stop_gradient_p, lambda out, primal: jnp.zeros_like(out))
 
 def add_elemental_rule(x, y):
     return (jnp.ones_like(y), jnp.ones_like(x))
@@ -199,6 +197,8 @@ def pow_elemental_rule(out, x, y):
 defelemental2(lax.pow_p, pow_elemental_rule)
 
 
+# TODO this can be implemented as a gradient transform by just reshuffeling the
+# Dimensions of the primal dimensions
 def transpose_elemental_rule(primals, **params):
     val_out = lax.transpose_p.bind(*primals, **params)
     
@@ -315,6 +315,7 @@ def reduce_min_elemental_rule(primals, **params):
             new_primal_dims.append(SparseDimension(l+i, size, i, ll))
             
     new_val = jnp.where(primal == val_out, 1, 0) 
+    # NOTE: Normalization is important if the minimum is not unique
     norm = jnp.sum(new_val, axis=axes, keepdims=True)
     new_val = new_val/norm
     return val_out, [_swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))]
@@ -406,6 +407,7 @@ def dot_general_elemental_rule(primals, **params):
     return val_out, [lhs_tensor, rhs_tensor]
 
 elemental_rules[lax.dot_general_p] = dot_general_elemental_rule
+
 
 def iota_elemental_rule(primals, **params):
     val_out = lax.iota_p.bind(*primals, **params)
@@ -618,8 +620,6 @@ def concatenate_elemental_rule(primals, **params):
         slices[val] = [_count, count]
         _count = count
     
-    # Basically just densify the post Jacobian and split it at the respective axis
-    # Maybe we can keep some sparse dims
     def concatenate_transform(primal, pre, post, iota):
         if post.val is None:
             pre.jac_transform = [concatenate_transform]
@@ -638,9 +638,7 @@ def concatenate_elemental_rule(primals, **params):
             else:
                 _d = new_out_dims[d.other_id]
                 if d.val_dim is not None:
-                    
                     new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
-                    # new_val = jnp.squeeze(new_val, axis=d.val_dim)
                     d.size = new_val.shape[d.val_dim]
                     _d.size = new_val.shape[d.val_dim]
                 else:

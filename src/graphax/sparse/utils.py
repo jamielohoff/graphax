@@ -33,26 +33,12 @@ def eye_like(shape, out_len):
     else:
         out_size = reduce((lambda x, y: x*y), out_shape)
         val = jnp.eye(out_size).reshape(*out_shape, *primal_shape)
-        
-        # l = len(out_shape)
-        # val = 1.
-        # for i, o in enumerate(out_shape):
-        #     j = primal_shape.index(o) # this does not work for repeated elements
-        #     _shape = [1]*len(shape)
-        #     _shape[i] = o
-        #     _shape[l+j] = o
-        #     if o == 1:
-        #         kronecker = jnp.ones((1, 1)).reshape(_shape)
-        #     else: 
-        #         kronecker = jnp.eye(o).reshape(_shape)
-        #     val *= kronecker
         return val
 
 
 def eye_like_copy(shape, out_len, iota):
     primal_shape = shape[out_len:]
     out_shape = shape[:out_len]
-    print("shape", shape)
     if any([primal_shape == out_shape]):
         primal_size = reduce((lambda x, y: x*y), primal_shape)
         out_size = reduce((lambda x, y: x*y), out_shape)
@@ -91,5 +77,27 @@ def eye_like_copy(shape, out_len, iota):
     
 def get_largest_tensor(tensors):
     sizes = [t.aval.size for t in tensors]
-    return max(sizes)    
+    return max(sizes)   
 
+
+def count_muls(eqn):
+    # Function that counts the number of multiplications done by a 
+    # jaxpr equation
+    if eqn.primitive == lax.dot_general_p:
+        contraction_dims = eqn.params["dimension_numbers"][0]
+        batch_dims = eqn.params["dimension_numbers"][1]
+        
+        var0, var1 = eqn.invars
+        var0_shape = list(var0.aval.shape)
+        var1_shape = list(var1.aval.shape)
+        
+        for d in contraction_dims[1] + batch_dims[1]:
+            var1_shape[d] = 1
+            
+        return reduce((lambda x, y: x*y), var0_shape)*reduce((lambda x, y: x*y), var1_shape)
+    
+    elif eqn.primitive == lax.mul_p:
+        return reduce((lambda x, y: x*y), eqn.outvars[0].aval.shape)
+    else:
+        return 0
+    

@@ -19,7 +19,8 @@ from torchvision import datasets, transforms
 import graphax as gx
 
 from _transformer import (multihead_attention_block, glorot, gelu,
-                        make_positional_encoding, softmax_ce_loss)   
+                        make_positional_encoding, softmax_ce_loss,
+                        make_weights)   
 
 
 epochs = 25
@@ -40,30 +41,8 @@ trainloader = DataLoader(trainset, batch_size=batchsize, shuffle=True, num_worke
 testset = datasets.CIFAR10(root='./data', train=False, transform=transform)
 testloader = DataLoader(testset, batch_size=batchsize, shuffle=False, num_workers=2)
 
-# Generate weights for attention blocks and MLP layers
-def make_weights(key, num_attn_blocks: int = 2):
-    weights = []
-    for _ in range(num_attn_blocks):
-        # Weigths for self-attention
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO = glorot(okey, (embedding_dim, dk*num_heads))
-        
-        # Weights for MLP layers
-        W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (1024, embedding_dim))
-        b1 = jnp.zeros((1024,))
-        W2 = glorot(W2key, (embedding_dim, 1024))
-        b2 = jnp.zeros((embedding_dim,))
-        
-        weights.extend([WQ, WK, WV, WO, W1, b1, W2, b2])
-    return weights
-        
-
 key = jrand.PRNGKey(42)
-weights = make_weights(key, 2)
+weights = make_weights(key, 3, dk, num_heads, embedding_dim)
 
 # Weights for classification head
 W5key, W6key, key = jrand.split(key, 3)
@@ -84,29 +63,41 @@ positional_encoding = make_positional_encoding(seq_len, embedding_dim)
 ### Transformer model
 @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, 
                             None, None, None, None, None, None, None, None, None,
+                            None, None, None, None, None, None, None, None,
                             None, None, None, None))
 def transformer(X, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6):
+                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
+                    WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
+                    W7, b7, W8, b8):
     X = jnp.concatenate((CT, X), axis=1)
     X = positional_encoding(X)
     X = multihead_attention_block(X, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
     X = multihead_attention_block(X, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+    X = multihead_attention_block(X, WQ3, WK3, WV3, WO3, W5, b5, W6, b6)
     
     X = X[:, 0]
-    return W6 @ gelu(W5 @ X + b5) + b6
+    return W8 @ gelu(W7 @ X + b7) + b8
 
 
 def model(X, labels, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6):
+                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
+                WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
+                W7, b7, W8, b8):
     out = transformer(X, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6)
+                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
+                    WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
+                    W7, b7, W8, b8)
     return softmax_ce_loss(out, labels)
 
 
 def batched_model(X, labels, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6):
+                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
+                WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
+                W7, b7, W8, b8):
     return model(X, labels, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6).sum()
+                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
+                WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
+                W7, b7, W8, b8).sum()
     
 
 ### Function to subdivide image into tiles for vision transformer
