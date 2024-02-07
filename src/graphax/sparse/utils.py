@@ -84,7 +84,6 @@ def eye_like_copy(shape, out_len, iota):
                     kronecker = jnp.ones((1, 1)).reshape(_shape)
                 else: 
                     sub_iota = lax.slice(iota, (0, 0), (o, o))
-                    print(_shape)
                     kronecker = sub_iota.reshape(_shape)
                 val *= kronecker
         return val

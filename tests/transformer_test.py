@@ -493,7 +493,7 @@ class TransformerTest(unittest.TestCase):
     def test_vmap_transformer(self):
         # TODO investigate errors between gradients computed by vertex elimination
         # and errors computed through jax
-        batchsize = 4
+        batchsize = 256
         s = 1
         num_heads = 8
         seq_len = s*16

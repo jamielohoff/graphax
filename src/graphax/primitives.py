@@ -113,7 +113,6 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     elementals_out = [make_parallel_jacobian(i, primals, val_out, elemental) 
                         for i, elemental in enumerate(elementals) 
                         if not type(primals[i]) in (float, np.ndarray, np.float32)]
-    print(primitive, elementals_out)
     return val_out, elementals_out
 
 

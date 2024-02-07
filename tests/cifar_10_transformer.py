@@ -1,3 +1,4 @@
+import time
 from functools import partial
 import tqdm
 
@@ -21,10 +22,10 @@ from _transformer import (multihead_attention_block, glorot, gelu,
                         make_positional_encoding, softmax_ce_loss)   
 
 
-epochs = 10
+epochs = 25
 batchsize = 256
 num_heads = 8
-dk = 256
+dk = 1024
 
 tiling = (4, 4)
 input_shape = (3, 32, 32)
@@ -131,35 +132,33 @@ def train(batch, labels, weights, opt_state):
     xs = subdivide(batch)
     argnums = range(2, len(weights) + 2)
     loss = batched_model(xs, one_hot_labels, *weights)
+    # grads = jax.jacrev(batched_model, argnums=argnums)(xs, one_hot_labels, *weights)
     grads = gx.jacve(batched_model, order="rev", argnums=argnums)(xs, one_hot_labels, *weights)
-    
-    print([w.shape for w in weights])
-    print([g.shape for g in grads])
-        
+            
     updates, opt_state = optim.update(grads, opt_state)
     weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
-    print([w.shape for w in weights])
     return loss, weights
 
-optim = optax.adam(3e-4)
+optim = optax.adam(1e-4)
 opt_state = optim.init(weights)
 
 ### Training loop
+st = time.time()
 pbar = tqdm.tqdm(range(epochs))
 for epoch in pbar:
     for (batch, labels) in tqdm.tqdm(trainloader):
         batch = batch.numpy()
         labels = labels.numpy()
         loss, weights = train(batch, labels, weights, opt_state)
-        
-        pbar.set_description(f"loss: {loss}")
+        pbar.set_description(f"loss: {loss:.4f}")
         
     if epoch % 1 == 0:
         accs = []
-        for (batch, labels) in tqdm.tqdm(testloader):
+        for (batch, labels) in testloader:
             batch = batch.numpy()
             labels = labels.numpy()
             acc = get_test_accuracy(batch, labels, weights)
             accs.append(acc)
-        print(f"Test accuracy: {np.mean(accs)}")
+        print(f"Test accuracy: {np.mean(accs)*100:.2f}%")
+print(f"Training took {time.time() - st:.2f} seconds")
     

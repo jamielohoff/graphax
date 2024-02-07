@@ -72,13 +72,11 @@ def efficient_multihead_softmax_attention(X, W, WO, num_heads: int = 8):
 ### MLP implementation
 @partial(jax.vmap, in_axes=(None, None, 1), out_axes=1)
 def _project(W, b, X):
-    print(W.shape, X.shape, b.shape)
     return W @ X + b
 
 def MLP(X, W1, b1, W2, b2):
     out = _project(W1, b1, X)
     out = gelu(out)
-    print("out", out.shape)
     return _project(W2, b2, out)
 
 
