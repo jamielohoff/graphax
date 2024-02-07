@@ -70,18 +70,22 @@ def efficient_multihead_softmax_attention(X, W, WO, num_heads: int = 8):
 
 
 ### MLP implementation
-def _project(W, X):
-    return jax.vmap(jnp.matmul, in_axes=(0, None))(W, X)
+@partial(jax.vmap, in_axes=(None, None, 1), out_axes=1)
+def _project(W, b, X):
+    print(W.shape, X.shape, b.shape)
+    return W @ X + b
 
 def MLP(X, W1, b1, W2, b2):
-    out = _project(W1, X)
-    out = gelu(out + b1)
-    return _project(W2, out) + b2
+    out = _project(W1, b1, X)
+    out = gelu(out)
+    print("out", out.shape)
+    return _project(W2, b2, out)
 
 
 ### Layer normalization
 def variance(X, axis=0):
     return jnp.mean(jnp.square(X - jnp.mean(X, axis=axis)), axis=axis)
+
 @jax.vmap
 def layer_norm(X):  
     mean = jnp.mean(X, axis=0)

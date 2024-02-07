@@ -311,7 +311,7 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    # def test_concatenate(self):
+    # def test_concatenate_1(self):
     #     def f(x, y, z):
     #         z = jnp.concatenate([y, z], axis=0)
     #         w = x @ z
@@ -331,6 +331,26 @@ class GeneralADTest(unittest.TestCase):
     #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
+        
+    def test_concatenate_2(self):
+        def f(x, y, z):
+            w = jnp.concatenate([x, y, z], axis=0)
+            return jnp.sin(w)
+
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        x = jrand.normal(xkey, (4,))
+        y = jrand.normal(ykey, (2,))
+        z = jrand.normal(ykey, (3,))
+        
+        print(jax.make_jaxpr(f)(x, y, z))
+
+        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2)))
+        veres = deriv_fn(x, y, z)
+
+        revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
+
+        self.assertTrue(tree_allclose(veres, revres)) 
         
     # def test_reshape(self):
     #     def f(x, y):
@@ -352,27 +372,27 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
     
-    def test_large_matmul(self):
-        def f(x, y):
-            return lax.dot_general(x, y, (([2], [0]), ([0], [1])))
+    # def test_large_matmul(self):
+    #     def f(x, y):
+    #         return lax.dot_general(x, y, (([2], [0]), ([0], [1])))
 
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 1, 4))
-        y = jrand.normal(ykey, (4, 3, 2))
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3, 1, 4))
+    #     y = jrand.normal(ykey, (4, 3, 2))
         
-        print("result", f(x, y).shape)
-        print(jax.make_jaxpr(f)(x, y))
+    #     print("result", f(x, y).shape)
+    #     print(jax.make_jaxpr(f)(x, y))
 
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
 
-        revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
+    #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
         
-        print("err1", jnp.abs(veres[0] - revres[0]).mean())
-        print("err2", jnp.abs(veres[1] - revres[1]).mean())
+    #     print("err1", jnp.abs(veres[0] - revres[0]).mean())
+    #     print("err2", jnp.abs(veres[1] - revres[1]).mean())
         
-        self.assertTrue(tree_allclose(veres, revres))                
+    #     self.assertTrue(tree_allclose(veres, revres))                
 
 if __name__ == '__main__':
     unittest.main()

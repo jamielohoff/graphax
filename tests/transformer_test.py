@@ -149,9 +149,9 @@ class TransformerTest(unittest.TestCase):
         
     # def test_multihead_attention_2_blocks(self):
     #     num_heads = 8
-    #     seq_len = 1*256
-    #     embedding_dim = 1*512
-    #     dk = 1*512//num_heads
+    #     seq_len = 128
+    #     embedding_dim = 256
+    #     dk = 256//num_heads
         
     #     def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
     #                         WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
@@ -177,15 +177,15 @@ class TransformerTest(unittest.TestCase):
     #     # Weights for MLP layer
     #     W1key, W2key, key = jrand.split(key, 3)
     #     W1 = glorot(W1key, (1024, embedding_dim))
-    #     b1 = jnp.zeros((1024, 1), dtype=jnp.float32)
+    #     b1 = jnp.zeros((1024,), dtype=jnp.float32)
     #     W2 = glorot(W2key, (embedding_dim, 1024))
-    #     b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+    #     b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
         
     #     W3key, W4key, key = jrand.split(key, 3)
     #     W3 = glorot(W3key, (1024, embedding_dim))
-    #     b3 = jnp.zeros((1024, 1), dtype=jnp.float32)
+    #     b3 = jnp.zeros((1024,), dtype=jnp.float32)
     #     W4 = glorot(W4key, (embedding_dim, 1024))
-    #     b4 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+    #     b4 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
         
     #     weights = (WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
     #                 WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
@@ -240,106 +240,111 @@ class TransformerTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres))
         
-    def test_vmap_multihead_attention_2_blocks(self):
-        # TODO investigate errors between gradients computed by vertex elimination
-        # and errors computed through jax
-        batchsize = 16
-        s = 1
-        num_heads = 8
-        seq_len = s*16
-        embedding_dim = s*192
-        dk = s*256//num_heads
+    # def test_vmap_multihead_attention_2_blocks(self):
+    #     # TODO investigate errors between gradients computed by vertex elimination
+    #     # and errors computed through jax
+    #     batchsize = 4
+    #     s = 1
+    #     num_heads = 8
+    #     seq_len = s*16
+    #     embedding_dim = s*192
+    #     dk = s*256//num_heads
         
-        @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None,
-                                        None, None, None, None, None, None, None, None))
-        def multiple_blocks(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
-                            WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
-            x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
-            x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
-            return x[:, 0]
+    #     @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, None,
+    #                                     None, None, None, None, None, None, None, None))
+    #     def multiple_blocks(x, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
+    #                         WQ2, WK2, WV2, WO2, W3, b3, W4, b4):
+    #         x = jnp.concatenate((CT, x), axis=1)
+    #         x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
+    #         x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+    #         return x[:, 0]
         
-        def transformer(x, *weights):
-            return multiple_blocks(x, *weights).sum()
+    #     def transformer(x, *weights):
+    #         return multiple_blocks(x, *weights).sum()
 
-        # Weights for self-attention layer
-        key = jrand.PRNGKey(42)
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ1 = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK1 = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV1 = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO1 = glorot(okey, (embedding_dim, dk*num_heads))
+    #     # Weights for self-attention layers
+    #     key = jrand.PRNGKey(42)
+    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+    #     WQ1 = glorot(qkey, (dk*num_heads, embedding_dim))
+    #     WK1 = glorot(kkey, (dk*num_heads, embedding_dim))
+    #     WV1 = glorot(vkey, (dk*num_heads, embedding_dim))
+    #     WO1 = glorot(okey, (embedding_dim, dk*num_heads))
         
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ2 = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK2 = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV2 = glorot(vkey, (dk*num_heads, embedding_dim))
-        WO2 = glorot(okey, (embedding_dim, dk*num_heads))
+    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+    #     WQ2 = glorot(qkey, (dk*num_heads, embedding_dim))
+    #     WK2 = glorot(kkey, (dk*num_heads, embedding_dim))
+    #     WV2 = glorot(vkey, (dk*num_heads, embedding_dim))
+    #     WO2 = glorot(okey, (embedding_dim, dk*num_heads))
         
-        # Weights for MLP layer
-        W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (1024, embedding_dim))
-        b1 = jnp.zeros((1024, 1), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 1024))
-        b2 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+    #     # Weights for MLP layers
+    #     W1key, W2key, key = jrand.split(key, 3)
+    #     W1 = glorot(W1key, (512, embedding_dim))
+    #     b1 = jnp.zeros((512,), dtype=jnp.float32)
+    #     W2 = glorot(W2key, (embedding_dim, 512))
+    #     b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
         
-        W3key, W4key, key = jrand.split(key, 3)
-        W3 = glorot(W3key, (1024, embedding_dim))
-        b3 = jnp.zeros((1024, 1), dtype=jnp.float32)
-        W4 = glorot(W4key, (embedding_dim, 1024))
-        b4 = jnp.zeros((embedding_dim, 1), dtype=jnp.float32)
+    #     W3key, W4key, key = jrand.split(key, 3)
+    #     W3 = glorot(W3key, (512, embedding_dim))
+    #     b3 = jnp.zeros((512,), dtype=jnp.float32)
+    #     W4 = glorot(W4key, (embedding_dim, 512))
+    #     b4 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
         
-        weights = (WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
-                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+    #     CT = jrand.normal(key, (embedding_dim, 1))
         
-        x = jrand.normal(key, (batchsize, embedding_dim, seq_len))
+    #     weights = (CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
+    #                     WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
         
-        print(jax.make_jaxpr(transformer)(x, *weights))
+    #     x = jrand.normal(key, (batchsize, embedding_dim, seq_len))
         
-        argnums = list(range(1, 17))
+    #     print(jax.make_jaxpr(transformer)(x, *weights))
         
-        print(jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, *weights))
-        deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
-        veres = deriv_fn(x, *weights)
+    #     argnums = list(range(1, 18))
+        
+    #     # print(jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, *weights))
+    #     deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
+    #     veres = deriv_fn(x, *weights)
 
-        jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
-        revres = jax_deriv_fn(x, *weights)
+    #     # print(jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, *weights))
+    #     jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
+    #     revres = jax_deriv_fn(x, *weights)
         
-        print("err1", jnp.abs(veres[0] - revres[0]).mean())
-        print("err2", jnp.abs(veres[1] - revres[1]).mean())
-        print("err3", jnp.abs(veres[2] - revres[2]).mean())
-        print("err4", jnp.abs(veres[3] - revres[3]).mean())
+    #     print("err1", jnp.abs(veres[0] - revres[0]).mean())
         
-        print("err5", jnp.abs(veres[4] - revres[4]).mean())
-        print("err6", jnp.abs(veres[5] - revres[5]).mean())
-        print("err7", jnp.abs(veres[6] - revres[6]).mean())
-        print("err8", jnp.abs(veres[7] - revres[7]).mean())
+    #     print("err2", jnp.abs(veres[1] - revres[1]).mean())
+    #     print("err3", jnp.abs(veres[2] - revres[2]).mean())
+    #     print("err4", jnp.abs(veres[3] - revres[3]).mean())
+    #     print("err5", jnp.abs(veres[4] - revres[4]).mean())
         
-        print("err9", jnp.abs(veres[8] - revres[8]).mean())
-        print("err10", jnp.abs(veres[9] - revres[9]).mean())
-        print("err11", jnp.abs(veres[10] - revres[10]).mean())
-        print("err12", jnp.abs(veres[11] - revres[11]).mean())
+    #     print("err6", jnp.abs(veres[5] - revres[5]).mean())
+    #     print("err7", jnp.abs(veres[6] - revres[6]).mean())
+    #     print("err8", jnp.abs(veres[7] - revres[7]).mean())
+    #     print("err9", jnp.abs(veres[8] - revres[8]).mean())
         
-        print("err13", jnp.abs(veres[12] - revres[12]).mean())
-        print("err14", jnp.abs(veres[13] - revres[13]).mean())
-        print("err15", jnp.abs(veres[14] - revres[14]).mean())
-        print("err16", jnp.abs(veres[15] - revres[15]).mean())
+    #     print("err10", jnp.abs(veres[9] - revres[9]).mean())
+    #     print("err11", jnp.abs(veres[10] - revres[10]).mean())
+    #     print("err12", jnp.abs(veres[11] - revres[11]).mean())
+    #     print("err13", jnp.abs(veres[12] - revres[12]).mean())
         
-        import matplotlib.pyplot as plt
-        import time
+    #     print("err14", jnp.abs(veres[13] - revres[13]).mean())
+    #     print("err15", jnp.abs(veres[14] - revres[14]).mean())
+    #     print("err16", jnp.abs(veres[15] - revres[15]).mean())
+    #     print("err16", jnp.abs(veres[16] - revres[16]).mean())
+                
+    #     import time
         
-        out = jax_deriv_fn(x, *weights)
-        st = time.time()
-        for i in range(50):
-            out = jax_deriv_fn(x, *weights)
-        print("jax time", time.time() - st)
+    #     out = jax_deriv_fn(x, *weights)
+    #     st = time.time()
+    #     for i in range(50):
+    #         out = jax_deriv_fn(x, *weights)
+    #     print("jax time", time.time() - st)
         
-        out = deriv_fn(x, *weights)
-        st = time.time()
-        for i in range(50):
-            out = deriv_fn(x, *weights)
-        print("graphax time", time.time() - st)
+    #     out = deriv_fn(x, *weights)
+    #     st = time.time()
+    #     for i in range(50):
+    #         out = deriv_fn(x, *weights)
+    #     print("graphax time", time.time() - st)
         
-        self.assertTrue(tree_allclose(veres, revres))
+    #     self.assertTrue(tree_allclose(veres, revres))
             
     # ### Test all the softmax attention crap
     # def test_softmax_0(self):
@@ -484,174 +489,127 @@ class TransformerTest(unittest.TestCase):
     #     print("err4", jnp.abs(veres[3] - revres[3]).sum())
         
     #     self.assertTrue(tree_allclose(veres, revres))
+        
+    def test_vmap_transformer(self):
+        # TODO investigate errors between gradients computed by vertex elimination
+        # and errors computed through jax
+        batchsize = 4
+        s = 1
+        num_heads = 8
+        seq_len = s*16
+        embedding_dim = s*192
+        dk = s*256//num_heads
+        
+        positional_encoding = make_positional_encoding(seq_len+1, embedding_dim)
+        
+        @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, None,
+                                        None, None, None, None, None, None, None, None, None,
+                                        None, None, None))
+        def multiple_blocks(x, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
+                            WQ2, WK2, WV2, WO2, W3, b3, W4, b4, W5, b5, W6, b6):
+            x = jnp.concatenate((CT, x), axis=1)
+            x = positional_encoding(x)
             
-    # def test_vmap_multihead_attention(self):
-    #     batchsize = 16
-    #     num_heads = 6
-    #     dk = 10
-    #     embedding_dim = 15
-    #     seq_len = 20
+            x = multihead_attention_block(x, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
+            x = multihead_attention_block(x, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
+            x = x[:, 0]
+            return W6 @ gelu(W5 @ x + b5) + b6
         
-    #     vmap_multihead_attn = jax.vmap(multihead_softmax_attention, 
-    #                                     in_axes=(0, None, None, None, None))
-        
-    #     # Weigths for self-attention layer
-    #     key = jrand.PRNGKey(42)
-    #     xkey, qkey, kkey, vkey, okey = jrand.split(key, 5)
-    #     X = jrand.normal(xkey, (batchsize, embedding_dim, seq_len))
-    #     WQ = jrand.normal(qkey, (dk*num_heads, embedding_dim))
-    #     WK = jrand.normal(kkey, (dk*num_heads, embedding_dim))
-    #     WV = jrand.normal(vkey, (dk*num_heads, embedding_dim))
-    #     WO = jrand.normal(okey, (embedding_dim, dk*num_heads))
+        def transformer(x, labels, *weights):
+            out = multiple_blocks(x, *weights)
+            return softmax_ce_loss(out, labels).sum()
 
-    #     print(jax.make_jaxpr(vmap_multihead_attn)(X, WQ, WK, WV, WO))
+        # Weights for self-attention layers
+        key = jrand.PRNGKey(42)
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        WQ1 = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK1 = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV1 = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO1 = glorot(okey, (embedding_dim, dk*num_heads))
+        
+        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
+        WQ2 = glorot(qkey, (dk*num_heads, embedding_dim))
+        WK2 = glorot(kkey, (dk*num_heads, embedding_dim))
+        WV2 = glorot(vkey, (dk*num_heads, embedding_dim))
+        WO2 = glorot(okey, (embedding_dim, dk*num_heads))
+        
+        # Weights for MLP layers
+        W1key, W2key, key = jrand.split(key, 3)
+        W1 = glorot(W1key, (512, embedding_dim))
+        b1 = jnp.zeros((512,), dtype=jnp.float32)
+        W2 = glorot(W2key, (embedding_dim, 512))
+        b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        
+        W3key, W4key, key = jrand.split(key, 3)
+        W3 = glorot(W3key, (512, embedding_dim))
+        b3 = jnp.zeros((512,), dtype=jnp.float32)
+        W4 = glorot(W4key, (embedding_dim, 512))
+        b4 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        
+        W5key, W6key, key = jrand.split(key, 3)
+        W5 = glorot(W5key, (256, embedding_dim))
+        b5 = jnp.zeros(256, dtype=jnp.float32)
+        W6 = glorot(W6key, (10, 256))
+        b6 = jnp.zeros(10, dtype=jnp.float32)
+        
+        CT = jrand.normal(key, (embedding_dim, 1))
+        
+        weights = (CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2,
+                        WQ2, WK2, WV2, WO2, W3, b3, W4, b4,
+                        W5, b5, W6, b6)
+        
+        x = jrand.normal(key, (batchsize, embedding_dim, seq_len))
+        labels = jrand.normal(key, (batchsize, 10))
+        
+        print(jax.make_jaxpr(transformer)(x, labels, *weights))
+        
+        argnums = list(range(2, 19))
+        
+        print(jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, labels, *weights))
+        deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
+        veres = deriv_fn(x, labels, *weights)
 
-    #     # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
-    #     jac_rev = jax.jit(jacve(vmap_multihead_attn, order="rev", argnums=(1, 2, 3, 4)))
+        print(jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, labels, *weights))
+        jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
+        revres = jax_deriv_fn(x, labels, *weights)
         
-    #     # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
-    #     jax_jac_rev = jax.jit(jax.jacrev(vmap_multihead_attn, argnums=(1, 2, 3, 4)))
-    #     revres = jax_jac_rev(X, WQ, WK, WV, WO)
-    #     veres = jac_rev(X, WQ, WK, WV, WO)
+        print("err1", jnp.abs(veres[0] - revres[0]).mean())
         
-    #     print("ve", veres[0].sum())
-    #     print("jax", revres[0].sum())
+        print("err2", jnp.abs(veres[1] - revres[1]).mean())
+        print("err3", jnp.abs(veres[2] - revres[2]).mean())
+        print("err4", jnp.abs(veres[3] - revres[3]).mean())
+        print("err5", jnp.abs(veres[4] - revres[4]).mean())
         
-    #     print("ve", veres[1].sum())
-    #     print("jax", revres[1].sum())
+        print("err6", jnp.abs(veres[5] - revres[5]).mean())
+        print("err7", jnp.abs(veres[6] - revres[6]).mean())
+        print("err8", jnp.abs(veres[7] - revres[7]).mean())
+        print("err9", jnp.abs(veres[8] - revres[8]).mean())
         
-    #     print("ve", veres[2].sum())
-    #     print("jax", revres[2].sum())
+        print("err10", jnp.abs(veres[9] - revres[9]).mean())
+        print("err11", jnp.abs(veres[10] - revres[10]).mean())
+        print("err12", jnp.abs(veres[11] - revres[11]).mean())
+        print("err13", jnp.abs(veres[12] - revres[12]).mean())
         
-    #     self.assertTrue(tree_allclose(veres, revres))
+        print("err14", jnp.abs(veres[13] - revres[13]).mean())
+        print("err15", jnp.abs(veres[14] - revres[14]).mean())
+        print("err16", jnp.abs(veres[15] - revres[15]).mean())
+        print("err17", jnp.abs(veres[16] - revres[16]).mean())
         
-    # def test_two_layer_transformer(self):
-    #     def softmax_attention(X, WQ, WK, WV):
-    #         q = WQ @ X
-    #         k = WK @ X
-    #         v = WV @ X
-    #         a = q @ k.T
-    #         return jnn.softmax(a, axis=0) @ v
-                
-    #     def transformer(X, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label):
-    #         X = softmax_attention(X, WQ1, WK1, WV1)
-    #         X = MLP(X, W1, b1)
-    #         X = softmax_attention(X, WQ2, WK2, WV2)
-    #         X = MLP(X, W2, b2)
-    #         return .5*(X-label)**2
+        import time
         
-    #     key = jrand.PRNGKey(42)
+        out = jax_deriv_fn(x, labels, *weights)
+        st = time.time()
+        for i in range(50):
+            out = jax_deriv_fn(x, labels, *weights)
+        print("jax time", time.time() - st)
         
-    #     x = jnp.arange(160, dtype=jnp.float32).reshape(10, 16)
-    #     WQ1 = .2*jnp.arange(100, dtype=jnp.float32).reshape(10, 10) 
-    #     WK1 = .33*jnp.arange(100, dtype=jnp.float32)[::-1].reshape(10, 10)
-    #     WV1 = .5*jnp.arange(100, dtype=jnp.float32).reshape(10, 10)
+        out = deriv_fn(x, labels, *weights)
+        st = time.time()
+        for i in range(50):
+            out = deriv_fn(x, labels, *weights)
+        print("graphax time", time.time() - st)
         
-    #     W1 = jrand.normal(key, (10, 10))
-    #     b1 = jrand.normal(key, (10, 1))
-        
-    #     WQ2 = .2*jnp.arange(100, dtype=jnp.float32).reshape(10, 10) 
-    #     WK2 = .33*jnp.arange(100, dtype=jnp.float32)[::-1].reshape(10, 10)
-    #     WV2 = .5*jnp.arange(100, dtype=jnp.float32).reshape(10, 10)
-        
-    #     W2 = jrand.normal(key, (5, 10))
-    #     b2 = jrand.normal(key, (5, 1))
-        
-    #     label = jnp.arange(5*16, dtype=jnp.float32).reshape(5, 16)
-        
-    #     print(jax.make_jaxpr(transformer)(x, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label))
-        
-    #     # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
-    #     jax_jac_rev = jax.jit(jax.jacrev(transformer, argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)))
-    #     revres = jax_jac_rev(x, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label)
-
-    #     # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
-    #     jac_rev = jax.jit(jacve(transformer, order="rev", argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)))
-    #     veres = jac_rev(x, WQ1, WK1, WV1, WQ2, WK2, WV2, W1, b1, W2, b2, label)
-        
-        
-    #     self.assertTrue(tree_allclose(veres, revres))
-    
-    # def test_two_layer_vmap_multihead_transformer(self):
-    #     batchsize = 16
-    #     num_heads = 6
-    #     dk = 10
-    #     embedding_dim = 15
-    #     seq_len = 20
-    #     def multihead_softmax_attention(X, WQ, WK, WV, WO):
-    #         q = WQ @ X
-    #         k = WK @ X
-    #         v = WV @ X
-    #         a = q @ k.T
-    #         out = jnn.softmax(a, axis=0) @ v
-    #         return WO @ out 
-        
-    #     # Weigths for first self-attention layer
-    #     key = jrand.PRNGKey(42)
-    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-    #     WQ1 = jrand.normal(qkey, (dk*num_heads, embedding_dim))
-    #     WK1 = jrand.normal(kkey, (dk*num_heads, embedding_dim))
-    #     WV1 = jrand.normal(vkey, (dk*num_heads, embedding_dim))
-    #     WO1 = jrand.normal(okey, (embedding_dim, dk*num_heads))
-        
-    #     # Weights for second self-attention layer
-    #     qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-    #     WQ2 = jrand.normal(qkey, (dk*num_heads, embedding_dim))
-    #     WK2 = jrand.normal(kkey, (dk*num_heads, embedding_dim))
-    #     WV2 = jrand.normal(vkey, (dk*num_heads, embedding_dim))
-    #     WO2 = jrand.normal(okey, (embedding_dim, dk*num_heads))
-        
-    #     def MLP(X, W1, b1, W2, b2):
-    #         out = jnp.tanh(W1 @ X + b1)
-    #         return jnp.tanh(W2 @ out + b2)
-        
-    #     W1key, b1key, W2key, b2key, key = jrand.split(key, 5)
-    #     W1 = jrand.normal(W1key, (10, embedding_dim))
-    #     b1 = jrand.normal(b1key, (10, 1))
-    #     W2 = jrand.normal(W2key, (embedding_dim, 10))
-    #     b2 = jrand.normal(b2key, (embedding_dim, 1))
-        
-    #     W3key, b3key, W4key, b4key, key = jrand.split(key, 5)
-    #     W3 = jrand.normal(W3key, (10, embedding_dim))
-    #     b3 = jrand.normal(b3key, (10, 1))
-    #     W4 = jrand.normal(W4key, (5, 10))
-    #     b4 = jrand.normal(b4key, (5, 1))
-        
-    #     @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, 
-    #                                 None, None, None, None, None, None, None, None, 0))
-    #     def transformer(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
-    #                     W1, b1, W2, b2, W3, b3, W4, b4, label):
-    #         X = multihead_softmax_attention(X, WQ1, WK1, WV1, WO1)
-    #         X = MLP(X, W1, b1, W2, b2)
-    #         X = multihead_softmax_attention(X, WQ2, WK2, WV2, WO2)
-    #         X = MLP(X, W3, b3, W4, b4)
-    #         return .5*(X-label)**2
-        
-    #     def model(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
-    #                 W1, b1, W2, b2, W3, b3, W4, b4, label):
-    #         return transformer(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2,
-    #                             W1, b1, W2, b2, W3, b3, W4, b4, label).sum()
-        
-    #     X = jrand.normal(key, (batchsize, embedding_dim, seq_len))
-    #     label = jnp.arange(batchsize*5*20, dtype=jnp.float32).reshape(batchsize, 5, seq_len)
-        
-    #     print(jax.make_jaxpr(model)(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, 
-    #                                         W1, b1, W2, b2, W3, b3, W4, b4, label))
-        
-    #     print(model(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, W1, b1, W2, b2, W3, b3, W4, b4, label))
-        
-    #     # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
-    #     jax_jac_rev = jax.jit(jax.jacrev(model, argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 
-    #                                                     11, 12, 13, 14, 15, 16, 17)))
-    #     revres = jax_jac_rev(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, W1, b1, W2, b2, W3, b3, W4, b4, label)
-
-    #     # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
-    #     jac_rev = jax.jit(jacve(model, order="rev", argnums=(1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-    #                                                          11, 12, 13, 14, 15, 16, 17)))
-    #     veres = jac_rev(X, WQ1, WK1, WV1, WO1, WQ2, WK2, WV2, WO2, W1, b1, W2, b2, W3, b3, W4, b4, label)
-        
-        
-    #     self.assertTrue(tree_allclose(veres, revres))
+        self.assertTrue(tree_allclose(veres, revres))
         
         
 

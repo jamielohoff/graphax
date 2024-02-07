@@ -252,8 +252,8 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
     """
-    print("lhs", lhs)
-    print("rhs", rhs)                                             
+    # print("lhs", lhs)
+    # print("rhs", rhs)                                             
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
