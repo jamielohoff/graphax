@@ -37,6 +37,7 @@ def tree_allclose(tree1, tree2, equal_nan: bool = False):
     is_equal = jtu.tree_map(allclose, tree1, tree2)
     return jtu.tree_reduce(jnp.logical_and, is_equal)
 
+
 def jacve(fun: Callable, 
             order: Union[Sequence[int], str], 
             argnums: Sequence[int] = (0,),
@@ -104,7 +105,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             
             # Handle stuff like reshape, squeeze etc.
             # TODO what happens if both have a jac_transforms?
-            print(out_edge, eqn.outvars[0], in_edge)  
+            # print(out_edge, eqn.outvars[0], in_edge)  
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
                 pre_val = pre_val.prepend_transforms(post_val)
                 edge_outval = pre_val.unload_transforms(post_val, iota)
@@ -164,9 +165,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     env = {}
     graph = defaultdict(lambda: defaultdict()) # Input connectivity
     transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
-    
-    iota = _iota_shape(jaxpr, argnums)
-    
+        
     # TODO implement automated pruning of the graph
 
     # Reads variable and corresponding traced shaped array
@@ -257,6 +256,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             already_deleted.extend(to_delete)
         else:
             has_dead_vertices = False
+    
+    iota = _iota_shape(jaxpr, argnums)
         
     # Eliminate the vertices
     num_muls, num_adds = 0, 0
@@ -276,14 +277,14 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                     if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
     else:
-        jac_vals = [graph[invar][outvar] 
+        jac_vals = [graph[invar][outvar].val
                     if outvar in list(graph[invar].keys()) else None
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
-
+        
     # Restructure Jacobians for more complicated pytrees
     n = len(jaxpr_invars)
     if n > 1:
-        ratio = len(jac_vals)//len(jaxpr_invars)
+        ratio = len(jac_vals)//n
         jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
         
     if count_ops:

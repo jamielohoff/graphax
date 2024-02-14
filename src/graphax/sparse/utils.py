@@ -5,6 +5,8 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
+from jax.core import JaxprEqn, ClosedJaxpr
+
 
 def zeros_like(invar, outvar):
     in_shape = invar.aval.shape
@@ -79,10 +81,11 @@ def get_largest_tensor(tensors):
     return max(sizes)   
 
 
-def count_muls(eqn):
-    # Function that counts the number of multiplications done by a 
-    # jaxpr equation
-    if eqn.primitive == lax.dot_general_p:
+def count_muls(eqn: JaxprEqn) -> int:
+    """
+    Function that counts the number of multiplications done by a jaxpr equation.
+    """
+    if eqn.primitive is lax.dot_general_p:
         contraction_dims = eqn.params["dimension_numbers"][0]
         batch_dims = eqn.params["dimension_numbers"][1]
         
@@ -92,17 +95,17 @@ def count_muls(eqn):
         
         for d in contraction_dims[1] + batch_dims[1]:
             var1_shape[d] = 1
-            
-        return reduce((lambda x, y: x*y), var0_shape)*reduce((lambda x, y: x*y), var1_shape)
+        return reduce((lambda x, y: x*y), var0_shape, 1)*reduce((lambda x, y: x*y), var1_shape, 1)
     
-    elif eqn.primitive == lax.mul_p:
-        return reduce((lambda x, y: x*y), eqn.outvars[0].aval.shape)
+    elif eqn.primitive is lax.mul_p:
+        return reduce((lambda x, y: x*y), eqn.outvars[0].aval.shape, 1)
     else:
         return 0
     
     
-def count_muls_jaxpr(jaxpr):
-    # Function that counts the number of multiplications done by a 
-    # jaxpr
+def count_muls_jaxpr(jaxpr: ClosedJaxpr) -> int:
+    """
+    Function that counts the number of multiplications done within a jaxpr.
+    """
     return sum([count_muls(eqn) for eqn in jaxpr.eqns])
 

@@ -3,6 +3,7 @@ Sparse tensor algebra implementation
 """
 import copy
 from typing import Callable, Sequence, Tuple, Union
+from functools import reduce
 
 import jax
 import jax.lax as lax
@@ -151,7 +152,6 @@ class SparseTensor:
 
         val = self.val.reshape(shape)
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
-        print()
         return jnp.tile(index_map*val, tiling)
     
     def unload_transforms(self, _tensor, iota):
@@ -253,8 +253,8 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
     """               
-    print("lhs", lhs)
-    print("rhs", rhs)                         
+    # print("lhs", lhs)
+    # print("rhs", rhs)                         
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -1196,34 +1196,41 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     
     
-def get_num_muls(lhs, rhs) -> int:
+def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
     # Function that counts the number of multiplications done by multiplication
     # of two SparseTensor objects
     num_muls = 1
     for d in lhs.out_dims:
         if type(d) is DenseDimension:
             num_muls *= d.size
-    
+            
+    for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
+        if type(ld) is DenseDimension and type(rd) is DenseDimension:
+            num_muls *= ld.size
+            
+        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
+            num_muls *= ld.size
+            
+        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
+            num_muls *= rd.size
+            
+        elif type(ld) is SparseDimension and type(rd) is SparseDimension:
+            if ld.val_dim is not None and rd.val_dim is not None:
+                print(ld.size, rd.size)
+                num_muls *= ld.size
+            elif ld.val_dim is not None:
+                num_muls *= ld.size
+            elif rd.val_dim is not None:
+                num_muls *= rd.size
+
     for d in rhs.primal_dims:
         if type(d) is DenseDimension:
             num_muls *= d.size
-    
-    for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
-        if type(ld) is DenseDimension and type(rd) is DenseDimension:
-            num_muls *= ld.size**2
-        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
-            if rd.val_dim is not None:
-                num_muls *= rd.size
-        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
-            if ld.val_dim is not None:
-                num_muls *= rd.size
-        elif type(ld) is SparseDimension and type(rd) is SparseDimension:     
-            if ld.val_dim is not None and rd.val_dim is not None:    
-                num_muls *= ld.size
+
     return num_muls
 
 
-def get_num_adds(lhs, rhs) -> int:
+def get_num_adds(lhs: SparseTensor, rhs: SparseTensor) -> int:
     # Function that counts the number of multiplications done by addition
     # of two SparseTensor objects    
     num_adds = 1
