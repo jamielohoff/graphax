@@ -100,3 +100,9 @@ def count_muls(eqn):
     else:
         return 0
     
+    
+def count_muls_jaxpr(jaxpr):
+    # Function that counts the number of multiplications done by a 
+    # jaxpr
+    return sum([count_muls(eqn) for eqn in jaxpr.eqns])
+

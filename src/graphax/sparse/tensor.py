@@ -1194,3 +1194,57 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     return SparseTensor(new_out_dims, new_primal_dims, new_val)
     
     
+    
+def get_num_muls(lhs, rhs) -> int:
+    # Function that counts the number of multiplications done by multiplication
+    # of two SparseTensor objects
+    num_muls = 1
+    for d in lhs.out_dims:
+        if type(d) is DenseDimension:
+            num_muls *= d.size
+    
+    for d in rhs.primal_dims:
+        if type(d) is DenseDimension:
+            num_muls *= d.size
+    
+    for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
+        if type(ld) is DenseDimension and type(rd) is DenseDimension:
+            num_muls *= ld.size**2
+        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
+            if rd.val_dim is not None:
+                num_muls *= rd.size
+        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
+            if ld.val_dim is not None:
+                num_muls *= rd.size
+        elif type(ld) is SparseDimension and type(rd) is SparseDimension:     
+            if ld.val_dim is not None and rd.val_dim is not None:    
+                num_muls *= ld.size
+    return num_muls
+
+
+def get_num_adds(lhs, rhs) -> int:
+    # Function that counts the number of multiplications done by addition
+    # of two SparseTensor objects    
+    num_adds = 1
+    
+    for ld, rd in zip(lhs.out_dims, rhs.out_dims):
+        if type(ld) is DenseDimension and type(rd) is DenseDimension:
+            num_adds *= ld.size
+        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
+            num_adds *= rd.size
+        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
+            num_adds *= ld.size
+        elif type(ld) is SparseDimension and type(rd) is SparseDimension:     
+            if ld.val_dim is not None and rd.val_dim is not None:    
+                num_adds *= ld.size
+                
+    for ld, rd in zip(lhs.primal_dims, rhs.primal_dims):
+        if type(ld) is DenseDimension and type(rd) is DenseDimension:
+            num_adds *= ld.size
+        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
+            num_adds *= rd.size
+        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
+            num_adds *= ld.size
+    return num_adds
+    
+    

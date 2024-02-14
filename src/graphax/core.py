@@ -11,6 +11,7 @@ from jax._src.util import safe_map
 import jax._src.core as core
 
 from .primitives import elemental_rules
+from .sparse.tensor import get_num_muls, get_num_adds
 from .sparse.utils import zeros_like, get_largest_tensor
 
 
@@ -111,14 +112,14 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
                 edge_outval = pre_val.prepend_transforms(post_val)
             else:     
                 edge_outval = post_val * pre_val
-                num_mul += 1 # TODO adjust this!
+                num_mul += get_num_muls(post_val, pre_val) # TODO adjust this!
 
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
                 edge_outval += _edge
-                num_add += 1
+                num_add += get_num_adds(edge_outval, _edge)
                 
             graph[in_edge][out_edge] = edge_outval
             transpose_graph[out_edge][in_edge] = edge_outval
@@ -278,7 +279,11 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
         
     if count_ops:
-        print(f"jacve order: {[(int(o), int(c[0])) for o, c in zip(order, counts)]}")
-        print(f"Elimination procedure required {num_muls} multiplications and {num_adds} additions.")
+        order_counts = [(int(o), int(c[0])) for o, c in zip(order, counts)]
+        aux = {"num_muls": num_muls, 
+                "num_adds": num_adds, 
+                "order_counts": order_counts}
+        return jac_vals, aux
+
     return jac_vals
 
