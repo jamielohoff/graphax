@@ -52,7 +52,8 @@ def jacve(fun: Callable,
                                         closed_jaxpr.literals, 
                                         *args, 
                                         argnums=argnums,
-                                        count_ops=count_ops)
+                                        count_ops=count_ops,
+                                        dense_representation=dense_representation)
         if count_ops: 
             out, op_counts = out
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
