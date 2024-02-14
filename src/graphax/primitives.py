@@ -80,6 +80,8 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
                         _d.other_id += 1
             return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
         elif type(elemental) is float or elemental.size == 1:
+            if elemental.size == 1:
+                elemental = jnp.squeeze(elemental) # TODO dirty quick fix that needs to be properly addressed
             out_dims = [SparseDimension(i, e, None, out_size+i)
                         for i, e in enumerate(primal.aval.shape)]
             primal_dims = [SparseDimension(out_size+i, e, None, i)

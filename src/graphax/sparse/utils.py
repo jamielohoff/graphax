@@ -4,7 +4,6 @@ import copy
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 
 
 def zeros_like(invar, outvar):
