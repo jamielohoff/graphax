@@ -40,7 +40,8 @@ def tree_allclose(tree1, tree2, equal_nan: bool = False):
 def jacve(fun: Callable, 
             order: Union[Sequence[int], str], 
             argnums: Sequence[int] = (0,),
-            count_ops: bool = False) -> Callable:
+            count_ops: bool = False,
+            dense_representation: bool = True) -> Callable:
     @wraps(fun)
     def wrapped(*args, **kwargs):
         # TODO Make repackaging work properly with one input value only
@@ -157,7 +158,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                             consts: Sequence[core.Literal], 
                             *args, 
                             argnums: Sequence[int] = (0,),
-                            count_ops: bool = True,
+                            count_ops: bool = False,
                             dense_representation: bool = True):    
     env = {}
     graph = defaultdict(lambda: defaultdict()) # Input connectivity
