@@ -151,6 +151,7 @@ class SparseTensor:
 
         val = self.val.reshape(shape)
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
+        print()
         return jnp.tile(index_map*val, tiling)
     
     def unload_transforms(self, _tensor, iota):

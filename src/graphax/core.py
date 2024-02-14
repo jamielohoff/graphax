@@ -157,7 +157,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                             consts: Sequence[core.Literal], 
                             *args, 
                             argnums: Sequence[int] = (0,),
-                            count_ops: bool = True):    
+                            count_ops: bool = True,
+                            dense_representation: bool = True):    
     env = {}
     graph = defaultdict(lambda: defaultdict()) # Input connectivity
     transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
@@ -267,10 +268,15 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             num_adds += num_add
            
     # TODO offload all jac_transforms to the output variables before densification!
-    # Collect outputs       
-    jac_vals = [graph[invar][outvar].dense(iota) 
-                if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
-                for outvar in jaxpr.outvars for invar in jaxpr_invars]
+    # Collect outputs    
+    if dense_representation:   
+        jac_vals = [graph[invar][outvar].dense(iota) 
+                    if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
+                    for outvar in jaxpr.outvars for invar in jaxpr_invars]
+    else:
+        jac_vals = [graph[invar][outvar] 
+                    if outvar in list(graph[invar].keys()) else None
+                    for outvar in jaxpr.outvars for invar in jaxpr_invars]
 
     # Restructure Jacobians for more complicated pytrees
     n = len(jaxpr_invars)
