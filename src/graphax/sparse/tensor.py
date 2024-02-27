@@ -1216,7 +1216,6 @@ def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
             
         elif type(ld) is SparseDimension and type(rd) is SparseDimension:
             if ld.val_dim is not None and rd.val_dim is not None:
-                print(ld.size, rd.size)
                 num_muls *= ld.size
             elif ld.val_dim is not None:
                 num_muls *= ld.size
