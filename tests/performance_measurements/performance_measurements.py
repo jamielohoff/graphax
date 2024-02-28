@@ -102,12 +102,29 @@ def measure_Perceptron():
             
 
 def measure_RobotArm():    
-    samplesize = 100
-        
+    samplesize = 1000
     shape = (1000,)
     
+    order = [95, 58, 8, 36, 20, 45, 104, 18, 63, 6, 9, 64, 106, 94, 21, 93, 
+            79, 76, 5, 78, 62, 13, 102, 89, 88, 77, 31, 66, 52, 55, 57, 80, 
+            90, 87, 60, 51, 27, 25, 92, 112, 39, 29, 33, 75, 47, 68, 103, 50,
+            98, 107, 49, 86, 16, 83, 91, 1, 96, 69, 44, 4, 19, 43, 28, 73, 
+            108, 81, 10, 7, 37, 54, 105, 110, 70, 22, 3, 26, 34, 35, 99, 72, 
+            17, 38, 30, 97, 40, 32, 85, 24, 82, 111, 42, 46, 59, 53, 100, 12,
+            109, 14, 74, 15, 56, 41, 48, 0, 2, 71, 11, 23]
+    order = [o + 1 for o in order]
+    
+    mM_order = [6, 7, 9, 10, 14, 18, 19, 21, 22, 53, 63, 64, 65, 67, 77, 78, 
+                79, 80, 82, 94, 95, 96, 97, 99, 103, 104, 105, 107, 113, 2, 
+                5, 8, 11, 17, 20, 23, 25, 27, 29, 30, 33, 35, 37, 38, 41, 43, 
+                45, 46, 49, 50, 54, 55, 58, 59, 69, 71, 73, 74, 81, 84, 86, 
+                88, 90, 91, 98, 101, 106, 109, 111, 26, 31, 34, 39, 42, 47, 
+                51, 56, 60, 70, 75, 83, 87, 92, 100, 108, 110, 52, 61, 15, 
+                28, 36, 44, 48, 57, 72, 1, 89, 13, 112, 3, 32, 40, 4, 16, 76, 
+                93, 12, 24]
+    
     xs = [jnp.ones(shape)]*6
-    gx.plot_performance(RobotArm_6DOF, xs, "./6DOF_Robot_Arm.png", samplesize=samplesize, caption="6-DOF Robot")
+    gx.plot_performance(RobotArm_6DOF, xs, order, mM_order, "./6DOF_Robot_Arm.png", samplesize=samplesize, caption="6-DOF Robot Arm")
     
     # shapes = [(), (3, 3), (6, 6), (10, 10), (15, 15), (20, 20), (30, 30)]
     # args = [[jnp.ones(shape)]*6 for shape in shapes]
@@ -116,14 +133,28 @@ def measure_RobotArm():
 
 def measure_RoeFlux():       
     samplesize = 10000
-        
+    order = [32, 44, 24, 63, 65, 92, 15, 68, 43, 18, 49, 88, 7, 36, 81, 3, 46, 30,
+            91, 76, 31, 37,  8, 79, 28, 16, 74, 80, 85, 66, 72, 86, 39, 25, 83, 26,
+            97, 61, 99, 41, 94, 78, 75, 70, 17, 67, 71, 4, 10, 0, 13, 50, 93, 56,
+            53, 89, 84, 59, 14, 77, 62, 1, 6, 60, 5, 58, 33, 55, 52, 64, 34, 42,
+            21, 90,  9, 12, 27, 95, 87, 47, 45, 35, 20, 40, 73, 82, 2, 57, 11, 23,
+            48, 19, 54, 69, 51]
+    order = [o + 1 for o in order]
+    
+    mM_order = [4, 5, 8, 9, 16, 17, 25, 27, 31, 33, 38, 43, 44, 45, 69, 84, 1, 2,
+                10, 13, 18, 21, 26, 28, 32, 34, 37, 39, 42, 47, 50, 53, 57, 59, 
+                62, 64, 66, 67, 68, 71, 73, 75, 76, 77, 80, 81, 83, 85, 86, 87, 
+                91, 92, 95, 11, 14, 19, 22, 51, 54, 58, 60, 63, 65, 72, 79, 88, 
+                90, 93, 96, 3, 6, 7, 15, 29, 40, 56, 61, 74, 78, 82, 48, 89, 94, 
+                23, 35, 46, 24, 70, 41, 98, 100, 12, 20, 30, 49, 52, 55, 36]
+    
     shape = (60,) 
     xs = [jnp.zeros(shape)]*6
-    gx.plot_performance(RoeFlux_1d, xs, "./RoeFlux.png", samplesize=samplesize, caption="Roe Flux")
+    gx.plot_performance(RoeFlux_1d, xs, order, mM_order, "./RoeFlux.png", samplesize=samplesize, caption="Roe Flux")
     
-    shapes = [(1,), (5,), (10), (25,), (50,), (100,), (250,), (500,)]# , (15, 15), (20, 20), (30, 30)]
-    args = [[jnp.ones(shape)]*6 for shape in shapes]
-    gx.plot_performance_over_size(RoeFlux_1d, args, "./RoeFlux_sizes.png", samplesize=samplesize)
+    # shapes = [(1,), (5,), (10), (25,), (50,), (100,), (250,), (500,)]# , (15, 15), (20, 20), (30, 30)]
+    # args = [[jnp.ones(shape)]*6 for shape in shapes]
+    # gx.plot_performance_over_size(RoeFlux_1d, args, "./RoeFlux_sizes.png", samplesize=samplesize)
   
  
 def measure_g():            
@@ -147,10 +178,22 @@ def measure_CloudSchemes():
     gx.plot_performance(CloudSchemes_step, xs, "./CloudSchemes.png", samplesize=samplesize)
 
     
-# NOTE Does not work straight-forwardly since it has reshape operations!
 def measure_f():            
-    samplesize = 1000
+    samplesize = 10000
     
+    order = [10, 40, 48, 45, 74,  5,  9, 78, 21, 26, 14, 19, 23, 39, 30, 16, 58, 
+            15, 35, 62, 43, 3, 33, 24, 46, 57, 52, 28, 59, 18, 27, 37, 70, 36, 
+            49, 17, 53, 34, 22, 63, 25, 61, 55, 66, 12, 42, 47, 64, 44, 75, 65, 
+            54, 38, 50, 0, 76, 68, 31, 41, 8, 32, 2, 29, 13, 73, 56, 60, 51, 71, 
+            11, 4, 7, 20, 6]
+    order = [o + 1 for o in order]
+    
+    mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 53, 
+                56, 57, 60, 61, 63, 69, 71, 75, 79, 6, 10, 15, 18, 25, 27, 26, 
+                45, 55, 59, 64, 13, 19, 30, 62, 9, 11, 17, 44, 58, 67, 77, 20, 
+                31, 34, 40, 1, 8, 33, 39, 48, 72, 76, 46, 66, 4, 7, 54, 29, 51, 
+                12, 23, 65, 16, 74, 52, 5, 21, 3, 2]
+
     a = jnp.ones(4)
     b = jnp.ones((2, 3))
     c = jnp.ones((4, 4))
@@ -158,10 +201,10 @@ def measure_f():
     e = jnp.ones((4, 1))
     xs = [a, b, c, d, e]
     
-    grad_f = jax.jit(gx.jacve(f, order="rev", argnums=(0, 1, 2, 3, 4)))
+    grad_f = jax.jit(gx.jacve(f, order=order, argnums=(0, 1, 2, 3, 4)))
     print(jax.make_jaxpr(grad_f)(*xs))
     
-    gx.plot_performance(f, xs, "./f.png", samplesize=samplesize)
+    gx.plot_performance(f, xs, order, mM_order, "./f.png", samplesize=samplesize)
     
     
 def measure_softmax_attention():
@@ -171,9 +214,9 @@ def measure_softmax_attention():
 # simple()
 # measure_Helmholtz()
 # measure_Perceptron()
-# measure_RobotArm()
+measure_RobotArm()
 # measure_g()
-measure_RoeFlux()
+# measure_RoeFlux()
 # measure_KerrSen()
 # measure_CloudSchemes()
 # measure_f()
