@@ -105,7 +105,6 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             
             # Handle stuff like reshape, squeeze etc.
             # TODO what happens if both have a jac_transforms?
-            # print(out_edge, eqn.outvars[0], in_edge)  
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
                 pre_val = pre_val.prepend_transforms(post_val)
                 edge_outval = pre_val.unload_transforms(post_val, iota)
@@ -127,14 +126,14 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             graph[in_edge][out_edge] = edge_outval
             transpose_graph[out_edge][in_edge] = edge_outval
                 
-    # Cleanup of input and output vertices
+    # Cleanup of input and output edges
     if vertex not in vo_vertices:
-        for in_edge in transpose_graph[eqn.outvars[0]].keys():
-            del graph[in_edge][eqn.outvars[0]]
-    for out_edge in graph[eqn.outvars[0]].keys():    
-        del transpose_graph[out_edge][eqn.outvars[0]]
+        for in_vertex in transpose_graph[eqn.outvars[0]].keys():
+            del graph[in_vertex][eqn.outvars[0]]
+    for out_vertex in graph[eqn.outvars[0]].keys():    
+        del transpose_graph[out_vertex][eqn.outvars[0]]
     
-    # Cleanup eliminated vertices   
+    # Cleanup the eliminated vertex
     del graph[eqn.outvars[0]]
     if vertex not in vo_vertices:
         del transpose_graph[eqn.outvars[0]]
@@ -147,6 +146,7 @@ def _checkify_order(order, jaxpr, vo_vertices):
         if order == "forward" or order == "fwd":
             return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
                     if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices]
+            
         elif order == "reverse" or order == "rev":
             return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
                     if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices][::-1]
@@ -223,7 +223,6 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             safe_map(_write_elemental, invars, elemental_outvals)
             
     # Prune the computational graph
-    print("Pruning computational graph...")
     has_dead_vertices = True
     for i, invar in enumerate(jaxpr.invars):
         if i not in argnums:
@@ -271,7 +270,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             num_adds += num_add
            
     # TODO offload all jac_transforms to the output variables before densification!
-    # Collect outputs    
+    # Collect outputs  
+    
     if dense_representation:   
         jac_vals = [graph[invar][outvar].dense(iota) 
                     if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)

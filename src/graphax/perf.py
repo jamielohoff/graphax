@@ -18,20 +18,18 @@ Order = Union[str, Sequence[int]]
 def measure_execution_time(f: Callable, 
                             args: Sequence[Array], 
                             order: Order,
-                            samplesize: int = 100, 
+                            samplesize: int = 1000, 
                             print_results: bool = False) -> Sequence[int]:
     """
     TODO docstring
     """
     measurements = []
     argnums = list(range(len(args)))
-    print(argnums)
     
     grad_f = ()
     vmap_f = jax.vmap(f, in_axes=[0]*len(args))
     grad_f = jax.jit(jacve(vmap_f, order=order, argnums=argnums))
     
-    # print(grad_f(*[arg for arg in args]))
     def measure(xs):
         st = timer()
         out = grad_f(*xs)
@@ -92,37 +90,40 @@ def measure_execution_time_with_jax(f: Callable,
 
 def plot_performance(f: Callable,
                     args: Sequence[Array],
-                    # order: Order, 
+                    order: Order, 
+                    mM_order: Order,
                     fname: str,
                     samplesize: int = 100,
                     quantiles: Array = jnp.array([0.025, 0.975]),
                     caption: str ="different modes") -> None:
     """
     TODO docstring
-    """
-
-    # cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize)
+    """    
     fwd_measurements = measure_execution_time(f, args, "fwd", samplesize=samplesize)
     rev_measurements = measure_execution_time(f, args, "rev", samplesize=samplesize)
+    mM_measurements = measure_execution_time(f, args, mM_order, samplesize=samplesize)
+    cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize)
     
-    jax_fwd_measurements, jax_rev_measurements = measure_execution_time_with_jax(f, args, samplesize=samplesize)
-    # jax_fwd_measurements = jnp.zeros(10)
-    # jax_rev_measurements = jnp.zeros(10)
+    # jax_fwd_measurements, jax_rev_measurements = measure_execution_time_with_jax(f, args, samplesize=samplesize)
+    jax_fwd_measurements = jnp.zeros(10)
+    jax_rev_measurements = jnp.zeros(10)
     
     fwd_mean = jnp.mean(fwd_measurements)
     rev_mean = jnp.mean(rev_measurements)
-    # cc_mean = jnp.mean(cc_measurements)
+    cc_mean = jnp.mean(cc_measurements)
+    mM_mean = jnp.mean(mM_measurements)
     
-    print(f"fwd mean: {fwd_mean}, rev mean: {rev_mean}")
+    print(f"fwd mean: {fwd_mean}, rev mean: {rev_mean}, cc_mean: {cc_mean}, mM_mean: {mM_mean}")
     
     jax_fwd_mean = jnp.mean(jax_fwd_measurements)
     jax_rev_mean = jnp.mean(jax_rev_measurements)
     
     fwd_std = jnp.std(fwd_measurements) # jnp.quantile(fwd_measurements, quantiles) - fwd_mean
     rev_std = jnp.std(rev_measurements) # jnp.quantile(rev_measurements, quantiles) - rev_mean
-    # cc_std = jnp.std(cc_measurements) # jnp.quantile(cc_measurements, quantiles) - cc_mean
+    cc_std = jnp.std(cc_measurements) # jnp.quantile(cc_measurements, quantiles) - cc_mean
+    mM_std = jnp.std(mM_measurements) # jnp.quantile(mM_measurements, quantiles) - mM_mean
     
-    print(f"fwd std: {fwd_std}, rev std: {rev_std}")
+    print(f"fwd std: {fwd_std}, rev std: {rev_std}, cc_std: {cc_std}, mM_std: {mM_std}")
     
     jax_fwd_std = jnp.std(jax_fwd_measurements) # jnp.quantile(jax_fwd_measurements, quantiles) - jax_fwd_mean
     jax_rev_std = jnp.std(jax_rev_measurements) # jnp.quantile(jax_rev_measurements, quantiles) - jax_rev_mean
@@ -131,10 +132,10 @@ def plot_performance(f: Callable,
     
     plt.rcParams.update({"font.size": 16})  
     
-    modes = ["fwd", "JAX fwd", "rev", "JAX rev"]
+    modes = ["fwd", "JAX fwd", "rev", "JAX rev", "cc", "mM"]
     x_pos = jnp.arange(0, len(modes))
-    runtimes = jnp.stack([fwd_mean, jax_fwd_mean, rev_mean, jax_rev_mean])
-    runtime_errors = jnp.stack([fwd_std, jax_fwd_std, rev_std, jax_rev_std])
+    runtimes = jnp.stack([fwd_mean, jax_fwd_mean, rev_mean, jax_rev_mean, cc_mean, mM_mean])
+    runtime_errors = jnp.stack([fwd_std, jax_fwd_std, rev_std, jax_rev_std, cc_std, mM_std])
     ax.bar(x_pos, runtimes, yerr=runtime_errors, align="center", alpha=0.5, 
             ecolor="black", color="#6096f6", capsize=10)
     

@@ -252,9 +252,7 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
-    """               
-    # print("lhs", lhs)
-    # print("rhs", rhs)                         
+    """                                     
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -266,7 +264,9 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     res = None
     _lhs = lhs.copy()
     _rhs = rhs.copy()
-    if _is_pure_dot_product_mul(_lhs, _rhs):
+    if lhs.shape == () and rhs.shape == ():
+        return SparseTensor((), (), lhs.val*rhs.val)
+    elif _is_pure_dot_product_mul(_lhs, _rhs):
         res = _pure_dot_product_mul(_lhs, _rhs)
     elif _is_pure_broadcast_mul(_lhs, _rhs):
         res = _pure_broadcast_mul(_lhs, _rhs)
@@ -280,7 +280,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
-    """                                           
+    """                                    
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     
@@ -732,9 +732,7 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     Returns:
         SparseTensor: SparseTensor object with `val` property resulting from
                         broadcasting multiplication of `lhs.val` and `rhs.val`.
-    """  
-    # print("pure_broadcast_mul") 
-                                        
+    """                                          
     ### Calculate output tensor
     if lhs.val is None and rhs.val is None:
         return _get_output_tensor(lhs, rhs, None)
@@ -748,15 +746,11 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
         # Add padding
         lhs, rhs = _pad_tensors(lhs, rhs)
-                
-        # print("lhs", lhs, lhs.val.shape)
-        # print("rhs", rhs, rhs.val.shape)
             
         assert _checkify_broadcast_compatibility(lhs.val, rhs.val), f"Shapes {lhs.val.shape} and {rhs.val.shape} not compatible for broadcast multiplication!"
         new_val = lhs.val * rhs.val
         out = _get_output_tensor(lhs, rhs, new_val)
         res = _swap_back_axes(out)
-        # print("res", res, res.val.shape)
         return res
     
     
@@ -886,7 +880,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the dense dot-product multiplication of `lhs.val` and `rhs.val`.
     """
-    # print("dot_product_mul")
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
     new_out_dims = lhs.out_dims
@@ -943,7 +936,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: _description_
     """
     new_out_dims, new_primal_dims = [], []
-    # print("mixed_mul")
     l, r = len(lhs.out_dims), len(rhs.out_dims)
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
@@ -1094,8 +1086,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     ldims, rdims = [], []
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
-    count = 0       
-                    
+    count = 0     
+                      
     # Check the dimensionality of the 'out_dims' of both tensors
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
         if ld.val_dim is None and rd.val_dim is None:
@@ -1116,11 +1108,16 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             new_out_dims.append(SparseDimension(ld.id, ld.size, dim, ld.other_id))
             _lshape.append(1)
             _rshape.append(1)
+        elif type(ld) is SparseDimension and type(rd) is SparseDimension and ld.other_id != rd.other_id:
+            new_out_dims.append(DenseDimension(ld.id, ld.size, dim))
+            _lshape.append(ld.size)
+            _rshape.append(ld.size)
         else:
             if type(ld) is SparseDimension:
                 _rshape.append(1)
+                _lshape.append(ld.size)
             elif type(rd) is SparseDimension:
-                _rshape.append(ld.size)
+                _rshape.append(rd.size)
                 _lshape.append(1)
             else:
                 _lshape.append(1)
@@ -1131,8 +1128,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         if type(ld) is SparseDimension and type(rd) is SparseDimension and ld.other_id == rd.other_id:
             dim = new_out_dims[ld.other_id].val_dim
             new_primal_dims.append(SparseDimension(ld.id, ld.size, dim, ld.other_id))
-            # _lshape.append(1)
-            # _rshape.append(1)
+            _lshape.append(1)
+            _rshape.append(1)
         else:            
             if ld.val_dim is None and rd.val_dim is None:
                 dim = None
@@ -1148,6 +1145,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                 dim = count
                 count += 1
             
+            # TODO something here is not right, there is an apparent asymetry
+            # between the cases for ld and rd!
             if type(ld) is SparseDimension:
                 _lshape.append(ld.size)
                 if ld.val_dim is not None:
@@ -1184,7 +1183,7 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         rhs_val = jnp.tile(rhs_val, rtiling)
         
     # We need to materialize sparse dimensions for addition
-    if sum(_lshape) > len(_lshape):        
+    if sum(_lshape) > len(_lshape):       
         iota = eye_like(_lshape, len(lhs.out_dims))
         lhs_val = iota * lhs_val
     if sum(_rshape) > len(_rshape):
