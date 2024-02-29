@@ -263,55 +263,7 @@ class GeneralADTest(unittest.TestCase):
     #     jax_jac_rev = jax.jit(jax.jacrev(f, argnums=(1, 2, 3, 4)))
     #     revres = jax_jac_rev(x, W1, b1, W2, b2, y)
 
-    #     self.assertTrue(tree_allclose(veres, revres))
-        
-    # def test_f(self):
-    #     key = jrand.PRNGKey(42)
-    #     a = jrand.uniform(key, (4,))
-    #     b = jrand.uniform(key, (2, 3))
-    #     c = jrand.uniform(key, (4, 4))
-    #     d = jrand.uniform(key, (3, 3))
-    #     e = jrand.uniform(key, (4, 1))
-    #     xs = [a, b, c, d, e]
-        
-    #     # print(jax.make_jaxpr(f)(*xs))
-
-    #     # deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2, 3, 4), count_ops=True))
-    #     # veres, aux = deriv_fn(*xs)
-        
-    #     # print("rev num_muls", aux["num_muls"])
-        
-    #     mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 53, 
-    #             56, 57, 60, 61, 63, 69, 71, 75, 79, 6, 10, 15, 18, 25, 27, 26, 
-    #             45, 55, 59, 64, 13, 19, 30, 62, 9, 11, 17, 44, 58, 67, 77, 20, 
-    #             31, 34, 40, 1, 8, 33, 39, 48, 72, 76, 46, 66, 4, 7, 54, 29, 51, 
-    #             12, 23, 65, 16, 74, 52, 5, 21, 3, 2, 80, 80, 80, 80, 80]
-        
-    #     # order = [o + 1 for o in order]
-    #     # order = "rev"
-        
-    #     jaxpr = jax.make_jaxpr(f)(*xs)
-    #     # print(jaxpr)
-
-    #     argnums = range(len(xs))
-    #     jac_mM = jax.jit(jacve(f, order=mM_order, argnums=argnums, count_ops=True))
-    #     veres, aux = jac_mM(*xs)
-                
-    #     jaxpr = jax.make_jaxpr(f)(*xs)
-    #     deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
-    #     print(deriv_jaxpr)
-    #     print("mM num_muls", aux["num_muls"])
-    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
-        
-    #     revres = jax.jacrev(f, argnums=(0, 1, 2, 3, 4))(*xs)
-        
-    #     for i in range(4):
-    #         print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
-    #         print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
-    #         print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
-    #         print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
-
-    #     self.assertTrue(tree_allclose(veres, revres))     
+    #     self.assertTrue(tree_allclose(veres, revres))    
     
     # def test_slicing(self):
     #     def f(x, y):
@@ -433,84 +385,84 @@ class GeneralADTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres))    
         
-    def test_RoeFlux1d(self):
-        xs = [.01, .02, .02, .01, .03, .03]
-        order = [95, 7, 26, 16, 3, 49, 91, 37, 83, 88, 32, 68, 44, 81, 66, 24, 
-                76, 85, 43, 86, 80, 42, 12, 15, 30, 62, 52, 78, 70, 58, 72, 56, 
-                39, 94, 47, 10, 90, 46, 99, 1, 25, 41, 28, 71, 36, 57, 31, 21, 
-                27, 8, 5, 33, 89, 84, 59, 20, 77, 73, 87, 75, 53, 97, 93, 64, 18, 
-                45, 13, 74, 67, 79, 63, 60, 0, 48, 4, 65, 50, 92, 17, 6, 19, 9, 
-                69, 55, 61, 82, 51, 40, 14, 35, 54, 38, 22, 2, 23, 11, 34, 29]
+    # def test_RoeFlux1d(self):
+    #     xs = [.01, .02, .02, .01, .03, .03]
+    #     order = [95, 7, 26, 16, 3, 49, 91, 37, 83, 88, 32, 68, 44, 81, 66, 24, 
+    #             76, 85, 43, 86, 80, 42, 12, 15, 30, 62, 52, 78, 70, 58, 72, 56, 
+    #             39, 94, 47, 10, 90, 46, 99, 1, 25, 41, 28, 71, 36, 57, 31, 21, 
+    #             27, 8, 5, 33, 89, 84, 59, 20, 77, 73, 87, 75, 53, 97, 93, 64, 18, 
+    #             45, 13, 74, 67, 79, 63, 60, 0, 48, 4, 65, 50, 92, 17, 6, 19, 9, 
+    #             69, 55, 61, 82, 51, 40, 14, 35, 54, 38, 22, 2, 23, 11, 34, 29]
                 
-        order = [o + 1 for o in order]
+    #     order = [o + 1 for o in order]
         
-        jac_cc = jax.jit(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
-        veres, aux = jac_cc(*xs)
+    #     jac_cc = jax.jit(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
+    #     veres, aux = jac_cc(*xs)
                 
-        jaxpr = jax.make_jaxpr(RoeFlux_1d)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
-        print(deriv_jaxpr)
-        print("num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+    #     jaxpr = jax.make_jaxpr(RoeFlux_1d)(*xs)
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
+    #     print(deriv_jaxpr)
+    #     print("num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
-        jax_jac_rev = jax.jit(jax.jacrev(RoeFlux_1d, argnums=(0, 1, 2, 3, 4, 5)))
-        revres = jax_jac_rev(*xs)
-        print(veres)
-        print(revres)
-        self.assertTrue(tree_allclose(veres, revres))          
+    #     jax_jac_rev = jax.jit(jax.jacrev(RoeFlux_1d, argnums=(0, 1, 2, 3, 4, 5)))
+    #     revres = jax_jac_rev(*xs)
+    #     print(veres)
+    #     print(revres)
+    #     self.assertTrue(tree_allclose(veres, revres))          
         
-    def test_EncoderDecoder(self):
-        x = jnp.ones((4, 4))
-        y = jnp.ones((2, 4))
+    # def test_EncoderDecoder(self):
+    #     x = jnp.ones((4, 4))
+    #     y = jnp.ones((2, 4))
 
-        WQ1 = jnp.ones((4, 4))
-        WK1 = jnp.ones((4, 4))
-        WV1 = jnp.ones((4, 4))
+    #     WQ1 = jnp.ones((4, 4))
+    #     WK1 = jnp.ones((4, 4))
+    #     WV1 = jnp.ones((4, 4))
 
-        WQ2 = jnp.ones((4, 4))
-        WK2 = jnp.ones((4, 4))
-        WV2 = jnp.ones((4, 4))
+    #     WQ2 = jnp.ones((4, 4))
+    #     WK2 = jnp.ones((4, 4))
+    #     WV2 = jnp.ones((4, 4))
 
-        WQ3 = jnp.ones((4, 4))
-        WK3 = jnp.ones((4, 4))
-        WV3 = jnp.ones((4, 4))
+    #     WQ3 = jnp.ones((4, 4))
+    #     WK3 = jnp.ones((4, 4))
+    #     WV3 = jnp.ones((4, 4))
 
-        W1 = jnp.ones((4, 4))
-        b1 = jnp.ones(4)
+    #     W1 = jnp.ones((4, 4))
+    #     b1 = jnp.ones(4)
 
-        W2 = jnp.ones((2, 4))
-        b2 = jnp.ones((2, 1))
+    #     W2 = jnp.ones((2, 4))
+    #     b2 = jnp.ones((2, 1))
 
-        xs = (x, y, WQ1, WQ2, WQ3, WK1, WK2, WK3, WV1, WV2, WV3, W1, W2, b1, b2, 0., 1., 0., 1., 0., 1.)
+    #     xs = (x, y, WQ1, WQ2, WQ3, WK1, WK2, WK3, WV1, WV2, WV3, W1, W2, b1, b2, 0., 1., 0., 1., 0., 1.)
 
-        # order = [65, 33, 26, 122, 75, 13, 58, 35, 38, 53, 31, 40, 104, 73, 92, 
-        #         79, 106, 89, 52, 39, 72, 125, 101, 24, 78, 90, 110, 56, 116, 42,
-        #         87,  16, 76, 123, 114, 99, 1, 28, 70, 105, 121, 120, 115, 61, 71, 
-        #         124, 9, 109, 14, 112, 82, 41, 97, 91, 88, 67, 95, 68, 51, 2, 25,
-        #         84, 17, 118, 0, 80, 64, 23, 113, 11, 12, 63, 81, 111, 49, 20, 77,
-        #         117, 29, 86, 54, 45, 107, 37, 21, 126, 48, 69, 4, 98, 57, 32, 36,
-        #         8, 6, 102, 83, 103, 62, 55, 47, 10, 59, 19, 46, 30, 94, 85, 5, 74,
-        #         7, 93, 15, 119, 108, 100, 27, 22, 44, 3, 34, 66]
+    #     # order = [65, 33, 26, 122, 75, 13, 58, 35, 38, 53, 31, 40, 104, 73, 92, 
+    #     #         79, 106, 89, 52, 39, 72, 125, 101, 24, 78, 90, 110, 56, 116, 42,
+    #     #         87,  16, 76, 123, 114, 99, 1, 28, 70, 105, 121, 120, 115, 61, 71, 
+    #     #         124, 9, 109, 14, 112, 82, 41, 97, 91, 88, 67, 95, 68, 51, 2, 25,
+    #     #         84, 17, 118, 0, 80, 64, 23, 113, 11, 12, 63, 81, 111, 49, 20, 77,
+    #     #         117, 29, 86, 54, 45, 107, 37, 21, 126, 48, 69, 4, 98, 57, 32, 36,
+    #     #         8, 6, 102, 83, 103, 62, 55, 47, 10, 59, 19, 46, 30, 94, 85, 5, 74,
+    #     #         7, 93, 15, 119, 108, 100, 27, 22, 44, 3, 34, 66]
         
-        # order = [o + 1 for o in order]
-        order = "rev"
+    #     # order = [o + 1 for o in order]
+    #     order = "rev"
         
-        jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
-        print(jaxpr)
+    #     jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
+    #     print(jaxpr)
 
-        argnums = range(len(xs))
-        jac_cc = jax.jit(jacve(EncoderDecoder, order=order, argnums=argnums, count_ops=True))
-        veres, aux = jac_cc(*xs)
+    #     argnums = range(len(xs))
+    #     jac_cc = jax.jit(jacve(EncoderDecoder, order=order, argnums=argnums, count_ops=True))
+    #     veres, aux = jac_cc(*xs)
                 
-        jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(EncoderDecoder, order=order, argnums=argnums))(*xs)
-        # print(deriv_jaxpr)
-        print("num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+    #     jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(EncoderDecoder, order=order, argnums=argnums))(*xs)
+    #     # print(deriv_jaxpr)
+    #     print("num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
-        jax_jac_rev = jax.jit(jax.jacrev(EncoderDecoder, argnums=argnums))
-        revres = jax_jac_rev(*xs)
-        self.assertTrue(tree_allclose(veres, revres))
+    #     jax_jac_rev = jax.jit(jax.jacrev(EncoderDecoder, argnums=argnums))
+    #     revres = jax_jac_rev(*xs)
+    #     self.assertTrue(tree_allclose(veres, revres))
         
     # def test_RobotArm(self):
     #     xs = [.02]*6
@@ -585,6 +537,55 @@ class GeneralADTest(unittest.TestCase):
     #     print(veres)
     #     print(revres)
     #     self.assertTrue(tree_allclose(veres, revres))  
+        
+    def test_f(self):
+        key = jrand.PRNGKey(250197)
+        a = jrand.uniform(key, (4,))
+        b = jrand.uniform(key, (2, 3))
+        c = jrand.uniform(key, (4, 4))
+        d = jrand.uniform(key, (4, 1))
+        xs = [a, b, c, d]
+        argnums = list(range(len(xs)))
+        
+        print("res", f(*xs))
+        
+        # print(jax.make_jaxpr(f)(*xs))
+
+        deriv_fn = jax.jit(jacve(f, order="fwd", argnums=argnums, count_ops=True))
+        veres, aux = deriv_fn(*xs)
+        
+        print("rev num_muls", aux["num_muls"])
+        
+        # mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 53, 
+        #         56, 57, 60, 61, 63, 69, 71, 75, 79, 6, 10, 15, 18, 25, 27, 26, 
+        #         45, 55, 59, 64, 13, 19, 30, 62, 9, 11, 17, 44, 58, 67, 77, 20, 
+        #         31, 34, 40, 1, 8, 33, 39, 48, 72, 76, 46, 66, 4, 7, 54, 29, 51, 
+        #         12, 23, 65, 16, 74, 52, 5, 21, 3, 2, 80, 80, 80, 80, 80]
+        
+        # # order = [o + 1 for o in order]
+        # # order = "rev"
+        
+        # jaxpr = jax.make_jaxpr(f)(*xs)
+        # # print(jaxpr)
+
+        # jac_mM = jax.jit(jacve(f, order=mM_order, argnums=argnums, count_ops=True))
+        # veres, aux = jac_mM(*xs)
+                
+        # jaxpr = jax.make_jaxpr(f)(*xs)
+        # deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
+        # print(deriv_jaxpr)
+        # print("mM num_muls", aux["num_muls"])
+        # print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        
+        revres = jax.jacrev(f, argnums=argnums)(*xs)
+        
+        for i in range(5):
+            print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
+            print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
+            print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
+            print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
+
+        self.assertTrue(tree_allclose(veres, revres)) 
 
 
 if __name__ == '__main__':

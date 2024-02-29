@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax.lax as lax
 
 
-def f(v0,v1,v2,v3,v4):
+def f(v0,v1,v2,v4):
     v5 = jnp.power(v2,3)
     v6 = lax.dot_general(v4,v5,dimension_numbers=(((0,), (0,)), ((), ())))
     v7 = lax.dot_general(v5,v6,dimension_numbers=(((0,), (1,)), ((), ())))
@@ -62,7 +62,7 @@ def f(v0,v1,v2,v3,v4):
     v52 = lax.dot_general(v30,v33,dimension_numbers=(((0,), (0,)), ((), ())))
     v53 = jnp.multiply(v46,v50)
     v54 = jnp.sqrt(v37)
-    v55 = jnp.sqrt(v51)
+    v55 = jnp.sqrt(jnp.abs(v51))
     v56 = jnp.subtract(v52,v49)
     v57 = jnp.cosh(v54)
     v58 = jnp.negative(v37)
@@ -75,7 +75,7 @@ def f(v0,v1,v2,v3,v4):
     v64 = jnp.amin(v63, axis=0)
     v65 = jnp.subtract(v64,v55)
     v66 = jnp.sqrt(v2)
-    v67 = jnp.amin(v56, axis=1)
+    v67 = jnp.sum(v56, axis=1)
     _v61 = jnp.reshape(v61, [4, 1])
     v68 = jnp.subtract(_v61,v66)
     v69 = lax.dot_general(v60,v61,dimension_numbers=(((0,), (0,)), ((), ())))
