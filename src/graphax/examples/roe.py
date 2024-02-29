@@ -14,6 +14,7 @@ def F_1d(u0, u1, u2, p):
 
 
 # 1d Roe flux as defined in paper Roe[1981]
+# Init with xs = [.01, .02, .02, .01, .03, .03]
 def RoeFlux_1d(ul0, ul1, ul2, ur0, ur1, ur2):        
     du0 = ur0 - ul0
     ulr0 = jnp.sqrt(ul0*ur0)

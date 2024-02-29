@@ -1147,7 +1147,10 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             
             # TODO something here is not right, there is an apparent asymetry
             # between the cases for ld and rd!
-            if type(ld) is SparseDimension:
+            if type(ld) is SparseDimension and type(rd) is SparseDimension and ld.other_id != rd.other_id:
+                _lshape.append(ld.size)
+                _rshape.append(ld.size)
+            elif type(ld) is SparseDimension:
                 _lshape.append(ld.size)
                 if ld.val_dim is not None:
                     ldims.append(dim)

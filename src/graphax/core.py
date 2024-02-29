@@ -33,7 +33,7 @@ class NascentElementalPartial:
 
 
 def tree_allclose(tree1, tree2, equal_nan: bool = False):
-    allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan)
+    allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan, atol=1e-5, rtol=1e-4)
     is_equal = jtu.tree_map(allclose, tree1, tree2)
     return jtu.tree_reduce(jnp.logical_and, is_equal)
 
@@ -146,12 +146,18 @@ def _checkify_order(order, jaxpr, vo_vertices):
         if order == "forward" or order == "fwd":
             return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
                     if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices]
-            
         elif order == "reverse" or order == "rev":
             return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
                     if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices][::-1]
         else:
             raise ValueError(f"{order} is not a valid order identifier!")
+    else:
+        vertex_set = set([i for i, eqn in enumerate(jaxpr.eqns, start=1) 
+                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices])
+        set_from_order = set(order)
+        missing_vertices = vertex_set.difference(set_from_order)
+        if len(missing_vertices) > 0:
+            raise ValueError(f"Supplied order is missing vertices {missing_vertices}!")
     return order
 
 

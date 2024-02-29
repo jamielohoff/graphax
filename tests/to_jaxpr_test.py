@@ -266,18 +266,43 @@ class GeneralADTest(unittest.TestCase):
     #     self.assertTrue(tree_allclose(veres, revres))
         
     # def test_f(self):
-    #     a = jnp.ones(4)
-    #     b = jnp.ones((2, 3))
-    #     c = jnp.ones((4, 4))
-    #     d = jnp.ones((3, 3))
-    #     e = jnp.ones((4, 1))
+    #     key = jrand.PRNGKey(42)
+    #     a = jrand.uniform(key, (4,))
+    #     b = jrand.uniform(key, (2, 3))
+    #     c = jrand.uniform(key, (4, 4))
+    #     d = jrand.uniform(key, (3, 3))
+    #     e = jrand.uniform(key, (4, 1))
     #     xs = [a, b, c, d, e]
         
-    #     print(jax.make_jaxpr(f)(*xs))
+    #     # print(jax.make_jaxpr(f)(*xs))
 
-    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2, 3, 4)))
-    #     veres = deriv_fn(*xs)
+    #     # deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2, 3, 4), count_ops=True))
+    #     # veres, aux = deriv_fn(*xs)
+        
+    #     # print("rev num_muls", aux["num_muls"])
+        
+    #     mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 53, 
+    #             56, 57, 60, 61, 63, 69, 71, 75, 79, 6, 10, 15, 18, 25, 27, 26, 
+    #             45, 55, 59, 64, 13, 19, 30, 62, 9, 11, 17, 44, 58, 67, 77, 20, 
+    #             31, 34, 40, 1, 8, 33, 39, 48, 72, 76, 46, 66, 4, 7, 54, 29, 51, 
+    #             12, 23, 65, 16, 74, 52, 5, 21, 3, 2, 80, 80, 80, 80, 80]
+        
+    #     # order = [o + 1 for o in order]
+    #     # order = "rev"
+        
+    #     jaxpr = jax.make_jaxpr(f)(*xs)
+    #     # print(jaxpr)
 
+    #     argnums = range(len(xs))
+    #     jac_mM = jax.jit(jacve(f, order=mM_order, argnums=argnums, count_ops=True))
+    #     veres, aux = jac_mM(*xs)
+                
+    #     jaxpr = jax.make_jaxpr(f)(*xs)
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
+    #     print(deriv_jaxpr)
+    #     print("mM num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        
     #     revres = jax.jacrev(f, argnums=(0, 1, 2, 3, 4))(*xs)
         
     #     for i in range(4):
@@ -408,30 +433,31 @@ class GeneralADTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres))    
         
-    # def test_RoeFlux1d(self):
-    #     xs = [.02]*6
-    #     order = [37, 3, 27, 49, 63, 68, 43, 81, 76, 15, 44, 88, 25, 73, 12, 70, 
-    #             57, 1, 24, 36, 67, 30, 92, 42, 78, 91, 31, 16, 80, 7, 32, 28, 56, 
-    #             8, 39, 79, 58, 33, 47, 83, 38, 90, 87, 74, 85, 26, 94, 4, 13, 17, 
-    #             14, 93, 61, 72, 97, 71, 46, 75, 77, 52, 60, 10, 50, 53, 20, 5, 18, 
-    #             89, 99, 86, 64, 65, 6, 21, 59, 95, 84, 66, 0, 41, 69, 45, 82, 55, 
-    #             51, 19, 40, 9, 54, 23, 48, 35, 22, 2, 62]
-    #     order = [o + 1 for o in order]
-
-    #     jac_cc = jax.jit(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
-    #     veres, aux = jac_cc(*xs)
+    def test_RoeFlux1d(self):
+        xs = [.01, .02, .02, .01, .03, .03]
+        order = [95, 7, 26, 16, 3, 49, 91, 37, 83, 88, 32, 68, 44, 81, 66, 24, 
+                76, 85, 43, 86, 80, 42, 12, 15, 30, 62, 52, 78, 70, 58, 72, 56, 
+                39, 94, 47, 10, 90, 46, 99, 1, 25, 41, 28, 71, 36, 57, 31, 21, 
+                27, 8, 5, 33, 89, 84, 59, 20, 77, 73, 87, 75, 53, 97, 93, 64, 18, 
+                45, 13, 74, 67, 79, 63, 60, 0, 48, 4, 65, 50, 92, 17, 6, 19, 9, 
+                69, 55, 61, 82, 51, 40, 14, 35, 54, 38, 22, 2, 23, 11, 34, 29]
                 
-    #     jaxpr = jax.make_jaxpr(RoeFlux_1d)(*xs)
-    #     deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
-    #     print(deriv_jaxpr)
-    #     print("num_muls", aux["num_muls"])
-    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        order = [o + 1 for o in order]
+        
+        jac_cc = jax.jit(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
+        veres, aux = jac_cc(*xs)
+                
+        jaxpr = jax.make_jaxpr(RoeFlux_1d)(*xs)
+        deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
+        print(deriv_jaxpr)
+        print("num_muls", aux["num_muls"])
+        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
-    #     jax_jac_rev = jax.jit(jax.jacrev(RoeFlux_1d, argnums=(0, 1, 2, 3, 4, 5)))
-    #     revres = jax_jac_rev(*xs)
-    #     print(veres)
-    #     print(revres)
-    #     self.assertTrue(tree_allclose(veres, revres))          
+        jax_jac_rev = jax.jit(jax.jacrev(RoeFlux_1d, argnums=(0, 1, 2, 3, 4, 5)))
+        revres = jax_jac_rev(*xs)
+        print(veres)
+        print(revres)
+        self.assertTrue(tree_allclose(veres, revres))          
         
     def test_EncoderDecoder(self):
         x = jnp.ones((4, 4))
@@ -478,7 +504,7 @@ class GeneralADTest(unittest.TestCase):
                 
         jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
         deriv_jaxpr = jax.make_jaxpr(jacve(EncoderDecoder, order=order, argnums=argnums))(*xs)
-        print(deriv_jaxpr)
+        # print(deriv_jaxpr)
         print("num_muls", aux["num_muls"])
         print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
