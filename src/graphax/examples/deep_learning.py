@@ -30,15 +30,8 @@ def attn(q, k, v):
 
 
 def Perceptron(x, y, W1, b1, W2, b2, gamma, beta):
-    y1 = W1 @ x
-    z1 = y1 + b1
-    a1 = jnp.tanh(z1)
-    
-    a1 = layer_norm(a1, gamma, beta)
-    
-    y2 = W2 @ a1
-    z2 = y2 + b2
-    a2 = jnp.tanh(z2)
+    a1 = jnp.tanh(W1@x + b1)
+    a2 = jnp.tanh(W2@a1+b2)
     d = a2 - y
     e = d**2
     return .5*jnp.sum(e)

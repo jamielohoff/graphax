@@ -182,11 +182,11 @@ def measure_CloudSchemes():
 def measure_f():            
     samplesize = 10000
     
-    order = [10, 40, 48, 45, 74,  5,  9, 78, 21, 26, 14, 19, 23, 39, 30, 16, 58, 
-            15, 35, 62, 43, 3, 33, 24, 46, 57, 52, 28, 59, 18, 27, 37, 70, 36, 
-            49, 17, 53, 34, 22, 63, 25, 61, 55, 66, 12, 42, 47, 64, 44, 75, 65, 
-            54, 38, 50, 0, 76, 68, 31, 41, 8, 32, 2, 29, 13, 73, 56, 60, 51, 71, 
-            11, 4, 7, 20, 6]
+    order = [60, 36, 58, 42, 63, 18, 5, 64, 16, 49, 52, 27, 56, 35, 71, 43, 79, 
+            57, 26, 54, 17, 12, 48, 69, 30, 41, 67, 22, 33, 55, 8, 40, 75, 24, 
+            31, 65, 15, 2, 50, 21, 77, 39, 10, 46, 53, 25, 66, 45, 9, 19, 14, 
+            11, 37, 23, 32, 61, 28, 44, 38, 7, 29, 76, 62, 47, 13, 34, 0, 74, 3, 
+            51, 1, 72, 59, 4, 6, 20]
     order = [o + 1 for o in order]
     
     mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 53, 
@@ -198,19 +198,14 @@ def measure_f():
     a = jnp.ones(4)
     b = jnp.ones((2, 3))
     c = jnp.ones((4, 4))
-    d = jnp.ones((3, 3))
-    e = jnp.ones((4, 1))
-    xs = [a, b, c, d, e]
+    d = jnp.ones((4, 1))
+    xs = [a, b, c, d]
     
-    grad_f = jax.jit(gx.jacve(f, order=order, argnums=(0, 1, 2, 3, 4)))
+    grad_f = jax.jit(gx.jacve(f, order=order, argnums=(0, 1, 2, 3)))
     print(jax.make_jaxpr(grad_f)(*xs))
     
     gx.plot_performance(f, xs, order, mM_order, "./f.png", samplesize=samplesize)
-    
-    
-def measure_softmax_attention():
-    pass
-    
+        
 
 # simple()
 # measure_Helmholtz()

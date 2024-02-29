@@ -547,35 +547,33 @@ class GeneralADTest(unittest.TestCase):
         xs = [a, b, c, d]
         argnums = list(range(len(xs)))
         
-        print("res", f(*xs))
-        
-        # print(jax.make_jaxpr(f)(*xs))
-
         deriv_fn = jax.jit(jacve(f, order="fwd", argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
         
+        jaxpr = jax.make_jaxpr(f)(*xs)
+        deriv_jaxpr = jax.make_jaxpr(jacve(f, order="rev", argnums=argnums))(*xs)
         print("rev num_muls", aux["num_muls"])
+        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
         
-        # mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 53, 
-        #         56, 57, 60, 61, 63, 69, 71, 75, 79, 6, 10, 15, 18, 25, 27, 26, 
-        #         45, 55, 59, 64, 13, 19, 30, 62, 9, 11, 17, 44, 58, 67, 77, 20, 
-        #         31, 34, 40, 1, 8, 33, 39, 48, 72, 76, 46, 66, 4, 7, 54, 29, 51, 
-        #         12, 23, 65, 16, 74, 52, 5, 21, 3, 2, 80, 80, 80, 80, 80]
+        mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 
+                    53, 56, 57, 58, 61, 62, 64, 70, 72, 76, 80, 6, 10, 15, 18, 
+                    25, 27, 26, 45, 55, 60, 65, 13, 19, 30, 63, 9, 11, 17, 44, 
+                    59, 68, 78, 20, 31, 34, 40, 1, 8, 33, 39, 48, 73, 77, 46, 
+                    67, 4, 7, 54, 29, 51, 12, 23, 66, 16, 75, 52, 5, 21, 3, 2]
         
-        # # order = [o + 1 for o in order]
-        # # order = "rev"
+        # order = None
+        # order = [o + 1 for o in order]
         
-        # jaxpr = jax.make_jaxpr(f)(*xs)
-        # # print(jaxpr)
+        jaxpr = jax.make_jaxpr(f)(*xs)
 
-        # jac_mM = jax.jit(jacve(f, order=mM_order, argnums=argnums, count_ops=True))
-        # veres, aux = jac_mM(*xs)
+        jac_mM = jax.jit(jacve(f, order=mM_order, argnums=argnums, count_ops=True))
+        veres, aux = jac_mM(*xs)
                 
-        # jaxpr = jax.make_jaxpr(f)(*xs)
-        # deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
+        jaxpr = jax.make_jaxpr(f)(*xs)
+        deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
         # print(deriv_jaxpr)
-        # print("mM num_muls", aux["num_muls"])
-        # print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        print("mM num_muls", aux["num_muls"])
+        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
         
         revres = jax.jacrev(f, argnums=argnums)(*xs)
         
