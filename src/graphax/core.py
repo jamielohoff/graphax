@@ -102,20 +102,24 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
         post_val = graph[eqn.outvars[0]][out_edge]
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
             pre_val = transpose_graph[eqn.outvars[0]][in_edge]
-            
+
             # Handle stuff like reshape, squeeze etc.
-            # TODO what happens if both have a jac_transforms?
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
                 pre_val = pre_val.prepend_transforms(post_val)
-                edge_outval = pre_val.unload_transforms(post_val, iota)
+                edge_outval, muls = pre_val.unload_transforms(post_val, iota)
+                num_mul += muls
+                
             elif len(pre_val.jac_transforms) > 0:
-                edge_outval = pre_val.unload_transforms(post_val, iota)
+                edge_outval, muls = pre_val.unload_transforms(post_val, iota)
+                num_mul += muls
+                
             elif len(post_val.jac_transforms) > 0:
                 edge_outval = pre_val.prepend_transforms(post_val)
+                
             else:     
                 edge_outval = post_val * pre_val
-                num_mul += get_num_muls(post_val, pre_val) # TODO adjust this!
-
+                num_mul += get_num_muls(post_val, pre_val)
+            # print("total num_muls", num_mul)
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
@@ -137,7 +141,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
     del graph[eqn.outvars[0]]
     if vertex not in vo_vertices:
         del transpose_graph[eqn.outvars[0]]
-
+    print(vertex, ":", num_mul)
     return num_mul, num_add
 
 
@@ -197,6 +201,9 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     vo_vertices = set() # contains all intermediate and output vertices
     counter = 1
     var_id = {}
+    
+    # NOTE this is essentially the tracing part. Probably should write a proper
+    # tracing system with lift etc. for better compatibility with JAX
     # Loop though elemental partials and create an abstract representation of
     # the computational graph
     for eqn in jaxpr.eqns:
@@ -221,46 +228,47 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                 raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
             
             primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
+            # print(eqn.primitive, elemental_outvals)
             safe_map(write, eqn.outvars, [primal_outvals])
-            
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
             # NOTE: Currently only able to treat one output variable
             _write_elemental = partial(write_elemental, eqn.outvars[0])
             safe_map(_write_elemental, invars, elemental_outvals)
-            
-    # Prune the computational graph
-    has_dead_vertices = True
-    for i, invar in enumerate(jaxpr.invars):
-        if i not in argnums:
-            for in_edge in transpose_graph[invar].keys():
-                del graph[in_edge][invar]
-            for out_edge in graph[invar].keys():   
-                del transpose_graph[out_edge][invar]   
+      
+    # TODO implement proper pruning that does not accidentially kill off edges                  
+    # # Prune the computational graph
+    # has_dead_vertices = True
+    # for i, invar in enumerate(jaxpr.invars):
+    #     if i not in argnums:
+    #         for in_edge in transpose_graph[invar].keys():
+    #             del graph[in_edge][invar]
+    #         for out_edge in graph[invar].keys():   
+    #             del transpose_graph[out_edge][invar]   
                 
-            del graph[invar]
-            del transpose_graph[invar]
+    #         del graph[invar]
+    #         del transpose_graph[invar]
         
-    already_deleted = []
-    while has_dead_vertices:
-        to_delete = []
-        for eqn in jaxpr.eqns:
-            o = eqn.outvars[0]
-            if o not in jaxpr.outvars and o not in already_deleted:
-                if len(graph[o]) == 0 or len(transpose_graph[o]) == 0:
-                    to_delete.append(o) 
+    # already_deleted = []
+    # while has_dead_vertices:
+    #     to_delete = []
+    #     for eqn in jaxpr.eqns:
+    #         o = eqn.outvars[0]
+    #         if o not in jaxpr.outvars and o not in already_deleted:
+    #             if len(graph[o]) == 0 or len(transpose_graph[o]) == 0:
+    #                 to_delete.append(o) 
                     
-        if len(to_delete) > 0:
-            for o in to_delete:
-                for in_edge in transpose_graph[o].keys():
-                    del graph[in_edge][o]
-                for out_edge in graph[o].keys():   
-                    del transpose_graph[out_edge][o]   
+    #     if len(to_delete) > 0:
+    #         for o in to_delete:
+    #             for in_edge in transpose_graph[o].keys():
+    #                 del graph[in_edge][o]
+    #             for out_edge in graph[o].keys():   
+    #                 del transpose_graph[out_edge][o]   
                     
-                del graph[o]
-                del transpose_graph[o] 
-            already_deleted.extend(to_delete)
-        else:
-            has_dead_vertices = False
+    #             del graph[o]
+    #             del transpose_graph[o] 
+    #         already_deleted.extend(to_delete)
+    #     else:
+    #         has_dead_vertices = False
     
     iota = _iota_shape(jaxpr, argnums)
         

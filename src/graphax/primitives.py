@@ -9,10 +9,8 @@ import jax.numpy as jnp
 
 import jax._src.core as core
 
-from .sparse.tensor import (SparseTensor, 
-                            DenseDimension, 
-                            SparseDimension,
-                            _swap_back_axes)
+from .sparse.tensor import (SparseTensor, DenseDimension, SparseDimension, 
+                            _swap_back_axes, get_num_muls)
 
 
 def get_ndim(arr):
@@ -79,8 +77,9 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
                         _d = out_dims[d.other_id]
                         _d.other_id += 1
             return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
+        
         elif type(elemental) is float or elemental.size == 1:
-            if elemental.size == 1:
+            if type(elemental) is not float:
                 elemental = jnp.squeeze(elemental) # TODO dirty quick fix that needs to be properly addressed
             out_dims = [SparseDimension(i, e, None, out_size+i)
                         for i, e in enumerate(primal.aval.shape)]
@@ -163,12 +162,14 @@ defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
 
 defelemental(lax.erf_p, lambda x: 2.*jnp.exp(-x**2)/jnp.sqrt(jnp.pi))
 
+# TODO this can be significantly optimized
 def add_elemental_rule(x, y):
     return (jnp.ones_like(y), jnp.ones_like(x))
-    
 defelemental(lax.add_p, add_elemental_rule)
 defelemental(jax._src.ad_util.add_any_p, add_elemental_rule)
 
+
+# TODO this can also be optimized significantly
 def sub_elemental_rule(x, y):
     return (jnp.ones_like(y), -jnp.ones_like(x))
 defelemental(lax.sub_p, sub_elemental_rule)
@@ -178,6 +179,7 @@ def mul_elemental_rule(x, y):
     return (y, x)
 defelemental(lax.mul_p, mul_elemental_rule)
     
+
 def div_elemental_rule(x, y):
     return (1./y, -x/y**2)
 defelemental(lax.div_p, div_elemental_rule)
@@ -199,24 +201,56 @@ def pow_elemental_rule(out, x, y):
 defelemental2(lax.pow_p, pow_elemental_rule)
 
 
-# TODO this can be implemented as a gradient transform by just reshuffeling the
-# Dimensions of the primal dimensions
+# TODO check if this is deprecated!
+# def transpose_elemental_rule(primals, **params):
+#     val_out = lax.transpose_p.bind(*primals, **params)
+    
+#     permutation = params["permutation"]
+#     elemental = jnp.ones_like(val_out)
+    
+#     new_out_dims, new_primal_dims = [], []
+    
+#     l = len(permutation)
+#     for i, p in enumerate(permutation):
+#         new_out_dims.insert(i, SparseDimension(i, elemental.aval.shape[i], i, l+p))
+#         new_primal_dims.insert(p, SparseDimension(l+p, elemental.aval.shape[i], i, i))
+#     return val_out, [SparseTensor(new_out_dims, new_primal_dims, elemental)]
+
+# elemental_rules[lax.transpose_p] = transpose_elemental_rule
+
+
 def transpose_elemental_rule(primals, **params):
+    # The slice primitive is written in such a way that it just densifies the
+    # Jacobian and then slices it. This is not efficient and there might be ways
+    # to make this more efficient by checking if sparse dimensions are untouched
+    # how this changes the Jacobian.
     val_out = lax.transpose_p.bind(*primals, **params)
-    
     permutation = params["permutation"]
-    elemental = jnp.ones_like(val_out)
     
-    new_out_dims, new_primal_dims = [], []
-    
-    l = len(permutation)
-    for i, p in enumerate(permutation):
-        new_out_dims.insert(i, SparseDimension(i, elemental.aval.shape[i], i, l+p))
-        new_primal_dims.insert(p, SparseDimension(l+p, elemental.aval.shape[i], i, i))
-    return val_out, [SparseTensor(new_out_dims, new_primal_dims, elemental)]
+    def transpose_transform(pre, post, iota):
+        if post.val is None:
+            pre.jac_transform = transpose_transform
+            return pre, 0
+        else:
+            new_out_dims = post.out_dims
+            new_primal_dims = []
+            counter = len(post.out_dims)
+            
+            for p in permutation:
+                new_primal_dims.append(post.primal_dims[p])
+                new_primal_dims[-1].id = counter
+                if type(new_primal_dims[-1]) is SparseDimension:
+                    other_id = new_primal_dims[-1].other_id
+                    new_out_dims[other_id].other_id = counter
+                counter += 1   
+            post = _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, post.val))  
+            if pre.val is None:
+                return post, 0
+            else:
+                return post*pre, get_num_muls(post, pre)
+    return val_out, [SparseTensor([], [], None, [transpose_transform])]
 
 elemental_rules[lax.transpose_p] = transpose_elemental_rule
-
 
 # TODO Create a general reduce rule with a custom derivative!
 def reduce_sum_elemental_rule(primals, **params):
@@ -426,8 +460,8 @@ def reshape_elemental_rule(primals, **params):
     
     def reshape_transform(pre, post, iota):
         if post.val is None:
-            pre.copy_gradient_fn = reshape_transform
-            return pre
+            pre.jac_transform = reshape_transform
+            return pre, 0
         else:
             full_val = post.dense(iota)
             new_shape = []
@@ -445,9 +479,9 @@ def reshape_elemental_rule(primals, **params):
             full_val = full_val.reshape(new_shape)
             post = SparseTensor(new_out_dims, new_primal_dims, full_val)
             if pre.val is None:
-                return post
+                return post, 0
             else:
-                return post*pre
+                return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [reshape_transform])]
 
 elemental_rules[lax.reshape_p] = reshape_elemental_rule
@@ -465,7 +499,7 @@ def slice_elemental_rule(primals, **params):
     def slice_transform(pre, post, iota):
         if post.val is None:
             pre.jac_transform = slice_transform
-            return pre
+            return pre, 0
         else:
             full_val = post.dense(iota)
             new_shape = []
@@ -492,9 +526,9 @@ def slice_elemental_rule(primals, **params):
             zeros = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
             post = SparseTensor(new_out_dims, new_primal_dims, zeros)
             if pre.val is None:
-                return post
+                return post, 0
             else:
-                return post*pre
+                return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [slice_transform])]
 
 elemental_rules[lax.slice_p] = slice_elemental_rule
@@ -510,7 +544,7 @@ def broadcast_elemental_rule(primals, **params):
     def broadcast_transform(pre, post, iota):
         if post.val is None:
             pre.jac_transform = [broadcast_transform]
-            return pre
+            return pre, 0
         else:
             rm_dims = [d for d in range(val_out.ndim) 
                        if d not in params["broadcast_dimensions"]]
@@ -561,9 +595,9 @@ def broadcast_elemental_rule(primals, **params):
                 new_val = post.val
             post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
             if pre.val is None:
-                return post
+                return post, 0
             else:
-                return post*pre
+                return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [broadcast_transform])]
 
 elemental_rules[lax.broadcast_in_dim_p] = broadcast_elemental_rule
@@ -577,7 +611,7 @@ def squeeze_elemental_rule(primals, **params):
     def squeeze_transform(pre, post, iota):
         if post.val is None:
             pre.jac_transform = [squeeze_transform]
-            return pre
+            return pre, 0
         else:
             new_dims = params["dimensions"]
             new_out_dims = list(copy.deepcopy(post.out_dims))
@@ -599,9 +633,9 @@ def squeeze_elemental_rule(primals, **params):
             new_val = jnp.expand_dims(post.val, axis=new_dims)
             post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
             if pre.val is None:
-                return post
+                return post, 0
             else:
-                return post*pre
+                return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [squeeze_transform])]
 
 elemental_rules[lax.squeeze_p] = squeeze_elemental_rule
@@ -625,7 +659,7 @@ def concatenate_elemental_rule(primals, **params):
     def concatenate_transform(primal, pre, post, iota):
         if post.val is None:
             pre.jac_transform = [concatenate_transform]
-            return pre
+            return pre, 0
         else:
             new_out_dims = list(copy.deepcopy(post.out_dims))
             new_primal_dims = list(copy.deepcopy(post.primal_dims))
@@ -648,9 +682,9 @@ def concatenate_elemental_rule(primals, **params):
         
             post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
             if pre.val is None:
-                return post
+                return post, 0
             else:
-                return post*pre
+                return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [partial(concatenate_transform, p)]) for p in primals]
 
 elemental_rules[lax.concatenate_p] = concatenate_elemental_rule
@@ -663,12 +697,12 @@ def convert_element_type_rule(primals, **params):
     def convert_element_type_transform(pre, post, iota):
         if post.val is None:
             pre.jac_transform = [convert_element_type_transform]
-            return pre
+            return pre, 0
         else:
             if pre.val is None:
-                return post
+                return post, 0
             else:
-                return post*pre
+                return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [convert_element_type_transform])]
 
     

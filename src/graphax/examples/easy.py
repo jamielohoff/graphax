@@ -52,12 +52,10 @@ def KerrSenn_metric(t, r, theta, phi):
 ### Thermodynamics and Statistical Mechanics
 
 def Helmholtz(x):
-    z = jnp.log(x / (1 + -jnp.sum(x)))
-    return x * z
+    return x * jnp.log(x / (1. + -jnp.sum(x)))
 
 def FreeEnergy(x):
-    z = jnp.log(x / (1 - jnp.sum(x)))
-    return jnp.sum(x * z)
+    return jnp.sum(Helmholtz(x))
 
 ### Economics
 

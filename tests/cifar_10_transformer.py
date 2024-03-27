@@ -133,6 +133,10 @@ def train(batch, labels, weights, opt_state):
 optim = optax.adam(1e-4)
 opt_state = optim.init(weights)
 
+x = jnp.ones((batchsize, 3, 32, 32))
+y = jnp.ones((batchsize, 10))
+train(x, y, weights, opt_state)
+
 ### Training loop
 st = time.time()
 pbar = tqdm.tqdm(range(epochs))
