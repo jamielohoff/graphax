@@ -87,7 +87,7 @@ def F_3d(u0, u, u4, p):
 
 
 # 3d Roe flux as defined in paper Roe[1981]
-# TODO write this in vectorized form again
+# TODO write this in vectorized form again!
 def RoeFlux_3d(ul0, ul, ul4, ur0, ur, ur4):
     du0 = ur0 - ul0
     du = ur - ul

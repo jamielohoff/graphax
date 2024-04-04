@@ -635,6 +635,8 @@ def squeeze_elemental_rule(primals, **params):
             if pre.val is None:
                 return post, 0
             else:
+                print("post", post)
+                print("pre", pre)
                 return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [squeeze_transform])]
 

@@ -114,6 +114,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
                 num_mul += muls
                 
             elif len(post_val.jac_transforms) > 0:
+                print("prepending")
                 edge_outval = pre_val.prepend_transforms(post_val)
                 
             else:     

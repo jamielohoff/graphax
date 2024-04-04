@@ -1235,9 +1235,8 @@ def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
             if ld.val_dim is not None and rd.val_dim is not None:
                 m = max([lhs.val.shape[ld.val_dim], rhs.val.shape[rd.val_dim]])
                 num_muls *= m
-                # num_muls *= ld.size
             elif ld.val_dim is not None:
-                num_muls *=lhs.val.shape[ld.val_dim]
+                num_muls *= lhs.val.shape[ld.val_dim]
             elif rd.val_dim is not None:
                 num_muls *= rhs.val.shape[rd.val_dim]
             else:
