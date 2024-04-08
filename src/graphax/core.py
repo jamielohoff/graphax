@@ -15,21 +15,21 @@ from .sparse.tensor import get_num_muls, get_num_adds
 from .sparse.utils import zeros_like, get_largest_tensor
 
 
-# Function to stage out the evaluation of the elemental partials so that we can
-# use graph pruning first to remove unnecessary vertices and simplify the 
-# computational graph.
-class NascentElementalPartial:
-    elemental_fn: Callable
-    primals: Sequence
-    params: dict
+# # Function to stage out the evaluation of the elemental partials so that we can
+# # use graph pruning first to remove unnecessary vertices and simplify the 
+# # computational graph.
+# class NascentElementalPartial:
+#     elemental_fn: Callable
+#     primals: Sequence
+#     params: dict
     
-    def __init__(self, elemental_fn: Callable, primals: Sequence, params: dict):
-        self.elemental_fn = elemental_fn
-        self.primals = primals
-        self.params = params
+#     def __init__(self, elemental_fn: Callable, primals: Sequence, params: dict):
+#         self.elemental_fn = elemental_fn
+#         self.primals = primals
+#         self.params = params
         
-    def apply(self):
-        return self.elemental_fn(*self.primals, **self.params)
+#     def apply(self):
+#         return self.elemental_fn(*self.primals, **self.params)
 
 
 def tree_allclose(tree1, tree2, equal_nan: bool = False):
@@ -101,7 +101,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
     for out_edge in graph[eqn.outvars[0]].keys():
         post_val = graph[eqn.outvars[0]][out_edge]
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
-            pre_val = transpose_graph[eqn.outvars[0]][in_edge]
+            pre_val = transpose_graph[eqn.outvars[0]][in_edge].copy()
 
             # Handle stuff like reshape, squeeze etc.
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
@@ -114,7 +114,6 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
                 num_mul += muls
                 
             elif len(post_val.jac_transforms) > 0:
-                print("prepending")
                 edge_outval = pre_val.prepend_transforms(post_val)
                 
             else:     
@@ -234,7 +233,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
             # NOTE: Currently only able to treat one output variable
             _write_elemental = partial(write_elemental, eqn.outvars[0])
-            safe_map(_write_elemental, invars, elemental_outvals)
+            if len(invars) == len(elemental_outvals):
+                safe_map(_write_elemental, invars, elemental_outvals)
       
     # TODO implement proper pruning that does not accidentially kill off edges                  
     # # Prune the computational graph

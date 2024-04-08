@@ -26,6 +26,13 @@ def get_shape(arr):
     else:
         return arr.shape
     
+    
+def get_aval_shape(val):
+    if type(val) is np.ndarray:
+        return val.shape
+    else:
+        return val.aval.shape
+    
 
 # TODO simplify this
 def make_parallel_jacobian(i, primals, val_out, elemental):
@@ -375,9 +382,9 @@ def dot_general_elemental_rule(primals, **params):
     lhs_batch_dims = batch_dims[0]
     rhs_batch_dims = batch_dims[1]
     
-    lhs_shape = list(lhs.aval.shape)
-    rhs_shape = list(rhs.aval.shape)
-    out_shape = list(val_out.aval.shape)
+    lhs_shape = list(get_aval_shape(lhs))
+    rhs_shape = list(get_aval_shape(rhs))
+    out_shape = list(get_aval_shape(val_out))
         
     lhs_out_dims, rhs_out_dims = [], []
     lhs_primal_dims, rhs_primal_dims = [], []
@@ -452,6 +459,13 @@ def iota_elemental_rule(primals, **params):
 elemental_rules[lax.iota_p] = iota_elemental_rule
 
 
+def device_put_elemental_rule(primals, **params):
+    val_out = lax.device_put_p.bind(*primals, **params)
+    return val_out, []
+
+elemental_rules[lax.device_put_p] = device_put_elemental_rule
+
+
 ### Transforms
 def reshape_elemental_rule(primals, **params):
     val_out = lax.reshape_p.bind(*primals, **params)
@@ -522,7 +536,7 @@ def slice_elemental_rule(primals, **params):
             scatter_dims = lax.ScatterDimensionNumbers(dims, [], dims)
             scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
             scatter_indices = jnp.concatenate([scatter_zeros, scatter_indices])
-            
+
             zeros = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
             post = SparseTensor(new_out_dims, new_primal_dims, zeros)
             if pre.val is None:

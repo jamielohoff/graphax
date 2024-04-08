@@ -76,13 +76,12 @@ enthalpy_3d = lambda u0, u4, p: (u4 + p)/u0
 
 # Flux term of Euler equation in fluid dynamics
 def F_3d(u0, u, u4, p):
-    u1 = u[0]
-    u2 = u[1]
-    u3 = u[2]
+    u1 = u[0:1]
+    u2 = u[1:2]
+    u3 = u[2:3]
     v1 = u1/u0
     v2 = u2/u0
     v3 = u3/u0
-    v = u/u0
     return u1, p+u1*v1, u1*v2, u1*v3, v1*(p + u4)
 
 
@@ -91,9 +90,9 @@ def F_3d(u0, u, u4, p):
 def RoeFlux_3d(ul0, ul, ul4, ur0, ur, ur4):
     du0 = ur0 - ul0
     du = ur - ul
-    du1 = du[0]
-    du2 = du[1]
-    du3 = du[2]
+    du1 = du[0:1]
+    du2 = du[1:2]
+    du3 = du[2:]
     du4 = ur4 - ul4
     
     w1 = jnp.sqrt(ul0) + jnp.sqrt(ur0)
@@ -108,9 +107,9 @@ def RoeFlux_3d(ul0, ul, ul4, ur0, ur, ur4):
     
     # Arithmetic mean as in Roe's paper (often called Roe averaging)        
     uvw = (jnp.sqrt(ul0)*vl + jnp.sqrt(ur0)*vr) / w1
-    u = uvw[0]
-    v = uvw[1]
-    w = uvw[2]
+    u = uvw[0:1]
+    v = uvw[1:2]
+    w = uvw[2:]
     
     h = (jnp.sqrt(ul0)*hl + jnp.sqrt(ur0)*hr) / w1
     

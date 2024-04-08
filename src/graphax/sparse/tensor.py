@@ -215,7 +215,7 @@ def _get_fully_materialized_shape(st: SparseTensor) -> Tuple[int]:
     Returns:
         Tuple[int]: The fully materialized shape.
     """
-    # Compute out_dims full shape
+    # Compute out_dims full shape-mul
     def out_dim_fn(d: Dimension) -> int:
         if d.val_dim is None:
             return 1
@@ -888,7 +888,9 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     new_out_dims = lhs.out_dims
     l = len(lhs.out_dims)
     r = len(rhs.out_dims)
-    new_primal_dims = [DenseDimension(d.id-r+l, d.size, l+i) for i, d in enumerate(rhs.primal_dims)]        
+    def _is_none(idx, d):
+        return idx if d.val_dim is not None else None
+    new_primal_dims = [DenseDimension(d.id-r+l, d.size, _is_none(l+i, d)) for i, d in enumerate(rhs.primal_dims)]        
 
     # Handling contracting variables
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
