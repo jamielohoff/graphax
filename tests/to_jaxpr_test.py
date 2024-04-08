@@ -99,6 +99,7 @@ class GeneralADTest(unittest.TestCase):
 
     # def test_transpose(self):
     #     def transpose(x, y):
+    #         x = jnp.exp(x)
     #         return x.T * y
 
     #     x = jnp.ones((2, 3))
@@ -108,7 +109,9 @@ class GeneralADTest(unittest.TestCase):
     #     print(jaxpr)
     #     veres = jac_fwd(x, y)[0]
 
-    #     revres = jax.jacrev(transpose)(x, y)
+    #     revres = jax.jacfwd(transpose)(x, y)
+        
+    #     print(veres, revres)
 
     #     self.assertTrue(tree_allclose(veres, revres))
     
@@ -289,12 +292,12 @@ class GeneralADTest(unittest.TestCase):
     # def test_squeezing(self):
     #     def f(x, y):
     #         z = x @ y
-    #         return z[:, 0].sum()
+    #         return jnp.squeeze(z).sum()
 
     #     key = jrand.PRNGKey(42)
     #     xkey, ykey = jrand.split(key, 2)
     #     x = jrand.normal(xkey, (2, 3))
-    #     y = jrand.normal(ykey, (3, 4))
+    #     y = jrand.normal(ykey, (3, 1))
         
     #     print(jax.make_jaxpr(f)(x, y))
 
@@ -303,6 +306,30 @@ class GeneralADTest(unittest.TestCase):
 
     #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
 
+    #     print(veres)
+    #     print(revres)
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+    
+    # def test_broadcasting(self):
+    #     def f(x, y):
+    #         z = jnp.exp(y)
+    #         w = z[jnp.newaxis, :, jnp.newaxis] + x
+    #         return jnp.sin(w)
+
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (3, 2, 4))
+    #     y = jrand.normal(ykey, (2,))
+        
+    #     print(jax.make_jaxpr(f)(x, y))
+
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
+
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+
+    #     print(veres)
+    #     print(revres)
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
     # def test_concatenate_1(self):
@@ -326,28 +353,29 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    # # def test_concatenate_2(self):
-    # #     def f(x, y, z):
-    # #         w = jnp.concatenate([x, y, z], axis=0)
-    # #         return jnp.sin(w)
+    # def test_concatenate_2(self):
+    #     def f(x, y, z):
+    #         w = jnp.concatenate([x, y, z], axis=0)
+    #         return jnp.sin(w)
 
-    # #     key = jrand.PRNGKey(42)
-    # #     xkey, ykey = jrand.split(key, 2)
-    # #     x = jrand.normal(xkey, (4,))
-    # #     y = jrand.normal(ykey, (2,))
-    # #     z = jrand.normal(ykey, (3,))
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (4,))
+    #     y = jrand.normal(ykey, (2,))
+    #     z = jrand.normal(ykey, (3,))
         
-    # #     print(jax.make_jaxpr(f)(x, y, z))
+    #     print(jax.make_jaxpr(f)(x, y, z))
 
-    # #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2)))
-    # #     veres = deriv_fn(x, y, z)
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2)))
+    #     veres = deriv_fn(x, y, z)
 
-    # #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
+    #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
 
-    # #     self.assertTrue(tree_allclose(veres, revres)) 
+    #     self.assertTrue(tree_allclose(veres, revres)) 
         
     # def test_reshape(self):
     #     def f(x, y):
+    #         x = jnp.exp(x)
     #         x = jnp.reshape(x, (2, 3))
     #         return jnp.sin(x @ y)
 
@@ -363,6 +391,8 @@ class GeneralADTest(unittest.TestCase):
 
     #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
 
+    #     print("revres", revres[0].shape)
+    #     print("veres", veres[0].shape)
     #     self.assertTrue(tree_allclose(veres, revres)) 
     
     # def test_large_matmul(self):
@@ -603,53 +633,74 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    def test_RoeFlux_3d(self):
-        ul0 = jnp.array([.1])
-        ul = jnp.array([.1, .2, .3])
-        ul4 = jnp.array([.5])
-        ur0 = jnp.array([.2])
-        ur = jnp.array([.2, .2, .4])
-        ur4 = jnp.array([.6])
-        xs = (ul0, ul, ul4, ur0, ur, ur4)
+    # def test_RoeFlux_3d(self):
+    #     ul0 = jnp.array([.1])
+    #     ul = jnp.array([.1, .2, .3])
+    #     ul4 = jnp.array([.5])
+    #     ur0 = jnp.array([.2])
+    #     ur = jnp.array([.2, .2, .4])
+    #     ur4 = jnp.array([.6])
+    #     xs = (ul0, ul, ul4, ur0, ur, ur4)
+    #     argnums = list(range(len(xs)))
+        
+    #     jaxpr = jax.make_jaxpr(RoeFlux_3d)(*xs)
+    #     print(jaxpr)
+        
+    #     deriv_fn = jax.jit(jacve(RoeFlux_3d, order="fwd", argnums=argnums, count_ops=True))
+    #     veres, aux = deriv_fn(*xs)
+        
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_3d, order="fwd", argnums=argnums))(*xs)
+    #     print("fwd num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        
+    #     # mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 
+    #     #             53, 56, 57, 58, 61, 62, 64, 70, 72, 76, 80, 6, 10, 15, 18, 
+    #     #             25, 27, 26, 45, 55, 60, 65, 13, 19, 30, 63, 9, 11, 17, 44, 
+    #     #             59, 68, 78, 20, 31, 34, 40, 1, 8, 33, 39, 48, 73, 77, 46, 
+    #     #             67, 4, 7, 54, 29, 51, 12, 23, 66, 16, 75, 52, 5, 21, 3, 2]
+
+    #     # jac_mM = jax.jit(jacve(RoeFlux_3d, order=mM_order, argnums=argnums, count_ops=True))
+    #     # veres, aux = jac_mM(*xs)
+        
+    #     # deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
+    #     # # print(deriv_jaxpr)
+    #     # print("mM num_muls", aux["num_muls"])
+    #     # print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        
+    #     revres = jax.jacrev(RoeFlux_3d, argnums=argnums)(*xs)
+        
+    #     for i in range(6):
+    #         print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
+    #         print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
+    #         print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
+    #         print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
+
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+    
+    def test_simple_slicing(self):
+        a = jnp.arange(9).reshape((3, 3)).astype(jnp.float32)
+        b = 3*jnp.arange(3).astype(jnp.float32)
+        xs = (a, b)
         argnums = list(range(len(xs)))
         
-        jaxpr = jax.make_jaxpr(RoeFlux_3d)(*xs)
+        def f(x, y):
+            z = x @ y
+            return z[0:1]*z[1:2]/z[2:]
+        
+        jaxpr = jax.make_jaxpr(f)(*xs)
         print(jaxpr)
         
-        deriv_fn = jax.jit(jacve(RoeFlux_3d, order="fwd", argnums=argnums, count_ops=True))
+        deriv_fn = jax.jit(jacve(f, order="rev", argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
         
-        deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_3d, order="fwd", argnums=argnums))(*xs)
-        print("fwd num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
-        
-        # mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 
-        #             53, 56, 57, 58, 61, 62, 64, 70, 72, 76, 80, 6, 10, 15, 18, 
-        #             25, 27, 26, 45, 55, 60, 65, 13, 19, 30, 63, 9, 11, 17, 44, 
-        #             59, 68, 78, 20, 31, 34, 40, 1, 8, 33, 39, 48, 73, 77, 46, 
-        #             67, 4, 7, 54, 29, 51, 12, 23, 66, 16, 75, 52, 5, 21, 3, 2]
-
-        # jac_mM = jax.jit(jacve(RoeFlux_3d, order=mM_order, argnums=argnums, count_ops=True))
-        # veres, aux = jac_mM(*xs)
-        
-        # deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
-        # # print(deriv_jaxpr)
-        # print("mM num_muls", aux["num_muls"])
-        # print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
-        
-        revres = jax.jacrev(RoeFlux_3d, argnums=argnums)(*xs)
-        
-        for i in range(6):
-            print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
-            print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
-            print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
-            print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
-
+        revres = jax.jacrev(f, argnums=argnums)(*xs)
+        print(veres)
+        print(revres)
         self.assertTrue(tree_allclose(veres, revres)) 
     
     # def test_MetaLearningExample(self):
     #     pass
-
+    
 
 if __name__ == '__main__':
     unittest.main()
