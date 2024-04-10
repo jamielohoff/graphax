@@ -161,14 +161,19 @@ class SparseTensor:
             num_mul += mul
         return st, num_mul
     
+    def append_transforms(self, _tensor):
+        self.jac_transforms = self.jac_transforms + _tensor.jac_transforms
+        return self
+    
     def prepend_transforms(self, _tensor):
         self.jac_transforms = _tensor.jac_transforms + self.jac_transforms
         return self
     
-    def copy(self):
+    def copy(self, val=None):
         out_dims = copy.deepcopy(self.out_dims)
         primal_dims = copy.deepcopy(self.primal_dims)
-        return SparseTensor(out_dims, primal_dims, self.val, self.jac_transforms)
+        val = self.val if val is None else val
+        return SparseTensor(out_dims, primal_dims, val, self.jac_transforms)
     
     
 def _checkify_tensor(st: SparseTensor) -> bool:

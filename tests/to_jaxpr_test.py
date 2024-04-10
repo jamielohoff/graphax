@@ -715,8 +715,7 @@ class GeneralADTest(unittest.TestCase):
         
         self.assertTrue(tree_allclose(veres, revres))
         
-
-
+        
 if __name__ == '__main__':
     unittest.main()
 

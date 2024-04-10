@@ -209,40 +209,6 @@ def pow_elemental_rule(out, x, y):
 defelemental2(lax.pow_p, pow_elemental_rule)
 
 
-# TODO does not work as intended for high-dimensional stuff
-def transpose_elemental_rule(primals, **params):
-    # The slice primitive is written in such a way that it just densifies the
-    # Jacobian and then slices it. This is not efficient and there might be ways
-    # to make this more efficient by checking if sparse dimensions are untouched
-    # how this changes the Jacobian.
-    val_out = lax.transpose_p.bind(*primals, **params)
-    permutation = params["permutation"]
-    
-    def transpose_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = transpose_transform
-            return pre, 0
-        else:
-            new_out_dims = post.out_dims
-            new_primal_dims = []
-            counter = len(post.out_dims)
-            
-            for p in permutation:
-                new_primal_dims.append(post.primal_dims[p])
-                new_primal_dims[-1].id = counter
-                if type(new_primal_dims[-1]) is SparseDimension:
-                    other_id = new_primal_dims[-1].other_id
-                    new_out_dims[other_id].other_id = counter
-                counter += 1   
-            post = _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, post.val))  
-            if pre.val is None:
-                return post, 0
-            else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [transpose_transform])]
-
-elemental_rules[lax.transpose_p] = transpose_elemental_rule
-
 # TODO Create a general reduce rule with a custom derivative!
 def reduce_sum_elemental_rule(primals, **params):
     val_out = lax.reduce_sum_p.bind(*primals, **params)
@@ -451,6 +417,69 @@ elemental_rules[lax.device_put_p] = device_put_elemental_rule
 
 
 ### Transforms
+# TODO does not work as intended for high-dimensional stuff
+def transpose_elemental_rule(primals, **params):
+    # The slice primitive is written in such a way that it just densifies the
+    # Jacobian and then slices it. This is not efficient and there might be ways
+    # to make this more efficient by checking if sparse dimensions are untouched
+    # how this changes the Jacobian.
+    val_out = lax.transpose_p.bind(*primals, **params)
+    permutation = params["permutation"]
+    
+    def transpose_transform(pre, post, iota):
+        if post.val is None:
+            pre.jac_transform = transpose_transform
+            return pre, 0
+        else:
+            new_out_dims = post.out_dims
+            new_primal_dims = []
+            counter = len(post.out_dims)
+            
+            for p in permutation:
+                new_primal_dims.append(post.primal_dims[p])
+                new_primal_dims[-1].id = counter
+                if type(new_primal_dims[-1]) is SparseDimension:
+                    other_id = new_primal_dims[-1].other_id
+                    new_out_dims[other_id].other_id = counter
+                counter += 1   
+            post = _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, post.val))  
+            if pre.val is None:
+                return post, 0
+            else:
+                return post*pre, get_num_muls(post, pre)
+    return val_out, [SparseTensor([], [], None, [transpose_transform])]
+
+
+# Should work for high-dimensional stuff
+def alt_transpose_elemental_rule(primals, **params):
+    # This primitive is written such that it applies the transpose to the out_dims 
+    # of the pre_tensor
+    val_out = lax.transpose_p.bind(*primals, **params)
+    permutation = params["permutation"]
+    
+    def transpose_transform(pre, post, iota):
+        new_out_dims = []
+        new_primal_dims = pre.primal_dims
+        counter = 0
+        l = len(pre.out_dims)
+        
+        for p in permutation:
+            new_out_dims.append(pre.primal_dims[p])
+            new_out_dims[-1].id = counter
+            if type(new_out_dims[-1]) is SparseDimension:
+                other_id = new_out_dims[-1].other_id
+                new_primal_dims[other_id-l].other_id = counter
+            counter += 1   
+        new_pre = _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, pre.val))  
+        if post.val is None:
+            return new_pre, 0
+        else:
+            return post*new_pre, get_num_muls(post, new_pre)
+    return val_out, [SparseTensor([], [], None, [transpose_transform])]
+
+elemental_rules[lax.transpose_p] = transpose_elemental_rule
+
+
 def reshape_elemental_rule(primals, **params):
     val_out = lax.reshape_p.bind(*primals, **params)
     
@@ -482,12 +511,45 @@ def reshape_elemental_rule(primals, **params):
                 return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [reshape_transform])]
 
+
+def alt_reshape_elemental_rule(primals, **params):
+    val_out = lax.reshape_p.bind(*primals, **params)
+    
+    # TODO we have a lot of cases to catch here if we want to make this efficient!
+    
+    def reshape_transform(pre, post, iota):
+        full_val = pre.dense(iota)
+        new_shape = []
+        new_out_dims = []
+        new_primal_dims = []
+        counter = 0
+        
+        for s in val_out.shape:
+            new_out_dims.append(DenseDimension(counter, s, counter))
+            new_shape.append(s)
+            counter += 1
+            
+        for d in pre.primals_out:
+            new_primal_dims.append(DenseDimension(counter, d.size, counter))
+            new_shape.append(s)
+            counter += 1
+            
+        full_val = full_val.reshape(new_shape)
+        new_pre = SparseTensor(new_out_dims, new_primal_dims, full_val)
+        if post.val is None:
+            return new_pre, 0
+        else:
+            return post*new_pre, get_num_muls(post, new_pre)
+    return val_out, [SparseTensor([], [], None, [reshape_transform])]
+
+
 elemental_rules[lax.reshape_p] = reshape_elemental_rule
 
 
 def slice_elemental_rule(primals, **params):
+    # NOTE: rule is stupid like this because it increases computational cost
     # The slice primitive is written in such a way that it just densifies the
-    # Jacobian and then slices it. This is not efficient and there might be ways
+    # Jacobian and then scatters it. This is not efficient and there might be ways
     # to make this more efficient by checking if sparse dimensions are untouched
     # how this changes the Jacobian.
     val_out = lax.slice_p.bind(*primals, **params)
@@ -528,6 +590,40 @@ def slice_elemental_rule(primals, **params):
             else:
                 return post*pre, get_num_muls(post, pre)
     return val_out, [SparseTensor([], [], None, [slice_transform])]
+
+
+def alt_slice_elemental_rule(primals, **params):
+    # The slice primitive is written in such a way that it just densifies the
+    # Jacobian and then slices it. This is not efficient and there might be ways
+    # to make this more efficient by checking if sparse dimensions are untouched
+    # how this changes the Jacobian.
+    val_out = lax.slice_p.bind(*primals, **params)
+    start_indices = list(params["start_indices"])
+    limit_indices = list(params["limit_indices"])
+    
+    def slice_transform(pre, post, iota):
+        full_val = pre.dense(iota)
+        new_out_dims = []
+        new_primal_dims = []
+        counter = 0
+        for s in val_out.shape:
+            new_out_dims.append(DenseDimension(counter, s, counter))
+            counter += 1
+        
+        for d in pre.primal_dims:
+            new_primal_dims.append(DenseDimension(counter, d.size, counter))
+            start_indices.append(0)
+            limit_indices.append(d.size)
+            counter += 1
+
+        new_val = lax.slice(full_val, start_indices, limit_indices)
+        new_pre = SparseTensor(new_out_dims, new_primal_dims, new_val)
+        if post.val is None:
+            return new_pre, 0
+        else:
+            return post*new_pre, get_num_muls(post, new_pre)
+    return val_out, [SparseTensor([], [], None, [slice_transform])]
+
 
 elemental_rules[lax.slice_p] = slice_elemental_rule
 
@@ -703,6 +799,21 @@ def convert_element_type_rule(primals, **params):
                 return post, 0
             else:
                 return post*pre, get_num_muls(post, pre)
+    return val_out, [SparseTensor([], [], None, [convert_element_type_transform])]
+
+
+def alt_convert_element_type_rule(primals, **params):
+    # TODO check if this is actually correct
+    val_out = lax.convert_element_type_p.bind(*primals, **params)
+    new_dtype = params["new_dtype"]
+
+    def convert_element_type_transform(pre, post, iota):
+        new_pre_val = lax.convert_element_type(pre.val, new_dtype)
+        new_pre = pre.copy(val=new_pre_val)
+        if post.val is None:
+            return new_pre, 0
+        else:
+            return post*new_pre, get_num_muls(post, new_pre)
     return val_out, [SparseTensor([], [], None, [convert_element_type_transform])]
 
     
