@@ -48,6 +48,10 @@ def eye_like_copy(shape, out_len, iota):
         elif primal_size == 1:
             return jnp.ones(tuple(out_shape)+(1,))
         else:
+            if iota.shape[0] < out_size or iota.shape[1] < primal_size:
+                iota = jnp.eye(max(out_size, primal_size))
+            else:
+                iota = lax.slice(iota, (0, 0), (out_size, primal_size))
             sub_iota = lax.slice(iota, (0, 0), (out_size, primal_size))
             return sub_iota.reshape(*shape)
     else:
@@ -70,8 +74,12 @@ def eye_like_copy(shape, out_len, iota):
                 if o == 1:
                     kronecker = jnp.ones((1, 1)).reshape(_shape)
                 else: 
-                    sub_iota = lax.slice(iota, (0, 0), (o, o))
-                    kronecker = sub_iota.reshape(_shape)
+                    if iota.shape[0] < o or iota.shape[1] < o:
+                        sub_iota = jnp.eye(o)
+                        kronecker = sub_iota.reshape(_shape)
+                    else:
+                        sub_iota = lax.slice(iota, (0, 0), (o, o))
+                        kronecker = sub_iota.reshape(_shape)
                 val *= kronecker
         return val
     

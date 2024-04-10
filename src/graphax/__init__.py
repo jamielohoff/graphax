@@ -1,5 +1,6 @@
 import sys
 from .core import jacve, tree_allclose
+from .equinox_bindings import filter_jacve
 
 from .perf import (measure_execution_time, 
                     measure_execution_time_with_jax,

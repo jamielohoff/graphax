@@ -977,7 +977,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         if type(ld) is SparseDimension or type(rd) is SparseDimension:
             # Here, we have a broadcasting over two tensors that are not just
             # Kronecker deltas
-            if ld.val_dim is not None and rd.val_dim is not None:
+            if ld.val_dim is not None and rd.val_dim is not None and lhs.val.shape[ld.val_dim] == ld.size and rhs.val.shape[rd.val_dim] == rd.size:
                 lval_dim = ld.val_dim - sum([1 for lc in lcontracting_axes if lc < ld.val_dim])
                 pos.append(lval_dim)
                 
@@ -1026,7 +1026,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     new_primal_dims.insert(rd.other_id-r, SparseDimension(rd.other_id-r+l, ld.size, val_dim, ld.other_id))
                     
     dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
-    batch_dimensions = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse this guys here to handle the SparseDimensions
+    batch_dimensions = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse these guys here to handle the SparseDimensions
     dimension_numbers = (dimension_numbers, batch_dimensions)
     new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
     
@@ -1245,6 +1245,10 @@ def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
                 # Handle multiplications with a multiple of a Kronecker matrix
                 if lhs.val is not None and rhs.val is not None:
                     if lhs.val.size == 1 and rhs.val.size == 1:
+                        num_muls *= 1 # ld.size
+                    elif lhs.val.size == 1:
+                        num_muls *= rd.size
+                    elif rhs.val.size == 1:
                         num_muls *= ld.size
 
     for d in rhs.primal_dims:

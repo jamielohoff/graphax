@@ -48,6 +48,7 @@ def jacve(fun: Callable,
         # TODO Make repackaging work properly with one input value only
         flattened_args, in_tree = jtu.tree_flatten(args)
         closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
+
         out = vertex_elimination_jaxpr(closed_jaxpr.jaxpr, 
                                         order, 
                                         closed_jaxpr.literals, 
@@ -73,7 +74,7 @@ def _iota_shape(jaxpr, argnums):
     largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
     largest_output = get_largest_tensor(jaxpr._outvars)
         
-    # TODO check the first condition for correctness
+    # TODO check if this is meaningful
     if largest_input == 1 and largest_output == 1:
         return None
     elif largest_output == 1:
@@ -81,7 +82,7 @@ def _iota_shape(jaxpr, argnums):
     elif largest_input == 1:
         return jnp.ones((largest_output, 1))
     else:
-        return jnp.eye(largest_output, largest_input) 
+        return jnp.eye(max(largest_output, largest_input), largest_input) 
     
     
 def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
@@ -102,7 +103,10 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
         post_val = graph[eqn.outvars[0]][out_edge]
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
             pre_val = transpose_graph[eqn.outvars[0]][in_edge].copy()
-
+            
+            if vertex == 34:
+                print("post_val", post_val)
+                print("pre_val", pre_val)
             # Handle stuff like reshape, squeeze etc.
             if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
                 pre_val = pre_val.prepend_transforms(post_val)
@@ -195,6 +199,9 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             transpose_graph[outvar][invar] = val
                             
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
+
+    # print(jaxpr.invars)
+    # print([arg.shape if hasattr(arg, "shape") else arg for arg in args])
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 

@@ -14,14 +14,14 @@ from .sparse.tensor import (SparseTensor, DenseDimension, SparseDimension,
 
 
 def get_ndim(arr):
-    if type(arr) is float:
+    if type(arr) is float or type(arr) is int:
         return 0
     else:
         return arr.ndim
     
     
 def get_shape(arr):
-    if type(arr) is float:
+    if type(arr) is float or type(arr) is int:
         return ()
     else:
         return arr.shape
@@ -198,6 +198,7 @@ def atan2_elemental_rule(x, y):
 defelemental(lax.atan2_p, atan2_elemental_rule)
 
 
+# TODO This needs the correct gradients
 def eq_elemental_rule(x, y):
     return (jnp.zeros_like(y), jnp.zeros_like(x))
 defelemental(lax.eq_p, eq_elemental_rule)
@@ -208,24 +209,7 @@ def pow_elemental_rule(out, x, y):
 defelemental2(lax.pow_p, pow_elemental_rule)
 
 
-# TODO check if this is deprecated!
-# def transpose_elemental_rule(primals, **params):
-#     val_out = lax.transpose_p.bind(*primals, **params)
-    
-#     permutation = params["permutation"]
-#     elemental = jnp.ones_like(val_out)
-    
-#     new_out_dims, new_primal_dims = [], []
-    
-#     l = len(permutation)
-#     for i, p in enumerate(permutation):
-#         new_out_dims.insert(i, SparseDimension(i, elemental.aval.shape[i], i, l+p))
-#         new_primal_dims.insert(p, SparseDimension(l+p, elemental.aval.shape[i], i, i))
-#     return val_out, [SparseTensor(new_out_dims, new_primal_dims, elemental)]
-
-# elemental_rules[lax.transpose_p] = transpose_elemental_rule
-
-
+# TODO does not work as intended for high-dimensional stuff
 def transpose_elemental_rule(primals, **params):
     # The slice primitive is written in such a way that it just densifies the
     # Jacobian and then slices it. This is not efficient and there might be ways
@@ -534,11 +518,11 @@ def slice_elemental_rule(primals, **params):
             zeros = jnp.zeros(new_shape)
             dims = list(range(zeros.ndim))
             scatter_dims = lax.ScatterDimensionNumbers(dims, [], dims)
-            scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
-            scatter_indices = jnp.concatenate([scatter_zeros, scatter_indices])
+            _scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
+            scatter_indices = jnp.concatenate([scatter_zeros, _scatter_indices])
 
-            zeros = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
-            post = SparseTensor(new_out_dims, new_primal_dims, zeros)
+            new_val = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
+            post = SparseTensor(new_out_dims, new_primal_dims, new_val)
             if pre.val is None:
                 return post, 0
             else:
