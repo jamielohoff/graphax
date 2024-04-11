@@ -88,14 +88,14 @@ def _iota_shape(jaxpr, argnums):
 def unload_post_transforms(post, pre, iota):
     new_post = post.copy()
     for transform in pre.post_transforms:
-        new_post = transform(pre, new_post, iota)
+        new_post = transform.apply_inverse(new_post, iota)
     return new_post
 
 
 def unload_pre_transforms(post, pre, iota):
     new_pre = pre.copy()
     for transform in post.pre_transforms:
-        new_pre = transform(new_pre, post, iota)
+        new_pre = transform.apply(new_pre, iota)
     return new_pre
 
 
@@ -135,41 +135,53 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             _pre_val = pre_val.copy()
             _post_val = post_val.copy() 
             
-            if vertex == 81:
-                print("pre_val", _pre_val)
-                print("post_val", _post_val) 
-            
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
                 
             if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
                 _pre_val = unload_pre_transforms(post_val, pre_val, iota)
                 
-            # print("post_val", _post_val)
-            # print("pre_val", _pre_val)
-                                
             # Multiply the two values of the edges if applicable
             if pre_val.val is not None and post_val.val is not None:     
                 edge_outval = _post_val * _pre_val
                 num_mul += get_num_muls(_post_val, _pre_val)
+                # Offload the remain Jacobian transforms to the output tensor
+                if len(post_val.post_transforms) > 0:
+                    edge_outval = unload_post_transforms(post_val, edge_outval, iota)
+
+                if len(pre_val.pre_transforms) > 0:
+                    edge_outval = unload_pre_transforms(pre_val, edge_outval, iota)
+                    
             elif pre_val.val is not None:
                 edge_outval = _pre_val
+                # Offload the remain Jacobian transforms to the output tensor
+                if len(post_val.post_transforms) > 0:
+                    edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+
+                if len(pre_val.pre_transforms) > 0:
+                    edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+                    
             else:
                 edge_outval = _post_val
-                
-            # Offload the remain Jacobian transforms to the output tensor
-            if len(post_val.post_transforms) > 0:
-                edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+                # Offload the remain Jacobian transforms to the output tensor
+                if len(post_val.post_transforms) > 0:
+                    edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
 
-            if len(pre_val.pre_transforms) > 0:
-                edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
-                                
+                if len(pre_val.pre_transforms) > 0:
+                    edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+                
+            # # Offload the remain Jacobian transforms to the output tensor
+            # if len(post_val.post_transforms) > 0:
+            #     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+
+            # if len(pre_val.pre_transforms) > 0:
+            #     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+                                                
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
-                print("edge", _edge)
-                print("edge_outval", edge_outval)
+                
                 edge_outval += _edge
                 num_add += get_num_adds(edge_outval, _edge)
                 
@@ -222,8 +234,6 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     graph = defaultdict(lambda: defaultdict()) # Input connectivity
     transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
         
-    # TODO implement automated pruning of the graph
-
     # Reads variable and corresponding traced shaped array
     def read(var):
         if type(var) is core.Literal:
@@ -242,8 +252,6 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                             
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
 
-    # print(jaxpr.invars)
-    # print([arg.shape if hasattr(arg, "shape") else arg for arg in args])
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
@@ -251,7 +259,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     counter = 1
     var_id = {}
     
-    # NOTE this is essentially the tracing part. Probably should write a proper
+    # NOTE: this is essentially the tracing part. Probably should write a proper
     # tracing system with lift etc. for better compatibility with JAX
     # Loop though elemental partials and create an abstract representation of
     # the computational graph
@@ -259,8 +267,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         # Treatment of intermediate variables that are also output variables
         for outvar in eqn.outvars:
             if type(outvar) is core.Var and outvar not in var_id.keys():
-                    var_id[outvar] = counter
-                    counter += 1
+                var_id[outvar] = counter
+                counter += 1
                     
         for invar in eqn.invars:
             if invar in jaxpr._outvars:
@@ -277,7 +285,6 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                 raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
             
             primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
-            # print(eqn.primitive, elemental_outvals)
             safe_map(write, eqn.outvars, [primal_outvals])
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
             # NOTE: Currently only able to treat one output variable
@@ -333,11 +340,21 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             num_muls += num_mul
             num_adds += num_add
            
-    # TODO offload all jac_transforms to the output variables before densification!
+    # Offloading all remaining Jacobian transforms to the output variables 
+    # before densification!    
+    for invar in jaxpr_invars:
+        for outvar in jaxpr.outvars:
+            if graph.get(invar).get(outvar) is not None:
+                tensor = graph[invar][outvar].copy()
+                if tensor.pre_transforms:
+                    for transform in tensor.pre_transforms:
+                        tensor = transform.apply_inverse(tensor, iota)
+                if tensor.post_transforms:
+                    for transform in tensor.post_transforms:
+                        tensor = transform.apply(tensor, iota)
+                graph[invar][outvar] = tensor
+    
     # Collect outputs  
-    
-    print(graph)
-    
     if dense_representation:   
         jac_vals = [graph[invar][outvar].dense(iota) 
                     if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
