@@ -745,6 +745,9 @@ def alt_squeeze_elemental_rule(primals, **params):
 elemental_rules[lax.squeeze_p] = alt_squeeze_elemental_rule
 
 
+from .sparse.tensor import _materialize_dimensions
+
+
 def concatenate_elemental_rule(primals, **params):
     # This gradient transformation is designed to take an post edge and
     # decompose it into the pre edges. This is done by densifying the post along
@@ -763,7 +766,7 @@ def concatenate_elemental_rule(primals, **params):
     def concatenate_transform(primal, pre, post, iota):
         new_out_dims = list(copy.deepcopy(post.out_dims))
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
-        
+        print("post val", post.val)
         d = new_primal_dims[dim]
         if type(d) is DenseDimension:
             if d.val_dim is not None:
@@ -774,12 +777,83 @@ def concatenate_elemental_rule(primals, **params):
         else:
             _d = new_out_dims[d.other_id]
             if d.val_dim is not None:
-                new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
+                new_out_dims[d.other_id] = DenseDimension(_d.id, _d.size, _d.val_dim)
+                size = slices[primal][1] - slices[primal][0]
+                
+                # Calculate the new val_dim of the primal dimension
+                val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
+                val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
+                new_primal_dims[dim] = DenseDimension(_d.other_id, size, val_dim)
+                
+                # Update the val_dim of all following dimensions
+                for d in new_primal_dims[dim+1:]:
+                    if type(d) is DenseDimension:
+                        if d.val_dim is not None:
+                            d.val_dim += 1
+                
+                # The following piece of code materialized the particular set
+                # of sparse dimensions related to the concatenation dimension
+                new_val = _materialize_dimensions(post, [d.id])
+                
+                if iota.shape[0] < d.size or iota.shape[1] < d.size:
+                    sub_iota = jnp.eye(d.size, dtype=jnp.float32)
+                else:
+                    sub_iota = lax.slice(iota, [0, 0], [d.size, d.size])
+                    
+                shape = [1 for _ in range(post.val.ndim)]
+                shape[_d.val_dim] = _d.size
+                shape.insert(val_dim, d.size)
+                sub_iota = sub_iota.reshape(shape)
+                                
+                new_val = new_val * sub_iota
+                
+                new_val = lax.slice_in_dim(new_val, *slices[primal], axis=val_dim)
                 d.size = new_val.shape[d.val_dim]
                 _d.size = new_val.shape[d.val_dim]
             else:
-                raise NotImplementedError("SparseDimension without `val_dim` not yet supported!")
-    
+                _d = new_out_dims[d.other_id]
+                if d.val_dim is not None:
+                    size = slices[primal][1] - slices[primal][0]
+                    
+                    out_val_dim = sum([1 for d in new_out_dims[:d.other_id] if d.val_dim is not None])
+                    primal_val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
+                    primal_val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
+                    
+                    new_out_dims[d.other_id] = DenseDimension(_d.id, _d.size, out_val_dim)
+                    new_primal_dims[dim] = DenseDimension(_d.other_id, size, primal_val_dim)
+                    
+                    # TODO finish this!
+                    for d in new_out_dims[d.other_id:]:
+                        if type(d) is DenseDimension:
+                            if d.val_dim is not None:
+                                d.val_dim += 1
+                    
+                    # increase the val_dim of all following dimensions
+                    for d in new_primal_dims[dim+1:]:
+                        if type(d) is DenseDimension:
+                            if d.val_dim is not None:
+                                d.val_dim += 1
+                    
+                    # The following piece of code materialized the particular set
+                    # of sparse dimensions related to the concatenation dimension
+                    new_val = _materialize_dimensions(post, [d.id, d.other_id])
+                    
+                    if iota.shape[0] < d.size or iota.shape[1] < d.size:
+                        sub_iota = jnp.eye(d.size, dtype=jnp.float32)
+                    else:
+                        sub_iota = lax.slice(iota, [0, 0], [d.size, d.size])
+                        
+                    shape = [1 for _ in range(post.val.ndim)]
+                    shape.insert(out_val_dim, _d.size)
+                    shape.insert(primal_val_dim, size)
+                    sub_iota = sub_iota.reshape(shape)
+                                        
+                    new_val = new_val * sub_iota
+                    
+                    new_val = lax.slice_in_dim(new_val, *slices[primal], axis=primal_val_dim)
+                    d.size = new_val.shape[d.val_dim]
+                    _d.size = new_val.shape[d.val_dim]
+            
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
     return val_out, [SparseTensor([], [], None, [], [partial(concatenate_transform, p)]) for p in primals]
 

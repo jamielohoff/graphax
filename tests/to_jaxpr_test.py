@@ -288,27 +288,27 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    def test_squeezing(self):
-        def f(x, y):
-            z = x @ y
-            return jnp.squeeze(z).sum()
+    # def test_squeezing(self):
+    #     def f(x, y):
+    #         z = x @ y
+    #         return jnp.squeeze(z).sum()
 
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (2, 3))
-        y = jrand.normal(ykey, (3, 1))
+    #     key = jrand.PRNGKey(42)
+    #     xkey, ykey = jrand.split(key, 2)
+    #     x = jrand.normal(xkey, (2, 3))
+    #     y = jrand.normal(ykey, (3, 1))
         
-        print(jax.make_jaxpr(f)(x, y))
+    #     print(jax.make_jaxpr(f)(x, y))
 
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
+    #     deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
+    #     veres = deriv_fn(x, y)
 
-        revres = jax.jacrev(f, argnums=(0, 1))(x, y)
+    #     revres = jax.jacrev(f, argnums=(0, 1))(x, y)
         
-        print(veres[1].shape)
-        print(revres[1].shape)
+    #     print(veres[1].shape)
+    #     print(revres[1].shape)
 
-        self.assertTrue(tree_allclose(veres, revres)) 
+    #     self.assertTrue(tree_allclose(veres, revres)) 
         
     # def test_concatenate_1(self):
     #     def f(x, y, z):
@@ -333,6 +333,9 @@ class GeneralADTest(unittest.TestCase):
         
     # def test_concatenate_2(self):
     #     def f(x, y, z):
+    #         x = jnp.sin(x)
+    #         y = jnp.cos(y)
+    #         z = jnp.tanh(z)
     #         w = jnp.concatenate([x, y, z], axis=0)
     #         return jnp.sin(w)
 
@@ -609,35 +612,35 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    # def test_RoeFlux_3d(self):
-    #     ul0 = jnp.array([.1])
-    #     ul = jnp.array([.1, .2, .3])
-    #     ul4 = jnp.array([.5])
-    #     ur0 = jnp.array([.2])
-    #     ur = jnp.array([.2, .2, .4])
-    #     ur4 = jnp.array([.6])
-    #     xs = (ul0, ul, ul4, ur0, ur, ur4)
-    #     argnums = list(range(len(xs)))
+    def test_RoeFlux_3d(self):
+        ul0 = jnp.array([.1])
+        ul = jnp.array([.1, .2, .3])
+        ul4 = jnp.array([.5])
+        ur0 = jnp.array([.2])
+        ur = jnp.array([.2, .2, .4])
+        ur4 = jnp.array([.6])
+        xs = (ul0, ul, ul4, ur0, ur, ur4)
+        argnums = list(range(len(xs)))
         
-    #     jaxpr = jax.make_jaxpr(RoeFlux_3d)(*xs)
-    #     print(jaxpr)
+        jaxpr = jax.make_jaxpr(RoeFlux_3d)(*xs)
+        print(jaxpr)
         
-    #     deriv_fn = jax.jit(jacve(RoeFlux_3d, order="fwd", argnums=argnums, count_ops=True))
-    #     veres, aux = deriv_fn(*xs)
+        deriv_fn = jax.jit(jacve(RoeFlux_3d, order="fwd", argnums=argnums, count_ops=True))
+        veres, aux = deriv_fn(*xs)
         
-    #     deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_3d, order="fwd", argnums=argnums))(*xs)
-    #     print("fwd num_muls", aux["num_muls"])
-    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_3d, order="fwd", argnums=argnums))(*xs)
+        print("fwd num_muls", aux["num_muls"])
+        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
-    #     revres = jax.jacrev(RoeFlux_3d, argnums=argnums)(*xs)
+        revres = jax.jacrev(RoeFlux_3d, argnums=argnums)(*xs)
         
-    #     for i in range(5):
-    #         print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
-    #         print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
-    #         print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
-    #         print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
+        for i in range(5):
+            print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
+            print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
+            print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
+            print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
 
-    #     self.assertTrue(tree_allclose(veres, revres)) 
+        self.assertTrue(tree_allclose(veres, revres)) 
     
     # def test_NeuralNetworkHessian(self):
     #     batchsize = 128

@@ -106,7 +106,7 @@ def prepend_post_transforms(post, out, iota):
 
 
 def append_pre_transforms(pre, out, iota):
-    transforms = out.pre_transforms + pre.pre_transforms
+    transforms = pre.pre_transforms + out.pre_transforms
     out.pre_transforms = transforms
     return out
         
@@ -135,8 +135,9 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             _pre_val = pre_val.copy()
             _post_val = post_val.copy() 
             
-            print("post_val", _post_val)
-            print("pre_val", _pre_val)    
+            if vertex == 81:
+                print("pre_val", _pre_val)
+                print("post_val", _post_val) 
             
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
@@ -144,8 +145,8 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
                 _pre_val = unload_pre_transforms(post_val, pre_val, iota)
                 
-            print("post_val", _post_val)
-            print("pre_val", _pre_val)
+            # print("post_val", _post_val)
+            # print("pre_val", _pre_val)
                                 
             # Multiply the two values of the edges if applicable
             if pre_val.val is not None and post_val.val is not None:     
@@ -162,13 +163,13 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
 
             if len(pre_val.pre_transforms) > 0:
                 edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
-                
-            print("edge_outval", edge_outval)
-                
+                                
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
+                print("edge", _edge)
+                print("edge_outval", edge_outval)
                 edge_outval += _edge
                 num_add += get_num_adds(edge_outval, _edge)
                 

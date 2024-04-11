@@ -698,8 +698,8 @@ def _get_output_tensor(lhs: SparseTensor,
     new_dense_dims = []
     for rd in rhs.primal_dims:
         if type(rd) is DenseDimension:
-            shift = sum([1 for dim in new_dense_dims if dim <= rd.val_dim])
-            new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, rd.val_dim+shift))
+            # shift = sum([1 for dim in new_dense_dims if dim <= rd.val_dim])
+            new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, rd.val_dim))
         else:
             idx = rd.other_id - r
             ld = lhs.primal_dims[idx]

@@ -568,7 +568,7 @@ class TransformerTest(unittest.TestCase):
         num_dots_jacve = sum([count_muls(p) for p in jacve_jaxpr.jaxpr.eqns])
         num_dots_jax = sum([count_muls(p) for p in jax_jaxpr.jaxpr.eqns])
         
-        print(num_dots_jacve - num_muls, num_dots_jax - num_muls)
+        print("graphax muls", num_dots_jacve - num_muls, "jax muls", num_dots_jax - num_muls)
         
         self.assertTrue(tree_allclose(veres, revres))
         
