@@ -434,7 +434,7 @@ class JacobianTransform:
                 f"inverse_transform={self.inverse_transform})"
         
     def apply(self, tensor: SparseTensor, iota: jnp.ndarray | None) -> SparseTensor:
-        if self.inverse_transform is None:
+        if self.transform is None:
             raise NotImplementedError("Transform not implemented!")
         return self.transform(tensor, iota)
     

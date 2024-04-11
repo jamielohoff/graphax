@@ -145,42 +145,66 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             if pre_val.val is not None and post_val.val is not None:     
                 edge_outval = _post_val * _pre_val
                 num_mul += get_num_muls(_post_val, _pre_val)
-                # Offload the remain Jacobian transforms to the output tensor
-                if len(post_val.post_transforms) > 0:
-                    edge_outval = unload_post_transforms(post_val, edge_outval, iota)
+                # # Offload the remain Jacobian transforms to the output tensor
+                # if len(post_val.post_transforms) > 0:
+                #     edge_outval = unload_post_transforms(post_val, edge_outval, iota)
 
-                if len(pre_val.pre_transforms) > 0:
-                    edge_outval = unload_pre_transforms(pre_val, edge_outval, iota)
+                # if len(pre_val.pre_transforms) > 0:
+                #     edge_outval = unload_pre_transforms(pre_val, edge_outval, iota)
                     
             elif pre_val.val is not None:
                 edge_outval = _pre_val
-                # Offload the remain Jacobian transforms to the output tensor
-                if len(post_val.post_transforms) > 0:
-                    edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+                # # Offload the remain Jacobian transforms to the output tensor
+                # if len(post_val.post_transforms) > 0:
+                #     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
 
-                if len(pre_val.pre_transforms) > 0:
-                    edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+                # if len(pre_val.pre_transforms) > 0:
+                #     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
                     
             else:
                 edge_outval = _post_val
-                # Offload the remain Jacobian transforms to the output tensor
-                if len(post_val.post_transforms) > 0:
-                    edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+                # # Offload the remain Jacobian transforms to the output tensor
+                # if len(post_val.post_transforms) > 0:
+                #     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
 
-                if len(pre_val.pre_transforms) > 0:
-                    edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+                # if len(pre_val.pre_transforms) > 0:
+                #     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
                 
-            # # Offload the remain Jacobian transforms to the output tensor
-            # if len(post_val.post_transforms) > 0:
-            #     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+            # Offload the remain Jacobian transforms to the output tensor
+            if len(post_val.post_transforms) > 0:
+                edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
 
-            # if len(pre_val.pre_transforms) > 0:
-            #     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+            if len(pre_val.pre_transforms) > 0:
+                edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
                                                 
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
+                
+                if vertex == 108:
+                    print("edge_outval", edge_outval)
+                    print("_edge", _edge)
+                # NOTE: maybe we should rather offload stuff here!?
+                
+                # Offload the remain Jacobian transforms to the output tensor
+                if len(edge_outval.post_transforms) > 0:
+                    print("edge_outval", edge_outval)
+                    for transform in edge_outval.post_transforms:
+                        edge_outval = transform.apply(edge_outval, iota)
+
+                if len(edge_outval.pre_transforms) > 0:
+                    for transform in edge_outval.pre_transforms:
+                        edge_outval = transform.apply_inverse(edge_outval, iota)
+                
+                # Offload the remain Jacobian transforms to the output tensor
+                if len(_edge.post_transforms) > 0:
+                    for transform in _edge.post_transforms:
+                        _edge = transform.apply(_edge, iota)
+
+                if len(_edge.pre_transforms) > 0:
+                    for transform in _edge.pre_transforms:
+                        _edge = transform.apply_inverse(_edge, iota)
                 
                 edge_outval += _edge
                 num_add += get_num_adds(edge_outval, _edge)
@@ -346,10 +370,10 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         for outvar in jaxpr.outvars:
             if graph.get(invar).get(outvar) is not None:
                 tensor = graph[invar][outvar].copy()
-                if tensor.pre_transforms:
+                if len(tensor.pre_transforms) > 0:
                     for transform in tensor.pre_transforms:
                         tensor = transform.apply_inverse(tensor, iota)
-                if tensor.post_transforms:
+                if len(tensor.post_transforms) > 0:
                     for transform in tensor.post_transforms:
                         tensor = transform.apply(tensor, iota)
                 graph[invar][outvar] = tensor
