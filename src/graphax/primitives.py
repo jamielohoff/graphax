@@ -427,27 +427,19 @@ def transpose_elemental_rule(primals, **params):
     permutation = params["permutation"]
     
     def transpose_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = transpose_transform
-            return pre, 0
-        else:
-            new_out_dims = post.out_dims
-            new_primal_dims = []
-            counter = len(post.out_dims)
-            
-            for p in permutation:
-                new_primal_dims.append(post.primal_dims[p])
-                new_primal_dims[-1].id = counter
-                if type(new_primal_dims[-1]) is SparseDimension:
-                    other_id = new_primal_dims[-1].other_id
-                    new_out_dims[other_id].other_id = counter
-                counter += 1   
-            post = _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, post.val))  
-            if pre.val is None:
-                return post, 0
-            else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [transpose_transform])]
+        new_out_dims = post.out_dims
+        new_primal_dims = []
+        counter = len(post.out_dims)
+        
+        for p in permutation:
+            new_primal_dims.append(post.primal_dims[p])
+            new_primal_dims[-1].id = counter
+            if type(new_primal_dims[-1]) is SparseDimension:
+                other_id = new_primal_dims[-1].other_id
+                new_out_dims[other_id].other_id = counter
+            counter += 1   
+        return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, post.val))  
+    return val_out, [SparseTensor([], [], None, [], [transpose_transform])]
 
 
 # Should work for high-dimensional stuff
@@ -463,21 +455,20 @@ def alt_transpose_elemental_rule(primals, **params):
         counter = 0
         l = len(pre.out_dims)
         
+        print("pre", pre)
+        
         for p in permutation:
-            new_out_dims.append(pre.primal_dims[p])
+            new_out_dims.append(pre.out_dims[p])
             new_out_dims[-1].id = counter
             if type(new_out_dims[-1]) is SparseDimension:
                 other_id = new_out_dims[-1].other_id
                 new_primal_dims[other_id-l].other_id = counter
             counter += 1   
-        new_pre = _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, pre.val))  
-        if post.val is None:
-            return new_pre, 0
-        else:
-            return post*new_pre, get_num_muls(post, new_pre)
-    return val_out, [SparseTensor([], [], None, [transpose_transform])]
+        print(SparseTensor(new_out_dims, new_primal_dims, pre.val))
+        return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, pre.val))  
+    return val_out, [SparseTensor([], [], None, [transpose_transform], [])]
 
-elemental_rules[lax.transpose_p] = transpose_elemental_rule
+elemental_rules[lax.transpose_p] = alt_transpose_elemental_rule
 
 
 def reshape_elemental_rule(primals, **params):
@@ -486,30 +477,22 @@ def reshape_elemental_rule(primals, **params):
     # TODO we have a lot of cases to catch here if we want to make this efficient!
     
     def reshape_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = reshape_transform
-            return pre, 0
-        else:
-            full_val = post.dense(iota)
-            new_shape = []
-            new_out_dims = []
-            new_primal_dims = []
-            counter = 0
-            for d in post.out_dims:
-                new_out_dims.append(DenseDimension(counter, d.size, counter))
-                new_shape.append(d.size)
-                counter += 1
-            for s in primals[0].shape:
-                new_primal_dims.append(DenseDimension(counter, s, counter))
-                new_shape.append(s)
-                counter += 1
-            full_val = full_val.reshape(new_shape)
-            post = SparseTensor(new_out_dims, new_primal_dims, full_val)
-            if pre.val is None:
-                return post, 0
-            else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [reshape_transform])]
+        full_val = post.dense(iota)
+        new_shape = []
+        new_out_dims = []
+        new_primal_dims = []
+        counter = 0
+        for d in post.out_dims:
+            new_out_dims.append(DenseDimension(counter, d.size, counter))
+            new_shape.append(d.size)
+            counter += 1
+        for s in primals[0].shape:
+            new_primal_dims.append(DenseDimension(counter, s, counter))
+            new_shape.append(s)
+            counter += 1
+        full_val = full_val.reshape(new_shape)
+        return SparseTensor(new_out_dims, new_primal_dims, full_val)
+    return val_out, [SparseTensor([], [], None, [], [reshape_transform])]
 
 
 def alt_reshape_elemental_rule(primals, **params):
@@ -535,11 +518,7 @@ def alt_reshape_elemental_rule(primals, **params):
             counter += 1
             
         full_val = full_val.reshape(new_shape)
-        new_pre = SparseTensor(new_out_dims, new_primal_dims, full_val)
-        if post.val is None:
-            return new_pre, 0
-        else:
-            return post*new_pre, get_num_muls(post, new_pre)
+        return SparseTensor(new_out_dims, new_primal_dims, full_val)
     return val_out, [SparseTensor([], [], None, [reshape_transform])]
 
 
@@ -557,39 +536,31 @@ def slice_elemental_rule(primals, **params):
     limit_indices = list(params["limit_indices"])
     
     def slice_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = slice_transform
-            return pre, 0
-        else:
-            full_val = post.dense(iota)
-            new_shape = []
-            new_out_dims = []
-            new_primal_dims = []
-            counter = 0
-            for d in post.out_dims:
-                new_out_dims.append(DenseDimension(counter, d.size, counter))
-                new_shape.append(d.size)
-                counter += 1
-            scatter_zeros = jnp.zeros(counter, dtype=jnp.int32)
-            
-            for s in primals[0].shape:
-                new_primal_dims.append(DenseDimension(counter, s, counter))
-                new_shape.append(s)
-                counter += 1
+        full_val = post.dense(iota)
+        new_shape = []
+        new_out_dims = []
+        new_primal_dims = []
+        counter = 0
+        for d in post.out_dims:
+            new_out_dims.append(DenseDimension(counter, d.size, counter))
+            new_shape.append(d.size)
+            counter += 1
+        scatter_zeros = jnp.zeros(counter, dtype=jnp.int32)
+        
+        for s in primals[0].shape:
+            new_primal_dims.append(DenseDimension(counter, s, counter))
+            new_shape.append(s)
+            counter += 1
 
-            zeros = jnp.zeros(new_shape)
-            dims = list(range(zeros.ndim))
-            scatter_dims = lax.ScatterDimensionNumbers(dims, [], dims)
-            _scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
-            scatter_indices = jnp.concatenate([scatter_zeros, _scatter_indices])
+        zeros = jnp.zeros(new_shape)
+        dims = list(range(zeros.ndim))
+        scatter_dims = lax.ScatterDimensionNumbers(dims, [], dims)
+        _scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
+        scatter_indices = jnp.concatenate([scatter_zeros, _scatter_indices])
 
-            new_val = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
-            post = SparseTensor(new_out_dims, new_primal_dims, new_val)
-            if pre.val is None:
-                return post, 0
-            else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [slice_transform])]
+        new_val = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
+        return SparseTensor(new_out_dims, new_primal_dims, new_val)
+    return val_out, [SparseTensor([], [], None, [], [slice_transform])]
 
 
 def alt_slice_elemental_rule(primals, **params):
@@ -598,14 +569,15 @@ def alt_slice_elemental_rule(primals, **params):
     # to make this more efficient by checking if sparse dimensions are untouched
     # how this changes the Jacobian.
     val_out = lax.slice_p.bind(*primals, **params)
-    start_indices = list(params["start_indices"])
-    limit_indices = list(params["limit_indices"])
     
     def slice_transform(pre, post, iota):
+        start_indices = list(params["start_indices"])
+        limit_indices = list(params["limit_indices"])
         full_val = pre.dense(iota)
         new_out_dims = []
         new_primal_dims = []
         counter = 0
+
         for s in val_out.shape:
             new_out_dims.append(DenseDimension(counter, s, counter))
             counter += 1
@@ -617,15 +589,11 @@ def alt_slice_elemental_rule(primals, **params):
             counter += 1
 
         new_val = lax.slice(full_val, start_indices, limit_indices)
-        new_pre = SparseTensor(new_out_dims, new_primal_dims, new_val)
-        if post.val is None:
-            return new_pre, 0
-        else:
-            return post*new_pre, get_num_muls(post, new_pre)
-    return val_out, [SparseTensor([], [], None, [slice_transform])]
+        return SparseTensor(new_out_dims, new_primal_dims, new_val)
+    return val_out, [SparseTensor([], [], None, [slice_transform], [])]
 
 
-elemental_rules[lax.slice_p] = slice_elemental_rule
+elemental_rules[lax.slice_p] = alt_slice_elemental_rule
 
 
 def broadcast_elemental_rule(primals, **params):
@@ -636,63 +604,55 @@ def broadcast_elemental_rule(primals, **params):
     # TODO This guy needs major revision
     # TODO rename pre and post into lhs, rhs 
     def broadcast_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = [broadcast_transform]
-            return pre, 0
-        else:
-            rm_dims = [d for d in range(val_out.ndim) 
-                       if d not in params["broadcast_dimensions"]]
+        rm_dims = [d for d in range(val_out.ndim) 
+                    if d not in params["broadcast_dimensions"]]
 
-            new_out_dims = list(copy.deepcopy(post.out_dims))
-            new_primal_dims = list(copy.deepcopy(post.primal_dims))
-            _rm_dims = []
-            for dim in rm_dims:
-                if new_primal_dims[dim].val_dim is not None:
-                    _rm_dims.append(new_primal_dims[dim].val_dim)
-                if type(new_primal_dims[dim]) is DenseDimension:
-                    has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
-                    del new_primal_dims[dim]
-                    for d in new_primal_dims[dim:]:
+        new_out_dims = list(copy.deepcopy(post.out_dims))
+        new_primal_dims = list(copy.deepcopy(post.primal_dims))
+        _rm_dims = []
+        for dim in rm_dims:
+            if new_primal_dims[dim].val_dim is not None:
+                _rm_dims.append(new_primal_dims[dim].val_dim)
+            if type(new_primal_dims[dim]) is DenseDimension:
+                has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
+                del new_primal_dims[dim]
+                for d in new_primal_dims[dim:]:
+                    d.id -= 1
+                    if type(d) is SparseDimension:
+                        _d = new_out_dims[d.other_id]
+                        _d.other_id -= 1
+                    
+            else:
+                id = new_primal_dims[dim].id
+                other_id = new_primal_dims[dim].other_id
+                old_dim = new_out_dims[other_id]
+                new_out_dims[other_id] = DenseDimension(old_dim.id, old_dim.size, None)
+                has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
+                del new_primal_dims[dim]
+                for d in new_out_dims + new_primal_dims:
+                    if d.id > id:
                         d.id -= 1
                         if type(d) is SparseDimension:
                             _d = new_out_dims[d.other_id]
                             _d.other_id -= 1
-                        
-                else:
-                    id = new_primal_dims[dim].id
-                    other_id = new_primal_dims[dim].other_id
-                    old_dim = new_out_dims[other_id]
-                    new_out_dims[other_id] = DenseDimension(old_dim.id, old_dim.size, None)
-                    has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
-                    del new_primal_dims[dim]
-                    for d in new_out_dims + new_primal_dims:
-                        if d.id > id:
-                            d.id -= 1
-                            if type(d) is SparseDimension:
-                                _d = new_out_dims[d.other_id]
-                                _d.other_id -= 1
-                                if d.val_dim is not None and has_smaller_dims:
-                                    d.val_dim -= 1
-                                    _d.val_dim -= 1
-                            else:
-                                if d.val_dim is not None and has_smaller_dims:
-                                    d.val_dim -= 1
-                    
-            new_out_dims = tuple(new_out_dims)
-            new_primal_dims = tuple(new_primal_dims)
-            if len(_rm_dims) > 0:
-                if all([post.val.shape[d] == 1 for d in _rm_dims]):
-                    new_val = jnp.squeeze(post.val, axis=_rm_dims)
-                else:
-                    new_val = jnp.sum(post.val, axis=_rm_dims)
+                            if d.val_dim is not None and has_smaller_dims:
+                                d.val_dim -= 1
+                                _d.val_dim -= 1
+                        else:
+                            if d.val_dim is not None and has_smaller_dims:
+                                d.val_dim -= 1
+                
+        new_out_dims = tuple(new_out_dims)
+        new_primal_dims = tuple(new_primal_dims)
+        if len(_rm_dims) > 0:
+            if all([post.val.shape[d] == 1 for d in _rm_dims]):
+                new_val = jnp.squeeze(post.val, axis=_rm_dims)
             else:
-                new_val = post.val
-            post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
-            if pre.val is None:
-                return post, 0
-            else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [broadcast_transform])]
+                new_val = jnp.sum(post.val, axis=_rm_dims)
+        else:
+            new_val = post.val
+        return SparseTensor(new_out_dims, new_primal_dims, new_val)
+    return val_out, [SparseTensor([], [], None, [], [broadcast_transform])]
 
 elemental_rules[lax.broadcast_in_dim_p] = broadcast_elemental_rule
 
@@ -703,38 +663,86 @@ def squeeze_elemental_rule(primals, **params):
     val_out = lax.squeeze_p.bind(*primals, **params)
     
     def squeeze_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = [squeeze_transform]
-            return pre, 0
-        else:
-            new_dims = params["dimensions"]
-            new_out_dims = list(copy.deepcopy(post.out_dims))
-            new_primal_dims = list(copy.deepcopy(post.primal_dims))
-            for dim in new_dims:
-                val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
-                val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
-                new_primal_dims.insert(dim, DenseDimension(dim, 1, val_dim))
-                for d in new_primal_dims[dim:]:
-                    d.id += 1
-                    if d.val_dim is not None:
-                        d.val_dim += 1
-                    if type(d) is SparseDimension:
-                        _d = new_out_dims[d.other_id]
-                        _d.other_id += 1
-                        if _d.val_dim is not None:
-                            _d.val_dim += 1
-                
-            new_val = jnp.expand_dims(post.val, axis=new_dims)
-            post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
-            if pre.val is None:
-                return post, 0
-            else:
-                print("post", post)
-                print("pre", pre)
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [squeeze_transform])]
+        new_dims = params["dimensions"]
+        new_out_dims = list(copy.deepcopy(post.out_dims))
+        new_primal_dims = list(copy.deepcopy(post.primal_dims))
+        for dim in new_dims:
+            val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
+            val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
+            new_primal_dims.insert(dim, DenseDimension(dim, 1, val_dim))
+            for d in new_primal_dims[dim:]:
+                d.id += 1
+                if d.val_dim is not None:
+                    d.val_dim += 1
+                if type(d) is SparseDimension:
+                    _d = new_out_dims[d.other_id]
+                    _d.other_id += 1
+                    if _d.val_dim is not None:
+                        _d.val_dim += 1
+            
+        new_val = jnp.expand_dims(post.val, axis=new_dims)
+        return SparseTensor(new_out_dims, new_primal_dims, new_val)
+    return val_out, [SparseTensor([], [], None, [], [squeeze_transform])]
 
-elemental_rules[lax.squeeze_p] = squeeze_elemental_rule
+
+def alt_squeeze_elemental_rule(primals, **params):
+    # NOTE: squeeze is basically just the inverse operation to broadcast_in_dim
+    # since it just adds a DenseDimension of size 1
+    val_out = lax.squeeze_p.bind(*primals, **params)
+    
+    def squeeze_transform(pre, post, iota):
+        dims = sorted(params["dimensions"])
+        new_out_dims = list(copy.deepcopy(pre.out_dims))
+        new_primal_dims = list(copy.deepcopy(pre.primal_dims))
+        squeeze_dims = []
+        counter = 0
+        
+        for id in dims:
+            idx = [j for j, d in enumerate(new_out_dims) if d.id == id][0]
+            val_dim = new_out_dims[idx].val_dim
+            squeeze_dims.append(val_dim)
+            
+            if type(new_out_dims[idx]) is SparseDimension:
+                def _check(d, id):
+                    if type(d) is SparseDimension:
+                        return d.other_id == id
+                    else:
+                        return False
+                other_idx = [j for j, d in enumerate(new_primal_dims) if _check(d, id)][0]
+                other_dim = new_primal_dims[other_idx]
+                new_primal_dims[other_idx] = DenseDimension(other_dim.id, other_dim.size, None)
+                
+            del new_out_dims[idx]
+            counter += 1
+            
+        out_ids = [d.id for d in new_out_dims]
+        primal_ids = [d.id for d in new_primal_dims]    
+        new_val_dims = [d.val_dim for d in new_out_dims if d.val_dim is not None]
+        new_val_dims += [d.val_dim for d in new_primal_dims if type(d) is DenseDimension and d.val_dim is not None]
+
+        for d in new_out_dims:
+            d.id = out_ids.index(d.id)
+            if d.val_dim is not None:
+                d.val_dim = new_val_dims.index(d.val_dim)
+                if type(d) is SparseDimension:
+                    d.other_id = len(new_out_dims) + new_primal_dims.index(d.other_id)
+        for d in new_primal_dims:
+            d.id = len(new_out_dims) + primal_ids.index(d.id)
+            if d.val_dim is not None:
+                d.val_dim = new_val_dims.index(d.val_dim)
+                if type(d) is SparseDimension:
+                    d.other_id = new_out_dims.index(d.other_id)
+                    
+        squeeze_dims = [d for d in squeeze_dims if d is not None]
+        if len(squeeze_dims) > 0:
+            new_val = jnp.squeeze(pre.val, axis=squeeze_dims)
+        else:
+            new_val = pre.val
+        return SparseTensor(new_out_dims, new_primal_dims, new_val)
+    return val_out, [SparseTensor([], [], None, [squeeze_transform], [])]
+
+
+elemental_rules[lax.squeeze_p] = alt_squeeze_elemental_rule
 
 
 def concatenate_elemental_rule(primals, **params):
@@ -753,53 +761,37 @@ def concatenate_elemental_rule(primals, **params):
         _count = count
     
     def concatenate_transform(primal, pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = [concatenate_transform]
-            return pre, 0
-        else:
-            new_out_dims = list(copy.deepcopy(post.out_dims))
-            new_primal_dims = list(copy.deepcopy(post.primal_dims))
-            
-            d = new_primal_dims[dim]
-            if type(d) is DenseDimension:
-                if d.val_dim is not None:
-                    new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
-                    d.size = new_val.shape[d.val_dim]
-                else:
-                    raise NotImplementedError("DenseDimension without `val_dim` not yet supported!")
-            else:
-                _d = new_out_dims[d.other_id]
-                if d.val_dim is not None:
-                    new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
-                    d.size = new_val.shape[d.val_dim]
-                    _d.size = new_val.shape[d.val_dim]
-                else:
-                    raise NotImplementedError("SparseDimension without `val_dim` not yet supported!")
+        new_out_dims = list(copy.deepcopy(post.out_dims))
+        new_primal_dims = list(copy.deepcopy(post.primal_dims))
         
-            post = SparseTensor(new_out_dims, new_primal_dims, new_val, [])
-            if pre.val is None:
-                return post, 0
+        d = new_primal_dims[dim]
+        if type(d) is DenseDimension:
+            if d.val_dim is not None:
+                new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
+                d.size = new_val.shape[d.val_dim]
             else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [partial(concatenate_transform, p)]) for p in primals]
+                raise NotImplementedError("DenseDimension without `val_dim` not yet supported!")
+        else:
+            _d = new_out_dims[d.other_id]
+            if d.val_dim is not None:
+                new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
+                d.size = new_val.shape[d.val_dim]
+                _d.size = new_val.shape[d.val_dim]
+            else:
+                raise NotImplementedError("SparseDimension without `val_dim` not yet supported!")
+    
+        return SparseTensor(new_out_dims, new_primal_dims, new_val)
+    return val_out, [SparseTensor([], [], None, [], [partial(concatenate_transform, p)]) for p in primals]
 
 elemental_rules[lax.concatenate_p] = concatenate_elemental_rule
 
     
 def convert_element_type_rule(primals, **params):
-    # TODO check if this is actually correct
     val_out = lax.convert_element_type_p.bind(*primals, **params)
 
     def convert_element_type_transform(pre, post, iota):
-        if post.val is None:
-            pre.jac_transform = [convert_element_type_transform]
-            return pre, 0
-        else:
-            if pre.val is None:
-                return post, 0
-            else:
-                return post*pre, get_num_muls(post, pre)
-    return val_out, [SparseTensor([], [], None, [convert_element_type_transform])]
+        return post
+    return val_out, [SparseTensor([], [], None, [], [convert_element_type_transform])]
 
 
 def alt_convert_element_type_rule(primals, **params):
@@ -809,11 +801,7 @@ def alt_convert_element_type_rule(primals, **params):
 
     def convert_element_type_transform(pre, post, iota):
         new_pre_val = lax.convert_element_type(pre.val, new_dtype)
-        new_pre = pre.copy(val=new_pre_val)
-        if post.val is None:
-            return new_pre, 0
-        else:
-            return post*new_pre, get_num_muls(post, new_pre)
+        return pre.copy(val=new_pre_val)
     return val_out, [SparseTensor([], [], None, [convert_element_type_transform])]
 
     

@@ -83,7 +83,33 @@ def _iota_shape(jaxpr, argnums):
         return jnp.ones((largest_output, 1))
     else:
         return jnp.eye(max(largest_output, largest_input), largest_input) 
-    
+        
+        
+def unload_post_transforms(post, pre, iota):
+    new_post = post.copy()
+    for transform in pre.post_transforms:
+        new_post = transform(pre, new_post, iota)
+    return new_post
+
+
+def unload_pre_transforms(post, pre, iota):
+    new_pre = pre.copy()
+    for transform in post.pre_transforms:
+        new_pre = transform(new_pre, post, iota)
+    return new_pre
+
+
+def prepend_post_transforms(post, out, iota):
+    transforms = post.post_transforms + out.post_transforms
+    out.post_transforms = transforms
+    return out
+
+
+def append_pre_transforms(pre, out, iota):
+    transforms = out.pre_transforms + pre.pre_transforms
+    out.pre_transforms = transforms
+    return out
+        
     
 def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
     """Function that eliminates a vertex from the computational graph.
@@ -100,30 +126,45 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
     eqn = jaxpr.eqns[vertex-1]
     num_mul, num_add = 0, 0
     for out_edge in graph[eqn.outvars[0]].keys():
-        post_val = graph[eqn.outvars[0]][out_edge]
+        post_val = graph[eqn.outvars[0]][out_edge].copy()
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
             pre_val = transpose_graph[eqn.outvars[0]][in_edge].copy()
             
-            if vertex == 34:
-                print("post_val", post_val)
-                print("pre_val", pre_val)
-            # Handle stuff like reshape, squeeze etc.
-            if len(pre_val.jac_transforms) > 0 and len(post_val.jac_transforms) > 0:
-                pre_val = pre_val.prepend_transforms(post_val)
-                edge_outval, muls = pre_val.unload_transforms(post_val, iota)
-                num_mul += muls
+            # Handle stuff like reshape, squeeze etc.            
+            # Apply Jacobian transforms where applicable
+            _pre_val = pre_val.copy()
+            _post_val = post_val.copy() 
+            
+            print("post_val", _post_val)
+            print("pre_val", _pre_val)    
+            
+            if len(pre_val.post_transforms) > 0 and post_val.val is not None:
+                _post_val = unload_post_transforms(post_val, pre_val, iota)
                 
-            elif len(pre_val.jac_transforms) > 0:
-                edge_outval, muls = pre_val.unload_transforms(post_val, iota)
-                num_mul += muls
+            if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
+                _pre_val = unload_pre_transforms(post_val, pre_val, iota)
                 
-            elif len(post_val.jac_transforms) > 0:
-                edge_outval = pre_val.prepend_transforms(post_val)
+            print("post_val", _post_val)
+            print("pre_val", _pre_val)
+                                
+            # Multiply the two values of the edges if applicable
+            if pre_val.val is not None and post_val.val is not None:     
+                edge_outval = _post_val * _pre_val
+                num_mul += get_num_muls(_post_val, _pre_val)
+            elif pre_val.val is not None:
+                edge_outval = _pre_val
+            else:
+                edge_outval = _post_val
                 
-            else:     
-                edge_outval = post_val * pre_val
-                num_mul += get_num_muls(post_val, pre_val)
-            # print("total num_muls", num_mul)
+            # Offload the remain Jacobian transforms to the output tensor
+            if len(post_val.post_transforms) > 0:
+                edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+
+            if len(pre_val.pre_transforms) > 0:
+                edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+                
+            print("edge_outval", edge_outval)
+                
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
@@ -293,6 +334,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
            
     # TODO offload all jac_transforms to the output variables before densification!
     # Collect outputs  
+    
+    print(graph)
     
     if dense_representation:   
         jac_vals = [graph[invar][outvar].dense(iota) 

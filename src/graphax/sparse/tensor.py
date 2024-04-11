@@ -70,9 +70,9 @@ class SparseTensor:
     primal_dims: Sequence[Dimension]
     shape: Sequence[int] # True shape of the tensor
     val: ShapedArray
-    jac_transforms: Sequence[Callable] 
-    # NOTE: If a tensor carries transforms, they are applied to the 'rhs' before
-    # multiplication. what about addition?
+    pre_transforms: Sequence[Callable] 
+    post_transforms: Sequence[Callable]
+    # NOTE: Document pre_transforms and post_transforms. what about addition?
     
     # NOTE: We always assume that the dimensions are ordered in ascending order
     
@@ -80,7 +80,8 @@ class SparseTensor:
                 out_dims: Sequence[Dimension], 
                 primal_dims: Sequence[Dimension], 
                 val: ShapedArray, 
-                jac_transforms: Sequence[Callable] = []) -> None:
+                pre_transforms: Sequence[Callable] = [],
+                post_transforms: Sequence[Callable] = []) -> None:
                 
         self.out_dims = out_dims if type(out_dims) is Tuple else tuple(out_dims)
         self.primal_dims = primal_dims if type(primal_dims) is Tuple else tuple(primal_dims)
@@ -88,7 +89,8 @@ class SparseTensor:
         primal_shape = [d.size for d in primal_dims]
         self.shape = tuple(out_shape + primal_shape)
         self.val = val
-        self.jac_transforms = jac_transforms
+        self.pre_transforms = pre_transforms
+        self.post_transforms = post_transforms
             
     def __repr__(self) -> str:
         return f"SparseTensor: \n" \
@@ -96,7 +98,8 @@ class SparseTensor:
                 f"   out_dims = {self.out_dims},\n" \
                 f"   primal_dims = {self.primal_dims},\n" \
                 f"   val = {self.val},\n" \
-                f"   jac_transforms = {self.jac_transforms}\n"
+                f"   pre_transforms = {self.pre_transforms}\n" \
+                f"   post_transforms = {self.post_transforms}\n"
                 
     def __add__(self, _tensor):
         return _add(self, _tensor)
@@ -136,7 +139,7 @@ class SparseTensor:
             return self.val
         
         # Catching some corner cases
-        if len(self.out_dims) == 0 or len(self.primal_dims) == 0:
+        if len(self.out_dims) == 0 and len(self.primal_dims) == 0:
             return self.val
         
         shape = _get_fully_materialized_shape(self)   
@@ -153,27 +156,12 @@ class SparseTensor:
         val = self.val.reshape(shape)
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
         return jnp.tile(index_map*val, tiling)
-    
-    def unload_transforms(self, _tensor, iota):
-        num_mul = 0
-        for transform in self.jac_transforms:
-            st, mul = transform(self, _tensor, iota)
-            num_mul += mul
-        return st, num_mul
-    
-    def append_transforms(self, _tensor):
-        self.jac_transforms = self.jac_transforms + _tensor.jac_transforms
-        return self
-    
-    def prepend_transforms(self, _tensor):
-        self.jac_transforms = _tensor.jac_transforms + self.jac_transforms
-        return self
-    
+        
     def copy(self, val=None):
         out_dims = copy.deepcopy(self.out_dims)
         primal_dims = copy.deepcopy(self.primal_dims)
         val = self.val if val is None else val
-        return SparseTensor(out_dims, primal_dims, val, self.jac_transforms)
+        return SparseTensor(out_dims, primal_dims, val, self.pre_transforms, self.post_transforms)
     
     
 def _checkify_tensor(st: SparseTensor) -> bool:
@@ -642,7 +630,7 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
                 if d.id < d.other_id:
                     permutation[i] = d.val_dim
                     i += 1
-    
+
     st.val = jnp.transpose(st.val, permutation)
     
     i = 0
@@ -707,13 +695,16 @@ def _get_output_tensor(lhs: SparseTensor,
 
     # Calculate where we have to add additional dimensions to lhs.val
     # due to DenseDimensions in rhs.primal_dims
+    new_dense_dims = []
     for rd in rhs.primal_dims:
         if type(rd) is DenseDimension:
-            new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, rd.val_dim))
+            shift = sum([1 for dim in new_dense_dims if dim <= rd.val_dim])
+            new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, rd.val_dim+shift))
         else:
             idx = rd.other_id - r
             ld = lhs.primal_dims[idx]
             if type(ld) is DenseDimension:
+                new_dense_dims.append(ld.val_dim)
                 new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, ld.size, ld.val_dim))                 
     
     return SparseTensor(new_out_dims, new_primal_dims, val)
