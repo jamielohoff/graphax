@@ -351,6 +351,10 @@ class GeneralADTest(unittest.TestCase):
     #     veres = deriv_fn(x, y, z)
 
     #     revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
+        
+    #     print(veres)
+        
+    #     print(revres)
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
         

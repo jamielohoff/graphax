@@ -135,40 +135,30 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             _pre_val = pre_val.copy()
             _post_val = post_val.copy() 
             
+            if vertex == 91:
+                print("post_val", post_val)
+                print("pre_val", pre_val)
+            
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
                 
             if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
                 _pre_val = unload_pre_transforms(post_val, pre_val, iota)
                 
+            if vertex == 91:
+                print("post_val", post_val)
+                print("pre_val", pre_val)
+                
             # Multiply the two values of the edges if applicable
             if pre_val.val is not None and post_val.val is not None:     
                 edge_outval = _post_val * _pre_val
                 num_mul += get_num_muls(_post_val, _pre_val)
-                # # Offload the remain Jacobian transforms to the output tensor
-                # if len(post_val.post_transforms) > 0:
-                #     edge_outval = unload_post_transforms(post_val, edge_outval, iota)
-
-                # if len(pre_val.pre_transforms) > 0:
-                #     edge_outval = unload_pre_transforms(pre_val, edge_outval, iota)
                     
             elif pre_val.val is not None:
                 edge_outval = _pre_val
-                # # Offload the remain Jacobian transforms to the output tensor
-                # if len(post_val.post_transforms) > 0:
-                #     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
-
-                # if len(pre_val.pre_transforms) > 0:
-                #     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
                     
             else:
                 edge_outval = _post_val
-                # # Offload the remain Jacobian transforms to the output tensor
-                # if len(post_val.post_transforms) > 0:
-                #     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
-
-                # if len(pre_val.pre_transforms) > 0:
-                #     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
                 
             # Offload the remain Jacobian transforms to the output tensor
             if len(post_val.post_transforms) > 0:
@@ -181,15 +171,11 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
                 _edge = transpose_graph[out_edge][in_edge]
-                
-                if vertex == 108:
-                    print("edge_outval", edge_outval)
-                    print("_edge", _edge)
+
                 # NOTE: maybe we should rather offload stuff here!?
                 
                 # Offload the remain Jacobian transforms to the output tensor
                 if len(edge_outval.post_transforms) > 0:
-                    print("edge_outval", edge_outval)
                     for transform in edge_outval.post_transforms:
                         edge_outval = transform.apply(edge_outval, iota)
 
@@ -368,15 +354,16 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     # before densification!    
     for invar in jaxpr_invars:
         for outvar in jaxpr.outvars:
-            if graph.get(invar).get(outvar) is not None:
-                tensor = graph[invar][outvar].copy()
-                if len(tensor.pre_transforms) > 0:
-                    for transform in tensor.pre_transforms:
-                        tensor = transform.apply_inverse(tensor, iota)
-                if len(tensor.post_transforms) > 0:
-                    for transform in tensor.post_transforms:
-                        tensor = transform.apply(tensor, iota)
-                graph[invar][outvar] = tensor
+            if graph.get(invar) is not None:
+                if graph.get(invar).get(outvar) is not None:
+                    tensor = graph[invar][outvar].copy()
+                    if len(tensor.pre_transforms) > 0:
+                        for transform in tensor.pre_transforms:
+                            tensor = transform.apply_inverse(tensor, iota)
+                    if len(tensor.post_transforms) > 0:
+                        for transform in tensor.post_transforms:
+                            tensor = transform.apply(tensor, iota)
+                    graph[invar][outvar] = tensor
     
     # Collect outputs  
     if dense_representation:   
