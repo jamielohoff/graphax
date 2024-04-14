@@ -135,20 +135,16 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             _pre_val = pre_val.copy()
             _post_val = post_val.copy() 
             
-            if vertex == 91:
-                print("post_val", post_val)
-                print("pre_val", pre_val)
-            
+            # if vertex == 68:
+            print(in_edge, eqn.outvars[0], out_edge)
+                # print("post_val", post_val)
+
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
                 
             if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
                 _pre_val = unload_pre_transforms(post_val, pre_val, iota)
-                
-            if vertex == 91:
-                print("post_val", post_val)
-                print("pre_val", pre_val)
-                
+                                
             # Multiply the two values of the edges if applicable
             if pre_val.val is not None and post_val.val is not None:     
                 edge_outval = _post_val * _pre_val
@@ -273,7 +269,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     # tracing system with lift etc. for better compatibility with JAX
     # Loop though elemental partials and create an abstract representation of
     # the computational graph
-    for eqn in jaxpr.eqns:
+    for i, eqn in enumerate(jaxpr.eqns):
         # Treatment of intermediate variables that are also output variables
         for outvar in eqn.outvars:
             if type(outvar) is core.Var and outvar not in var_id.keys():
@@ -298,6 +294,10 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             safe_map(write, eqn.outvars, [primal_outvals])
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
             # NOTE: Currently only able to treat one output variable
+            
+            # if str(eqn.outvars[0]) == "da":
+            print(eqn.outvars[0])
+            # print(elemental_outvals)
             _write_elemental = partial(write_elemental, eqn.outvars[0])
             if len(invars) == len(elemental_outvals):
                 safe_map(_write_elemental, invars, elemental_outvals)

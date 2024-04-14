@@ -360,10 +360,14 @@ def dot_general_elemental_rule(primals, **params):
                 batch_dim_counter += 1
                 for d in lhs_out_dims[batch_dim_counter:]:
                     d.id += 1
+                    if type(d) is SparseDimension:
+                        _d = lhs_primal_dims[d.other_id-len(lhs_out_dims)]
+                        _d.other_id += 1
             else:
                 # Otherwise, we can just set `val_dim`` to None
-                lhs_out_dims.append(SparseDimension(len(lhs_out_dims), ld, None, other_lid))
-                lhs_primal_dims.append(SparseDimension(other_lid, ld, None, len(lhs_out_dims)-1))
+                _lid = len(lhs_out_dims)
+                lhs_out_dims.append(SparseDimension(_lid, ld, None, other_lid))
+                lhs_primal_dims.append(SparseDimension(other_lid, ld, None, _lid))
                 rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid)) # TODO need to use insert here!
           
     j, jj = 0, 0   
@@ -386,15 +390,19 @@ def dot_general_elemental_rule(primals, **params):
                 batch_dim_counter += 1
                 for d in rhs_out_dims[batch_dim_counter:]:
                     d.id += 1
+                    if type(d) is SparseDimension:
+                        _d = rhs_primal_dims[d.other_id-len(rhs_out_dims)]
+                        _d.other_id += 1
             else:
-                # Otherwise, we can just set `val_dim`` to None
-                rhs_out_dims.append(SparseDimension(len(rhs_out_dims), rd, None, other_rid))
-                rhs_primal_dims.append(SparseDimension(other_rid, rd, None, len(rhs_out_dims)-1))
+                # Otherwise, we can just set `val_dim` to None
+                _rid = len(rhs_out_dims)
+                rhs_out_dims.append(SparseDimension(_rid, rd, None, other_rid))
+                rhs_primal_dims.append(SparseDimension(other_rid, rd, None, _rid))
                 lhs_out_dims.append(DenseDimension(len(lhs_out_dims), rd, rid)) # TODO need to use insert here!
         
     lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, rhs)
     rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)   
-        
+    
     lhs_tensor = _swap_back_axes(lhs_tensor)
     rhs_tensor = _swap_back_axes(rhs_tensor)
     return val_out, [lhs_tensor, rhs_tensor]
@@ -614,8 +622,8 @@ def broadcast_elemental_rule(primals, **params):
             val_dim = sum([1 for d in new_out_dims[:dim+counter] if d.val_dim is not None])
             non_broadcast_dims.append(val_dim)
             new_out_dims.insert(dim, DenseDimension(dim+counter, 1, val_dim))
-            counter += 1
-            
+            counter += 1 
+
             for d in new_out_dims[dim+counter:]:
                 d.id += 1
                 if d.val_dim is not None:
@@ -629,14 +637,16 @@ def broadcast_elemental_rule(primals, **params):
                         _d.val_dim += 1
                     
             for d in new_primal_dims:
+                d.id += 1
                 if type(d) is DenseDimension:
-                    d.id += 1
                     if d.val_dim is not None:
                         d.val_dim += 1
                 else:
+                    _d = new_out_dims[d.other_id] 
+                    if _d.id > dim + counter:
+                        _d.id += 1
                     if d.other_id < dim:
-                        _d = new_out_dims[d.other_id]
-                        _d.other_id += 1                
+                        _d.other_id += 1      
                     
         broadcast_shape = [d.size for d in new_out_dims if d.val_dim is not None]
         broadcast_shape += [d.size for d in new_primal_dims 
@@ -646,6 +656,7 @@ def broadcast_elemental_rule(primals, **params):
         broadcast_dims += [d.val_dim for d in new_primal_dims 
                             if d.val_dim not in non_broadcast_dims and type(d) is DenseDimension]
 
+        broadcast_dims = [d for d in broadcast_dims if d is not None]
         if len(broadcast_dims) > 0:
             new_val = lax.broadcast_in_dim(pre.val, shape=broadcast_shape, 
                                             broadcast_dimensions=broadcast_dims)
@@ -655,26 +666,30 @@ def broadcast_elemental_rule(primals, **params):
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
             
     def inverse_broadcast_transform(post, iota):
+        print("post", post)
         rm_dims = [d for d in range(val_out.ndim) if d not in dims]
-
         new_out_dims = list(copy.deepcopy(post.out_dims))
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
+        primal_shape = [d.size for d in post.primal_dims]
+        print(val_out.shape, primal_shape)
         _rm_dims = []
+        counter = 0
+        
         for dim in rm_dims:
-            if new_primal_dims[dim].val_dim is not None:
-                _rm_dims.append(new_primal_dims[dim].val_dim)
-            if type(new_primal_dims[dim]) is DenseDimension:
+            if new_primal_dims[dim-counter].val_dim is not None:
+                _rm_dims.append(new_primal_dims[dim-counter].val_dim)
+            if type(new_primal_dims[dim-counter]) is DenseDimension:
                 has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
-                del new_primal_dims[dim]
-                for d in new_primal_dims[dim:]:
+                del new_primal_dims[dim-counter]
+                for d in new_primal_dims[dim-counter:]:
                     d.id -= 1
                     if type(d) is SparseDimension:
                         _d = new_out_dims[d.other_id]
                         _d.other_id -= 1
                     
             else:
-                id = new_primal_dims[dim].id
-                other_id = new_primal_dims[dim].other_id
+                id = new_primal_dims[dim-counter].id
+                other_id = new_primal_dims[dim-counter].other_id
                 old_dim = new_out_dims[other_id]
                 new_out_dims[other_id] = DenseDimension(old_dim.id, old_dim.size, None)
                 has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
@@ -691,6 +706,7 @@ def broadcast_elemental_rule(primals, **params):
                         else:
                             if d.val_dim is not None and has_smaller_dims:
                                 d.val_dim -= 1
+            counter += 1
                 
         new_out_dims = tuple(new_out_dims)
         new_primal_dims = tuple(new_primal_dims)
@@ -982,6 +998,7 @@ def concatenate_elemental_rule(primals, **params):
                 d.size = new_val.shape[d.val_dim]
                 _d.size = new_val.shape[d.val_dim]
             else:
+                # TODO: complete the implementation here at some point
                 raise NotImplementedError("Finish the implementation!")
                 _d = new_out_dims[d.other_id]
                 if d.val_dim is not None:
