@@ -1237,9 +1237,6 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
     # Function that counts the number of multiplications done by multiplication
     # of two SparseTensor objects  
-    
-    # print("lhs", lhs)
-    # print("rhs", rhs)
     num_muls = 1
     for d in lhs.out_dims:
         if type(d) is DenseDimension:
@@ -1278,9 +1275,7 @@ def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
         if type(d) is DenseDimension:
             if d.val_dim is not None:
                 num_muls *= d.size
-                
-    # print("num_muls", num_muls)
-                
+                                
     return num_muls
                
 

@@ -666,12 +666,10 @@ def broadcast_elemental_rule(primals, **params):
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
             
     def inverse_broadcast_transform(post, iota):
-        print("post", post)
         rm_dims = [d for d in range(val_out.ndim) if d not in dims]
         new_out_dims = list(copy.deepcopy(post.out_dims))
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
         primal_shape = [d.size for d in post.primal_dims]
-        print(val_out.shape, primal_shape)
         _rm_dims = []
         counter = 0
         
@@ -1056,11 +1054,15 @@ def convert_element_type_rule(primals, **params):
 
     def convert_element_type_transform(pre, iota):
         new_pre_val = lax.convert_element_type(pre.val, new_dtype)
-        return pre.copy(val=new_pre_val)
+        new_out_dims = copy.deepcopy(pre.out_dims)
+        new_primal_dims = copy.deepcopy(pre.primal_dims)
+        return SparseTensor(new_out_dims, new_primal_dims, new_pre_val)
     
     def inverse_convert_element_type_transform(post, iota):
         new_post_val = lax.convert_element_type(post.val, new_dtype)
-        return post.copy(val=new_post_val)
+        new_out_dims = copy.deepcopy(post.out_dims)
+        new_primal_dims = copy.deepcopy(post.primal_dims)
+        return SparseTensor(new_out_dims, new_primal_dims, new_post_val)
     
     transform = JacobianTransform(convert_element_type_transform, inverse_convert_element_type_transform)
     return val_out, [SparseTensor([], [], None, [transform])]

@@ -15,23 +15,6 @@ from .sparse.tensor import get_num_muls, get_num_adds
 from .sparse.utils import zeros_like, get_largest_tensor
 
 
-# # Function to stage out the evaluation of the elemental partials so that we can
-# # use graph pruning first to remove unnecessary vertices and simplify the 
-# # computational graph.
-# class NascentElementalPartial:
-#     elemental_fn: Callable
-#     primals: Sequence
-#     params: dict
-    
-#     def __init__(self, elemental_fn: Callable, primals: Sequence, params: dict):
-#         self.elemental_fn = elemental_fn
-#         self.primals = primals
-#         self.params = params
-        
-#     def apply(self):
-#         return self.elemental_fn(*self.primals, **self.params)
-
-
 def tree_allclose(tree1, tree2, equal_nan: bool = False):
     allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan, atol=1e-5, rtol=1e-4)
     is_equal = jtu.tree_map(allclose, tree1, tree2)
@@ -130,15 +113,14 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
             pre_val = transpose_graph[eqn.outvars[0]][in_edge].copy()
             
+            # TODO implement a process that discards unnecessary edges from the computation
+            
             # Handle stuff like reshape, squeeze etc.            
             # Apply Jacobian transforms where applicable
             _pre_val = pre_val.copy()
-            _post_val = post_val.copy() 
+            _post_val = post_val.copy()
             
-            # if vertex == 68:
-            print(in_edge, eqn.outvars[0], out_edge)
-                # print("post_val", post_val)
-
+            
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
                 
@@ -148,11 +130,14 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # Multiply the two values of the edges if applicable
             if pre_val.val is not None and post_val.val is not None:     
                 edge_outval = _post_val * _pre_val
+                if vertex == 59:
+                    print("Post:", _post_val)
+                    print("Pre:", _pre_val) 
+                    print("num_muls:", get_num_muls(_post_val, _pre_val))
                 num_mul += get_num_muls(_post_val, _pre_val)
                     
             elif pre_val.val is not None:
-                edge_outval = _pre_val
-                    
+                edge_outval = _pre_val  
             else:
                 edge_outval = _post_val
                 
@@ -166,10 +151,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
-                _edge = transpose_graph[out_edge][in_edge]
-
-                # NOTE: maybe we should rather offload stuff here!?
-                
+                _edge = transpose_graph[out_edge][in_edge]                
                 # Offload the remain Jacobian transforms to the output tensor
                 if len(edge_outval.post_transforms) > 0:
                     for transform in edge_outval.post_transforms:
@@ -295,9 +277,6 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
             # NOTE: Currently only able to treat one output variable
             
-            # if str(eqn.outvars[0]) == "da":
-            print(eqn.outvars[0])
-            # print(elemental_outvals)
             _write_elemental = partial(write_elemental, eqn.outvars[0])
             if len(invars) == len(elemental_outvals):
                 safe_map(_write_elemental, invars, elemental_outvals)
