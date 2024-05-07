@@ -120,6 +120,9 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             _pre_val = pre_val.copy()
             _post_val = post_val.copy()
             
+            # print("Post:", _post_val)
+            # print("Pre:", _pre_val) 
+            
             
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
@@ -130,10 +133,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # Multiply the two values of the edges if applicable
             if pre_val.val is not None and post_val.val is not None:     
                 edge_outval = _post_val * _pre_val
-                if vertex == 59:
-                    print("Post:", _post_val)
-                    print("Pre:", _pre_val) 
-                    print("num_muls:", get_num_muls(_post_val, _pre_val))
+                # print("num_muls:", get_num_muls(_post_val, _pre_val))
                 num_mul += get_num_muls(_post_val, _pre_val)
                     
             elif pre_val.val is not None:

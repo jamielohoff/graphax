@@ -104,9 +104,61 @@ def plot_performance(f: Callable,
     mM_measurements = measure_execution_time(f, args, mM_order, samplesize=samplesize)
     cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize)
     
-    # jax_fwd_measurements, jax_rev_measurements = measure_execution_time_with_jax(f, args, samplesize=samplesize)
-    jax_fwd_measurements = jnp.zeros(10)
-    jax_rev_measurements = jnp.zeros(10)
+    fwd_mean = jnp.mean(fwd_measurements)
+    rev_mean = jnp.mean(rev_measurements)
+    mM_mean = jnp.mean(mM_measurements)
+    cc_mean = jnp.mean(cc_measurements)
+    
+    print(f"fwd mean: {fwd_mean}, rev mean: {rev_mean}, mM_mean: {mM_mean}, cc_mean: {cc_mean}, ")
+    
+    fwd_std = jnp.std(fwd_measurements) # jnp.quantile(fwd_measurements, quantiles) - fwd_mean
+    rev_std = jnp.std(rev_measurements) # jnp.quantile(rev_measurements, quantiles) - rev_mean
+    mM_std = jnp.std(mM_measurements) # jnp.quantile(mM_measurements, quantiles) - mM_mean
+    cc_std = jnp.std(cc_measurements) # jnp.quantile(cc_measurements, quantiles) - cc_mean
+    
+    print(f"fwd std: {fwd_std}, rev std: {rev_std}, mM_std: {mM_std}, cc_std: {cc_std}")
+    
+    fig, ax = plt.subplots()
+    
+    plt.rcParams.update({"font.size": 16})  
+    
+    modes = ["forward", "reverse", "Markowitz", "AlphaGrad"]
+    x_pos = jnp.arange(0, len(modes))
+    runtimes = jnp.stack([fwd_mean, rev_mean, mM_mean, cc_mean])
+    runtime_errors = jnp.stack([fwd_std, rev_std, mM_std, cc_std])
+    ax.bar(x_pos, runtimes, yerr=runtime_errors, align="center", alpha=0.5, 
+            ecolor="black", color="#6096f6", capsize=10)
+    
+    ax.set_ylabel("Evaluation time [ms]", fontsize=14)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(modes, fontsize=14)
+    ax.tick_params(axis="y", labelsize=14)
+    ax.set_title(f"Evaluation times of {caption}")
+    ax.yaxis.grid(True)  
+    # ax.set_ylim((0.025, 0.04))
+    
+    plt.tight_layout()
+    # plt.savefig(fname)
+    plt.show()
+    
+    
+def plot_performance_and_jax(f: Callable,
+                    args: Sequence[Array],
+                    order: Order, 
+                    mM_order: Order,
+                    fname: str,
+                    samplesize: int = 100,
+                    quantiles: Array = jnp.array([0.025, 0.975]),
+                    caption: str ="different modes") -> None:
+    """
+    TODO docstring
+    """    
+    fwd_measurements = measure_execution_time(f, args, "fwd", samplesize=samplesize)
+    rev_measurements = measure_execution_time(f, args, "rev", samplesize=samplesize)
+    mM_measurements = measure_execution_time(f, args, mM_order, samplesize=samplesize)
+    cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize)
+    
+    jax_fwd_measurements, jax_rev_measurements = measure_execution_time_with_jax(f, args, samplesize=samplesize)
     
     fwd_mean = jnp.mean(fwd_measurements)
     rev_mean = jnp.mean(rev_measurements)
@@ -148,8 +200,9 @@ def plot_performance(f: Callable,
     # ax.set_ylim((0.025, 0.04))
     
     plt.tight_layout()
-    plt.savefig(fname)
-    
+    # plt.savefig(fname)
+    plt.show()
+        
     
 def plot_performance_over_size(f: Callable,
                                 args: Sequence[Sequence[Array]],

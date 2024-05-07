@@ -278,6 +278,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     assert lhs.shape[l:] == rhs.shape[:r], f"{lhs.shape} and {rhs.shape} "\
                                         "not compatible for multiplication!"
     
+    print(lhs, rhs)
     res = None
     _lhs = lhs.copy()
     _rhs = rhs.copy()
@@ -290,6 +291,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     else:
         res = _mixed_mul(_lhs, _rhs)
 
+    print("res: ", res)
     assert _checkify_tensor(res), f"{res} is not self-consistent!"
     return res
 
@@ -907,7 +909,15 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     r = len(rhs.out_dims)
     def _is_none(idx, d):
         return idx if d.val_dim is not None else None
-    new_primal_dims = [DenseDimension(d.id-r+l, d.size, _is_none(l+i, d)) for i, d in enumerate(rhs.primal_dims)]        
+    
+    new_primal_dims = []
+    i = 0
+    for d in rhs.primal_dims:
+        if d.val_dim is not None:
+            new_primal_dims.append(DenseDimension(d.id-r+l, d.size, l+i))   
+            i += 1
+        else:
+            new_primal_dims.append(DenseDimension(d.id-r+l, d.size, None))
 
     # Handling contracting variables
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
@@ -1231,7 +1241,6 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     new_val = lhs_val + rhs_val
     return SparseTensor(new_out_dims, new_primal_dims, new_val)
-    
     
     
 def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:

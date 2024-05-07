@@ -11,15 +11,18 @@ def SiLU(x):
     return x*sigmoid(x)
 
 
-def variance(x, axis=0):
-    mu = jnp.mean(x, axis=axis)
+def softmax_cross_entropy(logits, labels):
+    return -jnp.sum(labels * jnp.log(jnn.softmax(logits, axis=-1)), axis=-1)
+
+
+def variance(x, mu, axis=0):
     n = x.shape[axis]
     return jnp.sum((x - mu)**2, axis=axis)/n
 
 
 def layer_norm(x, gamma, beta):
-    mu = jnp.mean(x, axis=1)
-    sigma = variance(x, axis=1)
+    mu = jnp.mean(x, axis=-1)
+    sigma = variance(x, mu, axis=-1)
     return (x - mu)/jnp.sqrt(sigma + 1e-6) * gamma + beta
 
 
@@ -30,11 +33,10 @@ def attn(q, k, v):
 
 
 def Perceptron(x, y, W1, b1, W2, b2, gamma, beta):
-    a1 = jnp.tanh(W1 @ x + b1)
-    a2 = jnp.tanh(W2 @ a1+b2)
-    d = a2 - y
-    e = d**2
-    return .5*jnp.sum(e)
+    out = jnp.tanh(W1 @ x + b1)
+    out = layer_norm(out, gamma, beta)
+    out = jnp.tanh(W2 @ out + b2)
+    return softmax_cross_entropy(out, y)
 
 
 def encoder_block(x, WQ, WK, WV, W, b, gamma, beta):
@@ -67,7 +69,7 @@ def decoder_block(x, q, k, WQ1, WK1, WV1, WQ2, WK2, WV2, W, b, gamma0, gamma1, b
 def Encoder(x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma0, beta0, gamma1, beta1):
     z1 = encoder_block(x, WQ1, WK1, WV1, W1, b1, gamma0, beta0)
     z2 = encoder_block(z1, WQ2, WK2, WV2, W2, b2, gamma1, beta1)
-    return .5*(z2 - y)**2
+    return softmax_cross_entropy(z2, y)
     
 
 def EncoderDecoder(x, y, WQ1, WQ2, WQ3, WK1, WK2, WK3, WV1, WV2, WV3,  W1, W2, b1, b2, gamma0, beta0, gamma1, beta1, gamma2, beta2):
