@@ -11,7 +11,7 @@ from jax._src.util import safe_map
 import jax._src.core as core
 
 from .primitives import elemental_rules
-from .sparse.tensor import get_num_muls, get_num_adds
+from .sparse.tensor import get_num_muls, get_num_adds, _checkify_tensor
 from .sparse.utils import zeros_like, get_largest_tensor
 
 
@@ -123,7 +123,6 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             # print("Post:", _post_val)
             # print("Pre:", _pre_val) 
             
-            
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
                 
@@ -173,6 +172,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
                 edge_outval += _edge
                 num_add += get_num_adds(edge_outval, _edge)
                 
+            _checkify_tensor(edge_outval)
             graph[in_edge][out_edge] = edge_outval
             transpose_graph[out_edge][in_edge] = edge_outval
                 

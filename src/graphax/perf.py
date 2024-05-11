@@ -19,7 +19,8 @@ def measure_execution_time(f: Callable,
                             args: Sequence[Array], 
                             order: Order,
                             samplesize: int = 1000, 
-                            print_results: bool = False) -> Sequence[int]:
+                            print_results: bool = False,
+                            use_vmap: bool = True) -> Sequence[int]:
     """
     TODO docstring
     """
@@ -27,7 +28,7 @@ def measure_execution_time(f: Callable,
     argnums = list(range(len(args)))
     
     grad_f = ()
-    vmap_f = jax.vmap(f, in_axes=[0]*len(args))
+    vmap_f = jax.vmap(f, in_axes=[0]*len(args)) if use_vmap is True else f
     grad_f = jax.jit(jacve(vmap_f, order=order, argnums=argnums))
     
     def measure(xs):
@@ -95,37 +96,39 @@ def plot_performance(f: Callable,
                     fname: str,
                     samplesize: int = 100,
                     quantiles: Array = jnp.array([0.025, 0.975]),
-                    caption: str ="different modes") -> None:
+                    caption: str ="different modes",
+                    use_vmap: bool = True) -> None:
     """
     TODO docstring
     """    
-    fwd_measurements = measure_execution_time(f, args, "fwd", samplesize=samplesize)
-    rev_measurements = measure_execution_time(f, args, "rev", samplesize=samplesize)
-    mM_measurements = measure_execution_time(f, args, mM_order, samplesize=samplesize)
-    cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize)
+    fwd_measurements = measure_execution_time(f, args, "fwd", samplesize=samplesize, use_vmap=use_vmap)
+    rev_measurements = measure_execution_time(f, args, "rev", samplesize=samplesize, use_vmap=use_vmap)
+    mM_measurements = measure_execution_time(f, args, mM_order, samplesize=samplesize, use_vmap=use_vmap)
+    cc_measurements = measure_execution_time(f, args, order, samplesize=samplesize, use_vmap=use_vmap)
     
     fwd_mean = jnp.mean(fwd_measurements)
     rev_mean = jnp.mean(rev_measurements)
     mM_mean = jnp.mean(mM_measurements)
     cc_mean = jnp.mean(cc_measurements)
     
-    print(f"fwd mean: {fwd_mean}, rev mean: {rev_mean}, mM_mean: {mM_mean}, cc_mean: {cc_mean}, ")
+    print(f"fwd mean: {fwd_mean}, rev mean: {rev_mean}, mM mean: {mM_mean}, cc mean: {cc_mean}")
     
-    fwd_std = jnp.std(fwd_measurements) # jnp.quantile(fwd_measurements, quantiles) - fwd_mean
-    rev_std = jnp.std(rev_measurements) # jnp.quantile(rev_measurements, quantiles) - rev_mean
-    mM_std = jnp.std(mM_measurements) # jnp.quantile(mM_measurements, quantiles) - mM_mean
-    cc_std = jnp.std(cc_measurements) # jnp.quantile(cc_measurements, quantiles) - cc_mean
+    fwd_err = jnp.quantile(fwd_measurements, quantiles) - fwd_mean # 2*jnp.std(fwd_measurements) # 
+    rev_err = jnp.quantile(rev_measurements, quantiles) - rev_mean # 2*jnp.std(rev_measurements) # 
+    mM_err = jnp.quantile(mM_measurements, quantiles) - mM_mean # 2*jnp.std(mM_measurements) # 
+    cc_err = jnp.quantile(cc_measurements, quantiles) - cc_mean # 2*jnp.std(cc_measurements) # 
     
-    print(f"fwd std: {fwd_std}, rev std: {rev_std}, mM_std: {mM_std}, cc_std: {cc_std}")
+    print(f"fwd err: {fwd_err}, rev err: {rev_err}, mM err: {mM_err}, cc err: {cc_err}")
     
     fig, ax = plt.subplots()
     
-    plt.rcParams.update({"font.size": 16})  
+    plt.rcParams.update({"font.size": 14})  
     
     modes = ["forward", "reverse", "Markowitz", "AlphaGrad"]
     x_pos = jnp.arange(0, len(modes))
     runtimes = jnp.stack([fwd_mean, rev_mean, mM_mean, cc_mean])
-    runtime_errors = jnp.stack([fwd_std, rev_std, mM_std, cc_std])
+    runtime_errors = jnp.stack([fwd_err, rev_err, mM_err, cc_err], axis=1)*jnp.array([[-1.], [1.]])
+
     ax.bar(x_pos, runtimes, yerr=runtime_errors, align="center", alpha=0.5, 
             ecolor="black", color="#6096f6", capsize=10)
     

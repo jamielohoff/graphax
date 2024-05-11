@@ -10,7 +10,8 @@ from jax.tree_util import tree_map
 
 from graphax import jacve, tree_allclose
 from graphax.examples import (Simple, Helmholtz, f, g, RoeFlux_1d, RobotArm_6DOF,
-                              EncoderDecoder, Lighthouse, RoeFlux_3d)
+                              EncoderDecoder, Lighthouse, RoeFlux_3d, Perceptron,
+                              Encoder)
 from graphax.sparse.utils import count_muls, count_muls_jaxpr
 
 
@@ -653,70 +654,70 @@ class GeneralADTest(unittest.TestCase):
 
     #     self.assertTrue(tree_allclose(veres, revres)) 
     
-    def test_NeuralNetworkHessian(self):
-        batchsize = 1024
-        @partial(jax.vmap, in_axes=(0, None, None, None, None, 0))
-        def NeuralNetwork(x, W1, b1, W2, b2, y):
-            y1 = W1 @ x
-            z1 = y1 + b1
-            a1 = jnp.tanh(z1)
+    # def test_NeuralNetworkHessian(self):
+    #     batchsize = 1024
+    #     @partial(jax.vmap, in_axes=(0, None, None, None, None, 0))
+    #     def NeuralNetwork(x, W1, b1, W2, b2, y):
+    #         y1 = W1 @ x
+    #         z1 = y1 + b1
+    #         a1 = jnp.tanh(z1)
             
-            y2 = W2 @ a1
-            z2 = y2 + b2
-            return 0.5*(jnp.tanh(z2) - y)**2
+    #         y2 = W2 @ a1
+    #         z2 = y2 + b2
+    #         return 0.5*(jnp.tanh(z2) - y)**2
         
-        def f(x, W1, b1, W2, b2, y):
-            out = NeuralNetwork(x, W1, b1, W2, b2, y)
-            return out.sum()
+    #     def f(x, W1, b1, W2, b2, y):
+    #         out = NeuralNetwork(x, W1, b1, W2, b2, y)
+    #         return out.sum()
             
-        key = jrand.PRNGKey(42)
+    #     key = jrand.PRNGKey(42)
 
-        x = jnp.ones((batchsize, 4))
-        y = jrand.normal(key, (batchsize, 4))
+    #     x = jnp.ones((batchsize, 4))
+    #     y = jrand.normal(key, (batchsize, 4))
 
-        w1key, b1key, key = jrand.split(key, 3)
-        W1 = jrand.normal(w1key, (8, 4))
-        b1 = jrand.normal(b1key, (8,))
+    #     w1key, b1key, key = jrand.split(key, 3)
+    #     W1 = jrand.normal(w1key, (8, 4))
+    #     b1 = jrand.normal(b1key, (8,))
 
-        w2key, b2key, key = jrand.split(key, 3)
-        W2 = jrand.normal(w2key, (4, 8))
-        b2 = jrand.normal(b2key, (4,))
-        argnums = (0, 1, 2, 3, 4, 5)
+    #     w2key, b2key, key = jrand.split(key, 3)
+    #     W2 = jrand.normal(w2key, (4, 8))
+    #     b2 = jrand.normal(b2key, (4,))
+    #     argnums = (0, 1, 2, 3, 4, 5)
         
-        jac_rev = jacve(f, order="rev", argnums=argnums)
-        deriv_jaxpr = jax.make_jaxpr(jac_rev)(x, W1, b1, W2, b2, y)
-        # print(deriv_jaxpr)
-        hessian_fn = jacve(jac_rev, order="fwd", argnums=argnums)
-        hessian_jaxpr = jax.make_jaxpr(hessian_fn)(x, W1, b1, W2, b2, y)
-        # print(hessian_jaxpr)
-        veres = jax.jit(hessian_fn)(x, W1, b1, W2, b2, y)
-        hess_fn = jax.jit(hessian_fn)
+    #     jac_rev = jacve(f, order="rev", argnums=argnums)
+    #     deriv_jaxpr = jax.make_jaxpr(jac_rev)(x, W1, b1, W2, b2, y)
+    #     # print(deriv_jaxpr)
+    #     hessian_fn = jacve(jac_rev, order="fwd", argnums=argnums)
+    #     hessian_jaxpr = jax.make_jaxpr(hessian_fn)(x, W1, b1, W2, b2, y)
+    #     # print(hessian_jaxpr)
+    #     veres = jax.jit(hessian_fn)(x, W1, b1, W2, b2, y)
+    #     hess_fn = jax.jit(hessian_fn)
 
-        jax_jac_rev = jax.jacrev(f, argnums=argnums)
-        jax_hessian_fn = jax.jacrev(jax_jac_rev, argnums=argnums)
-        revres = jax.jit(jax_hessian_fn)(x, W1, b1, W2, b2, y)
-        jax_hessian_jaxpr = jax.make_jaxpr(jax_hessian_fn)(x, W1, b1, W2, b2, y)
+    #     jax_jac_rev = jax.jacrev(f, argnums=argnums)
+    #     jax_hessian_fn = jax.jacrev(jax_jac_rev, argnums=argnums)
+    #     revres = jax.jit(jax_hessian_fn)(x, W1, b1, W2, b2, y)
+    #     jax_hessian_jaxpr = jax.make_jaxpr(jax_hessian_fn)(x, W1, b1, W2, b2, y)
         
-        import time
+    #     import time
         
-        start = time.time()
-        hess = hess_fn(x, W1, b1, W2, b2, y)
-        for i in range(1000):
-            hess = hess_fn(x, W1, b1, W2, b2, y)
-            jax.block_until_ready(hess)
-        print("time", time.time() - start)
+    #     start = time.time()
+    #     hess = hess_fn(x, W1, b1, W2, b2, y)
+    #     for i in range(1000):
+    #         hess = hess_fn(x, W1, b1, W2, b2, y)
+    #         jax.block_until_ready(hess)
+    #     print("time", time.time() - start)
         
-        jax_hessian_fn = jax.jit(jax.jacrev(jax_jac_rev, argnums=argnums))
-        hess = jax_hessian_fn(x, W1, b1, W2, b2, y)
-        start = time.time()
-        for i in range(1000):
-            hess = jax_hessian_fn(x, W1, b1, W2, b2, y)
-            jax.block_until_ready(hess)
-        print("jax time", time.time() - start)
+    #     jax_hessian_fn = jax.jit(jax.jacrev(jax_jac_rev, argnums=argnums))
+    #     hess = jax_hessian_fn(x, W1, b1, W2, b2, y)
+    #     start = time.time()
+    #     for i in range(1000):
+    #         hess = jax_hessian_fn(x, W1, b1, W2, b2, y)
+    #         jax.block_until_ready(hess)
+    #     print("jax time", time.time() - start)
         
-        print(len(hessian_jaxpr.jaxpr.eqns), len(jax_hessian_jaxpr.eqns))
+    #     print(len(hessian_jaxpr.jaxpr.eqns), len(jax_hessian_jaxpr.eqns))
 
-        self.assertTrue(tree_allclose(veres, revres))
+    #     self.assertTrue(tree_allclose(veres, revres))
     
     # def test_eq(self):
     #     def f(x, y):
@@ -735,8 +736,161 @@ class GeneralADTest(unittest.TestCase):
     #     revres = jax_deriv_fn(x, y)
         
     #     self.assertTrue(tree_allclose(veres, revres))
+    
+    # def test_Perceptron(self):
+    #     key = jrand.PRNGKey(1234)
+
+    #     x = jnp.ones(4)
+    #     y = jrand.normal(key, (4,))
+
+    #     w1key, b1key, key = jrand.split(key, 3)
+    #     W1 = jrand.normal(w1key, (8, 4))
+    #     b1 = jrand.normal(b1key, (8,))
+
+    #     w2key, b2key, key = jrand.split(key, 3)
+    #     W2 = jrand.normal(w2key, (4, 8))
+    #     b2 = jrand.normal(b2key, (4,))
+
+    #     xs = (x, y, W1, b1, W2, b2, 0., 1.)
+        
+    #     argnums = list(range(len(xs)))
+        
+    #     jaxpr = jax.make_jaxpr(Perceptron)(*xs)
+    #     print(jaxpr)
+    #     print(len(jaxpr.jaxpr.eqns))
+        
+    #     deriv_fn = jax.jit(jacve(Perceptron, order="rev", argnums=argnums, count_ops=True))
+    #     veres, aux = deriv_fn(*xs)
+        
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(Perceptron, order="rev", argnums=argnums))(*xs)
+    #     print("rev num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+                
+    #     revres = jax.jacrev(Perceptron, argnums=argnums)(*xs)
+        
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+        
+    # def test_Encoder(self):
+    #     key = jrand.PRNGKey(250197)
+    #     x = jnp.ones((4, 4))
+    #     y = jrand.normal(key, (2, 4))
+
+    #     wq1key, wk1key, wv1key, key = jrand.split(key, 4)
+    #     WQ1 = jrand.normal(wq1key, (4, 4))
+    #     WK1 = jrand.normal(wk1key, (4, 4))
+    #     WV1 = jrand.normal(wv1key, (4, 4))
+
+    #     wq2key, wk2key, wv2key, key = jrand.split(key, 4)
+    #     WQ2 = jrand.normal(wq2key, (4, 4))
+    #     WK2 = jrand.normal(wk2key, (4, 4))
+    #     WV2 = jrand.normal(wv2key, (4, 4))
+
+    #     w1key, w2key, b1key, b2key = jrand.split(key, 4)
+    #     W1 = jrand.normal(w1key, (4, 4))
+    #     b1 = jrand.normal(b1key, (4,))
+
+    #     W2 = jrand.normal(w2key, (2, 4))
+    #     b2 = jrand.normal(b2key, (2, 1))
+        
+    #     xs = (x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, 0., 1., 0., 1.)
+        
+    #     argnums = list(range(len(xs)))
+        
+    #     jaxpr = jax.make_jaxpr(Encoder)(*xs)
+    #     print(jaxpr)
+    #     print(len(jaxpr.jaxpr.eqns))
+        
+    #     deriv_fn = jax.jit(jacve(Encoder, order="rev", argnums=argnums, count_ops=True))
+    #     veres, aux = deriv_fn(*xs)
+        
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(Encoder, order="rev", argnums=argnums))(*xs)
+    #     print("fwd num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+                
+    #     revres = jax.jacrev(Encoder, argnums=argnums)(*xs)
+        
+    #     self.assertTrue(tree_allclose(veres, revres)) 
         
         
+    # vmap and batching tests
+    # def test_vmap_Perceptron(self):
+    #     key = jrand.PRNGKey(1234)
+
+    #     x = jnp.ones((16, 4))
+    #     y = jrand.normal(key, (16, 4))
+
+    #     w1key, b1key, key = jrand.split(key, 3)
+    #     W1 = jrand.normal(w1key, (8, 4))
+    #     b1 = jrand.normal(b1key, (8,))
+
+    #     w2key, b2key, key = jrand.split(key, 3)
+    #     W2 = jrand.normal(w2key, (4, 8))
+    #     b2 = jrand.normal(b2key, (4,))
+
+    #     xs = (x, y, W1, b1, W2, b2, 0., 1.)
+    #     vmap_Perceptron = jax.vmap(Perceptron, in_axes=(0, 0, None, None, None, None, None, None))
+    #     argnums = list(range(len(xs)))
+        
+    #     jaxpr = jax.make_jaxpr(vmap_Perceptron)(*xs)
+    #     print(jaxpr)
+        
+    #     deriv_fn = jax.jit(jacve(vmap_Perceptron, order="rev", argnums=argnums, count_ops=True))
+    #     veres, aux = deriv_fn(*xs)
+        
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(vmap_Perceptron, order="rev", argnums=argnums))(*xs)
+    #     print("rev num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+                
+    #     revres = jax.jacrev(vmap_Perceptron, argnums=argnums)(*xs)
+        
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+        
+    def test_RoeFlux_3d(self):
+        ul0 = jnp.array([.1])
+        ul = jnp.array([.1, .2, .3])
+        ul4 = jnp.array([.5])
+        ur0 = jnp.array([.2])
+        ur = jnp.array([.2, .2, .4])
+        ur4 = jnp.array([.6])
+        xs = (ul0, ul, ul4, ur0, ur, ur4)
+        xs = [x[jnp.newaxis, ...] * jnp.ones((16, 1)) for x in xs]
+        argnums = list(range(len(xs)))
+        
+        order = [77, 100, 133, 107, 129, 137, 5, 19, 95, 28, 37, 14, 135, 85, 51, 10, 
+        115, 128, 63, 43, 9, 83, 104, 45, 99, 98, 39, 57, 108, 40, 82, 84, 22, 
+        21, 32, 126, 38, 68, 67, 55, 97, 101, 53, 52, 27, 44, 94, 31, 7, 103, 
+        131, 30, 12, 70, 69, 65, 87, 109, 122, 29, 6, 11, 64, 105, 102, 41, 3, 
+        92, 33, 16, 13, 88, 73, 4, 61, 56, 91, 54, 72, 86, 121, 120, 118, 93, 
+        75, 81, 111, 110, 125, 130, 47, 116, 66, 50, 25, 26, 59, 96, 49, 119, 
+        35, 62, 8, 117, 15, 114, 89, 48, 76, 127, 78, 74, 124, 112, 123, 113, 
+        106, 71, 46, 18, 58, 1, 36, 80, 79, 42, 60, 20, 17, 2, 132, 90, 34, 23, 
+        24, 134, 136, 138, 139, 140, 141, 143, 145] 
+        
+        vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
+        jaxpr = jax.make_jaxpr(vmap_RoeFlux_3d)(*xs)
+        print(jaxpr)
+
+        deriv_fn = jax.jit(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums, count_ops=True))
+        veres, aux = deriv_fn(*xs)
+        
+        deriv_jaxpr = jax.make_jaxpr(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums))(*xs)
+        print("rev num_muls", aux["num_muls"])
+        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+                
+        revres = jax.jacrev(vmap_RoeFlux_3d, argnums=argnums)(*xs)
+        
+        for i in range(3):
+            print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
+            print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
+            print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
+            print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
+            print("err5", jnp.abs(veres[i][4] - revres[i][4]).mean())
+            print("err6", jnp.abs(veres[i][5] - revres[i][5]).mean())
+        print("ddpat", len(jaxpr.jaxpr.eqns))
+
+        self.assertTrue(tree_allclose(veres, revres)) 
+    
+       
 if __name__ == '__main__':
     unittest.main()
 

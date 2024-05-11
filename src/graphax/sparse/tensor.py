@@ -270,7 +270,7 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
-    """                                    
+    """                                   
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
     l = len(lhs.out_dims)
@@ -278,7 +278,6 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     assert lhs.shape[l:] == rhs.shape[:r], f"{lhs.shape} and {rhs.shape} "\
                                         "not compatible for multiplication!"
     
-    print(lhs, rhs)
     res = None
     _lhs = lhs.copy()
     _rhs = rhs.copy()
@@ -291,7 +290,6 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     else:
         res = _mixed_mul(_lhs, _rhs)
 
-    print("res: ", res)
     assert _checkify_tensor(res), f"{res} is not self-consistent!"
     return res
 
@@ -1125,7 +1123,9 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     ldims, rdims = [], []
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
-    count = 0   
+    count = 0 
+    
+    print(lhs, rhs)  
                           
     # Check the dimensionality of the 'out_dims' of both tensors
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
@@ -1219,12 +1219,16 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     _ldims = lhs.out_dims + lhs.primal_dims
     _rdims = rhs.out_dims + rhs.primal_dims
-    
-    for i, (ld, rd) in enumerate(zip(_ldims, _rdims)):
+    print(ltiling, rtiling, _ldims)
+    i = 0
+    for (ld, rd) in zip(_ldims, _rdims):
         if type(ld) is DenseDimension and ld.val_dim is None and rd.val_dim is not None:
             ltiling[i] = ld.size
+            i+= 1
         elif type(rd) is DenseDimension and rd.val_dim is None and ld.val_dim is not None:
+            print(i)
             rtiling[i] = ld.size
+            i += 1
     
     if sum(ltiling) > len(ltiling):
         lhs_val = jnp.tile(lhs_val, ltiling)

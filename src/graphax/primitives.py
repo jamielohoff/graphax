@@ -622,7 +622,7 @@ def broadcast_elemental_rule(primals, **params):
             val_dim = sum([1 for d in new_out_dims[:dim+counter] if d.val_dim is not None])
             non_broadcast_dims.append(val_dim)
             new_out_dims.insert(dim, DenseDimension(dim+counter, 1, val_dim))
-            counter += 1 
+            counter += 1
 
             for d in new_out_dims[dim+counter:]:
                 d.id += 1
@@ -630,7 +630,7 @@ def broadcast_elemental_rule(primals, **params):
                     d.val_dim += 1
                 if type(d) is SparseDimension:
                     _d = new_primal_dims[d.other_id-l]
-                    _d.id += 1
+                    # _d.id += 1
                     d.other_id += 1
                     _d.other_id += 1
                     if _d.val_dim is not None:
@@ -657,12 +657,14 @@ def broadcast_elemental_rule(primals, **params):
                             if d.val_dim not in non_broadcast_dims and type(d) is DenseDimension]
 
         broadcast_dims = [d for d in broadcast_dims if d is not None]
-        if len(broadcast_dims) > 0:
+
+        # TODO check this quick hack in the second argument of the or!
+        if len(broadcast_dims) > 0 or pre.val.shape == ():
             new_val = lax.broadcast_in_dim(pre.val, shape=broadcast_shape, 
                                             broadcast_dimensions=broadcast_dims)
         else:
             new_val = pre.val
-            
+
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
             
     def inverse_broadcast_transform(post, iota):
@@ -825,7 +827,7 @@ def concatenate_elemental_rule(primals, **params):
         new_out_dims = list(copy.deepcopy(pre.out_dims))
         new_primal_dims = list(copy.deepcopy(pre.primal_dims))
         l = len(pre.out_dims)
-        
+                
         d = new_out_dims[dim]
         id = d.id
         idx, _idx = slices[primal]
@@ -846,7 +848,7 @@ def concatenate_elemental_rule(primals, **params):
                 
                 new_out_dims[dim].size = new_val.shape[dim]
             else:
-                # Implement this! It's almost trivial!
+                # TODO Implement this! It's almost trivial!
                 raise NotImplementedError("DenseDimension without `val_dim` not yet supported!")
         else:
             other_id = d.other_id
@@ -885,10 +887,24 @@ def concatenate_elemental_rule(primals, **params):
                 _shape[d.val_dim] = _size
                 _shape[val_dim] = d.size
                 zeros = jnp.zeros(_shape, dtype=jnp.float32) 
+                
+                
+                # Compute `scatter_indices` which describes where in the
+                # `zeros` array we will place `new_val`
+                scatter_indices = [0 for _ in _shape]
+                scatter_indices[d.val_dim] = idx
+                scatter_indices[val_dim] = 0
+                
+                # Compute `update_window_dims` which describes
+                update_window_dims = [n for n in range(len(_shape))] # [0 for _ in _shape]
+                
+                # Compute `scatter_dims_to_operand_dims` which relates the
+                # dimensions of `new_val` to the dimensions of `zeros`
+                scatter_dims_to_operand_dims = [n for n in range(len(_shape))]
                                          
-                scatter_dims = lax.ScatterDimensionNumbers([d.val_dim, val_dim], [], [d.val_dim, val_dim])
+                scatter_dims = lax.ScatterDimensionNumbers(update_window_dims, [], scatter_dims_to_operand_dims)
                 new_val = lax.scatter(zeros, 
-                                    jnp.array([idx, 0]), 
+                                    jnp.array(scatter_indices), 
                                     new_val, 
                                     scatter_dims, 
                                     indices_are_sorted=True,
@@ -916,7 +932,10 @@ def concatenate_elemental_rule(primals, **params):
                 
                 # The following piece of code materialized the particular set
                 # of sparse dimensions related to the concatenation dimension
-                new_val = _materialize_dimensions(pre, [d.id, d.other_id])
+                if pre.val.shape != ():
+                    new_val = _materialize_dimensions(pre, [d.id, d.other_id])
+                else:
+                    new_val = pre.val
                 
                 if iota.shape[0] < d.size or iota.shape[1] < d.size:
                     sub_iota = jnp.eye(d.size, dtype=jnp.float32)
