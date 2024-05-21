@@ -41,7 +41,7 @@ def ada_lif(U, a, S, alpha, beta, rho, threshold):
     return U_next, a_next, S_next
 
 
-# Single SNN forward pass as done in Zenke&Neftci using time-local loss functions (e.g. regression)
+# Single SNN forward pass
 def LIF_SNN(S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, thresh):
     i1 = W1 @ S_in
     U1, a1, s1 = lif(U1, I1, i1, alpha, beta, thresh)
@@ -52,7 +52,7 @@ def LIF_SNN(S_in, S_target, U1, U2, U3, I1, I2, I3, W1, W2, W3, alpha, beta, thr
     return .5*(s3 - S_target)**2, U1, U2, U3, a1, a2, a3
 
 
-# Single SNN forward pass as done in Zenke&Neftci using time-local loss functions (e.g. regression)
+# Single SNN forward pass 
 def ADALIF_SNN(S_in, S_target, U1, U2, U3, a1, a2, a3, W1, W2, W3, alpha, beta, rho, thresh):
     i1 = W1 @ S_in
     U1, a1, s1 = ada_lif(U1, a1, i1, alpha, beta, rho, thresh)

@@ -1,6 +1,6 @@
 import functools as ft
 from functools import wraps
-from typing import Any, Callable, Union, Sequence, Tuple
+from typing import Any, Callable, Union, Sequence
 
 import jax
 import jax.tree_util as jtu
