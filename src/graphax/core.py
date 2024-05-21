@@ -120,8 +120,8 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             _pre_val = pre_val.copy()
             _post_val = post_val.copy()
             
-            # print("Post:", _post_val)
-            # print("Pre:", _pre_val) 
+            print("Post:", _post_val)
+            print("Pre:", _pre_val) 
             
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
@@ -168,7 +168,10 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
                 if len(_edge.pre_transforms) > 0:
                     for transform in _edge.pre_transforms:
                         _edge = transform.apply_inverse(_edge, iota)
-                
+
+                _checkify_tensor(edge_outval)
+                print("Edge_outval:", edge_outval)
+                print("Edge:", _edge)
                 edge_outval += _edge
                 num_add += get_num_adds(edge_outval, _edge)
                 
@@ -187,7 +190,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
     del graph[eqn.outvars[0]]
     if vertex not in vo_vertices:
         del transpose_graph[eqn.outvars[0]]
-    print(vertex, ":", num_mul)
+    # print(vertex, ":", num_mul)
     return num_mul, num_add
 
 

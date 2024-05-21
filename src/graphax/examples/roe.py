@@ -22,7 +22,7 @@ def RoeFlux_1d(ul0, ul1, ul2, ur0, ur1, ur2):
     w1 = jnp.sqrt(ul0) + jnp.sqrt(ur0)
     
     vl = ul1/ul0
-    pl = pressure_1d(ul0, ul1, ul2,)
+    pl = pressure_1d(ul0, ul1, ul2)
     hl = enthalpy_1d(ul0, ul2, pl)
     
     vr = ur1/ur0

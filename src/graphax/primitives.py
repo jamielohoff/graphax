@@ -643,8 +643,9 @@ def broadcast_elemental_rule(primals, **params):
                         d.val_dim += 1
                 else:
                     _d = new_out_dims[d.other_id] 
-                    if _d.id > dim + counter:
-                        _d.id += 1
+                    # if _d.id > dim + counter:
+                    #     _d.id += 1
+
                     if d.other_id < dim:
                         _d.other_id += 1      
                     
@@ -674,15 +675,17 @@ def broadcast_elemental_rule(primals, **params):
         primal_shape = [d.size for d in post.primal_dims]
         _rm_dims = []
         counter = 0
-        
         for dim in rm_dims:
             if new_primal_dims[dim-counter].val_dim is not None:
                 _rm_dims.append(new_primal_dims[dim-counter].val_dim)
             if type(new_primal_dims[dim-counter]) is DenseDimension:
                 has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
+                old_val_dim = new_primal_dims[dim-counter].val_dim
                 del new_primal_dims[dim-counter]
                 for d in new_primal_dims[dim-counter:]:
                     d.id -= 1
+                    if d.val_dim is not None and old_val_dim is not None:
+                        d.val_dim -= 1
                     if type(d) is SparseDimension:
                         _d = new_out_dims[d.other_id]
                         _d.other_id -= 1

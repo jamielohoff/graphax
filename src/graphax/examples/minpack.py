@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.random as jrand
 
 
 # Propane Combustion - Full Formulation
@@ -56,30 +57,40 @@ def HumanHeartDipole(x1, x2, x3, x4, x5, x6, x7, x8):
     return f1, f2, f3, f4, f5, f6, f7, f8
 
 
-def Newton(f, x_0, tol=1e-5, max_iter=15):
-    """
-    A multivariate Newton root-finding routine.
-    Adopted from https://jax.quantecon.org/newtons_method.html
-    """
-    x = x_0
-    f_jac = jax.jacobian(f)
-    @jax.jit
-    def q(x):
-        " Updates the current guess. "
-        return x - jnp.linalg.solve(f_jac(x), f(x))
-    error = tol + 1
-    n = 0
-    # TODO Replace this with a lax while loop
-    while error > tol:
-        n += 1
-        if(n > max_iter):
-            raise Exception('Max iteration reached without convergence')
-        y = q(x)
-        if jnp.any(jnp.isnan(y)):
-            raise Exception('Solution not found with NaN generated')
-        error = jnp.linalg.norm(x - y)
-        x = y
-        print(f'iteration {n}, error = {error}')
-    print('\n' + f'Result = {x} \n')
-    return x
+# Four independent variables as in https://inria.hal.science/inria-00073012/document
+hx, hy = .5, .5 # grid spacings
+l = 6.81
+
+def muL(vij, vip1j, vijp1):
+    return 2./3.*(jnp.exp(vij) + jnp.exp(vip1j) + jnp.exp(vijp1))
+def fL(vij, vip1j, vijp1):
+    return hx*hy/4*( ((vip1j-vij)/hx)**2 + ((vijp1-vij)/hy)**2 -  l*muL(vij, vip1j, vijp1))
+
+def muR(vij, vim1j, vijm1):
+    return 2./3.*(jnp.exp(vij) + jnp.exp(vim1j) + jnp.exp(vijm1))
+def fR(vij, vim1j, vijm1):
+    return hx*hy/4*( ((vim1j-vij)/hx)**2 + ((vijm1-vij)/hy)**2 -  l*muR(vij, vim1j, vijm1)) 
+
+def SteadyStateCombustion(v00, v01, v10, v11):
+    f00 = fL(v00, v10, v01) + fR(v00, v01, v10)
+    f01 = fL(v01, v11, v00) + fR(v01, v00, v11)
+    f10 = fL(v10, v00, v11) + fR(v10, v11, v00)
+    f11 = fL(v11, v01, v10) + fR(v11, v10, v01)
+    return f00 + f01 + f10 + f11
+
+
+def fi(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, yi, ti):
+    out = yi - x1*jnp.exp(-ti*x5)
+    out -= x2*jnp.exp(-(ti-x9)**2*x6)
+    out -= x3*jnp.exp(-(ti-x10)**2*x7)
+    out -= x4*jnp.exp(-(ti-x11)**2*x8)
+    return out
+
+key = jrand.PRNGKey(123)
+num_data_points = 65
+data = jrand.uniform(key, (num_data_points,))
+tis = jnp.arange(0, num_data_points)/10
+
+def GaussianDataFitting(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11):
+    return fi(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, data, tis)
 

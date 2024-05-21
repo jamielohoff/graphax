@@ -73,7 +73,6 @@ class SparseTensor:
     pre_transforms: Sequence[Callable] 
     post_transforms: Sequence[Callable]
     # NOTE: Document pre_transforms and post_transforms. what about addition?
-    
     # NOTE: We always assume that the dimensions are ordered in ascending order
     
     def __init__(self, 
@@ -88,18 +87,20 @@ class SparseTensor:
         out_shape = [d.size for d in out_dims]
         primal_shape = [d.size for d in primal_dims]
         self.shape = tuple(out_shape + primal_shape)
+        self.out_shape = [str(s) for s in out_shape]
+        self.primal_shape = [str(s) for s in primal_shape]
         self.val = val
         self.pre_transforms = pre_transforms
         self.post_transforms = post_transforms
             
     def __repr__(self) -> str:
-        return f"SparseTensor: \n" \
-                f"   shape = {self.shape},\n" \
+        return f"SparseTensor(\n" \
+                f"   shape = (" + f",".join(self.out_shape) + f"|" + f",".join(self.primal_shape) + "),\n" \
                 f"   out_dims = {self.out_dims},\n" \
                 f"   primal_dims = {self.primal_dims},\n" \
                 f"   val = {self.val},\n" \
-                f"   pre_transforms = {self.pre_transforms}\n" \
-                f"   post_transforms = {self.post_transforms}\n"
+                f"   pre_transforms = {self.pre_transforms},\n" \
+                f"   post_transforms = {self.post_transforms})\n"
                 
     def __add__(self, _tensor):
         return _add(self, _tensor)
@@ -277,7 +278,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     r = len(rhs.out_dims) 
     assert lhs.shape[l:] == rhs.shape[:r], f"{lhs.shape} and {rhs.shape} "\
                                         "not compatible for multiplication!"
-    
+
     res = None
     _lhs = lhs.copy()
     _rhs = rhs.copy()
@@ -297,10 +298,10 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO docstring
-    """                                  
+    """                           
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
-    
+
     assert lhs.shape == rhs.shape, f"{lhs.shape} and {rhs.shape} "\
                                         "not compatible for addition!"
     
@@ -995,7 +996,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         
     lbroadcasting_axes, rbroadcasting_axes, pos = [], [], []
     # Then we do broadcasting by extracting diagonals from the contracted tensor
-    # TODO split calculation of Dimension objects and val property!
+    # TODO: split calculation of Dimension objects and val property!
     # NOTE: SparseDimension and a DenseDimension with val_dim = None basically get rid
     # of a single jnp.diagonal call!
     for (ld, rd) in zip(lhs.primal_dims, rhs.out_dims):
@@ -1099,9 +1100,19 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 def _materialize_dimensions(st: SparseTensor, dims: Sequence[int]) -> Array:
     if len(dims) == 0:
         return st.val
-    dims = sorted(dims, reverse=True)
-    dims = [d if d <= st.val.ndim else -1 for d in dims]
-    return jnp.expand_dims(st.val, axis=dims)
+    dims = sorted(dims) # reverse=True
+    # dims = [d if d <= st.val.ndim else -1 for d in dims]
+    _dims, counter = [], st.val.ndim
+    for d in dims:
+        print(d)
+        if d <= st.val.ndim:
+            _dims.append(d)
+            counter += 1
+        else:
+            _dims.append(counter)
+            counter += 1
+    print(_dims)
+    return jnp.expand_dims(st.val, axis=_dims)
 
 
 def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
@@ -1124,9 +1135,7 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
     count = 0 
-    
-    print(lhs, rhs)  
-                          
+                              
     # Check the dimensionality of the 'out_dims' of both tensors
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
         if ld.val_dim is None and rd.val_dim is None:
@@ -1199,34 +1208,34 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             elif type(ld) is SparseDimension:
                 _lshape.append(ld.size)
                 if ld.val_dim is not None:
-                    ldims.append(dim)
+                    ldims.append(dim) # -1 # TODO fix this error!
                 _rshape.append(1)
             elif type(rd) is SparseDimension:
                 _rshape.append(rd.size)
                 if rd.val_dim is not None:
-                    rdims.append(dim)
+                    rdims.append(dim) # -1 # TODO fix this error!
                 _lshape.append(1)
             else:
                 _lshape.append(1)
                 _rshape.append(1)
             new_primal_dims.append(DenseDimension(ld.id, ld.size, dim))
                         
+    print(ldims, rdims)
     lhs_val = _materialize_dimensions(lhs, ldims)
     rhs_val = _materialize_dimensions(rhs, rdims)
+    # print(lhs_val.shape, rhs_val.shape)
     
     ltiling = [1]*len(lhs_val.shape)
     rtiling = [1]*len(rhs_val.shape)
     
     _ldims = lhs.out_dims + lhs.primal_dims
     _rdims = rhs.out_dims + rhs.primal_dims
-    print(ltiling, rtiling, _ldims)
     i = 0
     for (ld, rd) in zip(_ldims, _rdims):
         if type(ld) is DenseDimension and ld.val_dim is None and rd.val_dim is not None:
             ltiling[i] = ld.size
             i+= 1
         elif type(rd) is DenseDimension and rd.val_dim is None and ld.val_dim is not None:
-            print(i)
             rtiling[i] = ld.size
             i += 1
     

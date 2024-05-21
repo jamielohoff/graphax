@@ -20,7 +20,7 @@ def BlackScholes(S, K, r, sigma, T):
 
 # Calculating the Jacobian of this gives the second-order greeks
 def BlackScholes_Jacobian(S, K, r, sigma, T):
-    return jax.jacrev(BlackScholes, argnums=(0, 1, 2, 3, 4))(S, K, r, sigma, T)
+    return jacve(BlackScholes, order="rev", argnums=(0, 1, 2, 3, 4))(S, K, r, sigma, T)
 
 # jaxpr = jax.make_jaxpr(BlackScholes_Jacobian)(1., 1., 1., 1., 1.)
 # print(len(jaxpr.jaxpr.eqns))

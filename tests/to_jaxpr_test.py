@@ -11,7 +11,7 @@ from jax.tree_util import tree_map
 from graphax import jacve, tree_allclose
 from graphax.examples import (Simple, Helmholtz, f, g, RoeFlux_1d, RobotArm_6DOF,
                               EncoderDecoder, Lighthouse, RoeFlux_3d, Perceptron,
-                              Encoder)
+                              Encoder, BlackScholes_Jacobian)
 from graphax.sparse.utils import count_muls, count_muls_jaxpr
 
 
@@ -575,19 +575,19 @@ class GeneralADTest(unittest.TestCase):
     #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
         
     #     # TODO this order is outdated as the function has changed slightly
-    #     # mM_order = [43, 41, 38, 36, 35, 37, 49, 14, 22, 24, 28, 32, 42, 47, 50, 
-    #     #             53, 56, 57, 58, 61, 62, 64, 70, 72, 76, 80, 6, 10, 15, 18, 
-    #     #             25, 27, 26, 45, 55, 60, 65, 13, 19, 30, 63, 9, 11, 17, 44, 
-    #     #             59, 68, 78, 20, 31, 34, 40, 1, 8, 33, 39, 48, 73, 77, 46, 
-    #     #             67, 4, 7, 54, 29, 51, 12, 23, 66, 16, 75, 52, 5, 21, 3, 2]
+    #     order = [33, 8, 16, 77, 15, 62, 40, 58, 14, 76, 42, 60, 54, 34, 61, 72, 
+    #             37, 55, 18, 75, 36, 74, 65, 26, 35, 25, 66, 38, 64, 59, 53, 20, 
+    #             27, 47, 10, 69, 23, 11, 41, 79, 9, 7, 12, 63, 71, 24, 67, 51, 4, 
+    #             1, 21, 3, 6, 2, 49, 13, 44, 46, 56, 17, 39, 57, 43, 32, 52, 30, 
+    #             48, 31, 5, 22, 45, 19, 50, 28, 29] 
 
-    #     # jac_mM = jax.jit(jacve(f, order=mM_order, argnums=argnums, count_ops=True))
-    #     # veres, aux = jac_mM(*xs)
+    #     jac_mM = jax.jit(jacve(f, order=order, argnums=argnums, count_ops=True))
+    #     veres, aux = jac_mM(*xs)
         
-    #     # deriv_jaxpr = jax.make_jaxpr(jacve(f, order=mM_order, argnums=argnums))(*xs)
-    #     # # print(deriv_jaxpr)
-    #     # print("mM num_muls", aux["num_muls"])
-    #     # print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(f, order=order, argnums=argnums))(*xs)
+    #     # print(deriv_jaxpr)
+    #     print("mM num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
         
     #     revres = jax.jacrev(f, argnums=argnums)(*xs)
         
@@ -622,6 +622,7 @@ class GeneralADTest(unittest.TestCase):
     #     # self.assertTrue(tree_allclose(veres, revres)) 
         
     # def test_RoeFlux_3d(self):
+    #     batchsize = 16
     #     ul0 = jnp.array([.1])
     #     ul = jnp.array([.1, .2, .3])
     #     ul4 = jnp.array([.5])
@@ -630,19 +631,32 @@ class GeneralADTest(unittest.TestCase):
     #     ur4 = jnp.array([.6])
     #     xs = (ul0, ul, ul4, ur0, ur, ur4)
     #     argnums = list(range(len(xs)))
+    #     xs = [jnp.tile(x[jnp.newaxis, ...], (batchsize, 1)) for x in xs]
+
         
-    #     jaxpr = jax.make_jaxpr(RoeFlux_3d)(*xs)
+    #     order = [124, 136, 56, 128, 78, 24, 1, 54, 101, 127, 121, 140, 47, 135, 67, 34, 
+    #      111, 32, 100, 119, 99, 114, 125, 141, 122, 45, 65, 59, 117, 89, 116, 
+    #      60, 42, 28, 74, 85, 11, 53, 36, 30, 108, 113, 55, 109, 129, 64, 91, 
+    #      14, 133, 5, 10, 132, 87, 139, 110, 12, 131, 72, 8, 61, 88, 107, 6, 29, 
+    #      57, 96, 118, 105, 71, 77, 112, 66, 75, 84, 143, 123, 90, 94, 137, 104, 
+    #      69, 23, 22, 62, 58, 50, 130, 31, 106, 39, 48, 49, 98, 134, 93, 138, 
+    #      126, 68, 115, 80, 102, 92, 79, 52, 16, 120, 95, 76, 19, 25, 73, 21, 70, 
+    #      38, 35, 20, 86, 41, 4, 103, 43, 27, 3, 40, 9, 83, 13, 18, 37, 51, 46, 
+    #      7, 81, 97, 63, 44, 2, 33, 82, 26, 15, 17, 145] 
+        
+    #     vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
+    #     jaxpr = jax.make_jaxpr(vmap_RoeFlux_3d)(*xs)
     #     print(jaxpr)
     #     print(len(jaxpr.jaxpr.eqns))
         
-    #     deriv_fn = jax.jit(jacve(RoeFlux_3d, order="fwd", argnums=argnums, count_ops=True))
+    #     deriv_fn = jax.jit(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums, count_ops=True))
     #     veres, aux = deriv_fn(*xs)
         
-    #     deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_3d, order="fwd", argnums=argnums))(*xs)
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums))(*xs)
     #     print("fwd num_muls", aux["num_muls"])
     #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
-    #     revres = jax.jacrev(RoeFlux_3d, argnums=argnums)(*xs)
+    #     revres = jax.jacrev(vmap_RoeFlux_3d, argnums=argnums)(*xs)
         
     #     for i in range(3):
     #         print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
@@ -770,46 +784,60 @@ class GeneralADTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    # def test_Encoder(self):
-    #     key = jrand.PRNGKey(250197)
-    #     x = jnp.ones((4, 4))
-    #     y = jrand.normal(key, (2, 4))
+    def test_Encoder(self):
+        key = jrand.PRNGKey(250197)
+        x = jnp.ones((4, 4))
+        y = jrand.normal(key, (2, 4))
 
-    #     wq1key, wk1key, wv1key, key = jrand.split(key, 4)
-    #     WQ1 = jrand.normal(wq1key, (4, 4))
-    #     WK1 = jrand.normal(wk1key, (4, 4))
-    #     WV1 = jrand.normal(wv1key, (4, 4))
+        wq1key, wk1key, wv1key, key = jrand.split(key, 4)
+        WQ1 = jrand.normal(wq1key, (4, 4))
+        WK1 = jrand.normal(wk1key, (4, 4))
+        WV1 = jrand.normal(wv1key, (4, 4))
 
-    #     wq2key, wk2key, wv2key, key = jrand.split(key, 4)
-    #     WQ2 = jrand.normal(wq2key, (4, 4))
-    #     WK2 = jrand.normal(wk2key, (4, 4))
-    #     WV2 = jrand.normal(wv2key, (4, 4))
+        wq2key, wk2key, wv2key, key = jrand.split(key, 4)
+        WQ2 = jrand.normal(wq2key, (4, 4))
+        WK2 = jrand.normal(wk2key, (4, 4))
+        WV2 = jrand.normal(wv2key, (4, 4))
 
-    #     w1key, w2key, b1key, b2key = jrand.split(key, 4)
-    #     W1 = jrand.normal(w1key, (4, 4))
-    #     b1 = jrand.normal(b1key, (4,))
+        w1key, w2key, b1key, b2key = jrand.split(key, 4)
+        W1 = jrand.normal(w1key, (4, 4))
+        b1 = jrand.normal(b1key, (4,))
 
-    #     W2 = jrand.normal(w2key, (2, 4))
-    #     b2 = jrand.normal(b2key, (2, 1))
+        W2 = jrand.normal(w2key, (2, 4))
+        b2 = jrand.normal(b2key, (2, 1))
         
-    #     xs = (x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, 0., 1., 0., 1.)
+        xs = (x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, 0., 1., 0., 1.)
         
-    #     argnums = list(range(len(xs)))
+        argnums = list(range(len(xs)))
         
-    #     jaxpr = jax.make_jaxpr(Encoder)(*xs)
-    #     print(jaxpr)
-    #     print(len(jaxpr.jaxpr.eqns))
+        order = [60, 81, 8, 59, 58, 41, 69, 85, 1, 46, 25, 51, 37, 17, 56, 22, 
+                 12, 75, 78, 82, 7, 66, 47, 64, 20, 88, 65, 31, 38, 6, 63, 71, 
+                 87, 19, 90, 24, 80, 83, 27, 48, 77, 49, 29, 23, 76, 9, 79, 67, 
+                 61, 26, 89, 86, 18, 34, 39, 84, 74, 70, 30, 36, 35, 72, 50, 73, 
+                 68, 62, 57, 28, 5, 55, 13, 11, 54, 53, 43, 52, 45, 44, 42, 40, 
+                 33, 32, 21, 16, 15, 14, 3, 10, 4, 2]
         
-    #     deriv_fn = jax.jit(jacve(Encoder, order="rev", argnums=argnums, count_ops=True))
-    #     veres, aux = deriv_fn(*xs)
+        # order = [7, 6, 8, 47, 46, 48, 81, 80, 82, 11, 16, 20, 21, 22, 25, 29, 
+        #         31, 36, 51, 56, 60, 61, 62, 65, 69, 71, 75, 85, 88, 90, 89, 
+        #         9, 12, 10, 26, 37, 38, 39, 49, 52, 50, 66, 76, 77, 78, 79, 
+        #         83, 86, 84, 87, 24, 35, 64, 15, 55, 33, 74, 73, 4, 13, 17, 
+        #         27, 34, 44, 53, 57, 67, 19, 59, 1, 2, 3, 18, 23, 41, 42, 43, 
+        #         58, 63, 30, 70, 28, 68, 5, 45, 32, 14, 54, 72, 40]
+        # order = "fwd"
+        jaxpr = jax.make_jaxpr(Encoder)(*xs)
+        print(jaxpr)
+        print(len(jaxpr.jaxpr.eqns))
         
-    #     deriv_jaxpr = jax.make_jaxpr(jacve(Encoder, order="rev", argnums=argnums))(*xs)
-    #     print("fwd num_muls", aux["num_muls"])
-    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+        deriv_fn = jax.jit(jacve(Encoder, order=order, argnums=argnums, count_ops=True))
+        veres, aux = deriv_fn(*xs)
+        
+        deriv_jaxpr = jax.make_jaxpr(jacve(Encoder, order=order, argnums=argnums))(*xs)
+        print("fwd num_muls", aux["num_muls"])
+        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
-    #     revres = jax.jacrev(Encoder, argnums=argnums)(*xs)
+        revres = jax.jacrev(Encoder, argnums=argnums)(*xs)
         
-    #     self.assertTrue(tree_allclose(veres, revres)) 
+        self.assertTrue(tree_allclose(veres, revres)) 
         
         
     # vmap and batching tests
@@ -845,51 +873,89 @@ class GeneralADTest(unittest.TestCase):
         
     #     self.assertTrue(tree_allclose(veres, revres)) 
         
-    def test_RoeFlux_3d(self):
-        ul0 = jnp.array([.1])
-        ul = jnp.array([.1, .2, .3])
-        ul4 = jnp.array([.5])
-        ur0 = jnp.array([.2])
-        ur = jnp.array([.2, .2, .4])
-        ur4 = jnp.array([.6])
-        xs = (ul0, ul, ul4, ur0, ur, ur4)
-        xs = [x[jnp.newaxis, ...] * jnp.ones((16, 1)) for x in xs]
-        argnums = list(range(len(xs)))
+    # def test_RoeFlux_3d(self):
+    #     ul0 = jnp.array([.1])
+    #     ul = jnp.array([.1, .2, .3])
+    #     ul4 = jnp.array([.5])
+    #     ur0 = jnp.array([.2])
+    #     ur = jnp.array([.2, .2, .4])
+    #     ur4 = jnp.array([.6])
+    #     xs = (ul0, ul, ul4, ur0, ur, ur4)
+    #     xs = [x[jnp.newaxis, ...] * jnp.ones((16, 1)) for x in xs]
+    #     argnums = list(range(len(xs)))
         
-        order = [77, 100, 133, 107, 129, 137, 5, 19, 95, 28, 37, 14, 135, 85, 51, 10, 
-        115, 128, 63, 43, 9, 83, 104, 45, 99, 98, 39, 57, 108, 40, 82, 84, 22, 
-        21, 32, 126, 38, 68, 67, 55, 97, 101, 53, 52, 27, 44, 94, 31, 7, 103, 
-        131, 30, 12, 70, 69, 65, 87, 109, 122, 29, 6, 11, 64, 105, 102, 41, 3, 
-        92, 33, 16, 13, 88, 73, 4, 61, 56, 91, 54, 72, 86, 121, 120, 118, 93, 
-        75, 81, 111, 110, 125, 130, 47, 116, 66, 50, 25, 26, 59, 96, 49, 119, 
-        35, 62, 8, 117, 15, 114, 89, 48, 76, 127, 78, 74, 124, 112, 123, 113, 
-        106, 71, 46, 18, 58, 1, 36, 80, 79, 42, 60, 20, 17, 2, 132, 90, 34, 23, 
-        24, 134, 136, 138, 139, 140, 141, 143, 145] 
+    #     order = [77, 100, 133, 107, 129, 137, 5, 19, 95, 28, 37, 14, 135, 85, 51, 10, 
+    #     115, 128, 63, 43, 9, 83, 104, 45, 99, 98, 39, 57, 108, 40, 82, 84, 22, 
+    #     21, 32, 126, 38, 68, 67, 55, 97, 101, 53, 52, 27, 44, 94, 31, 7, 103, 
+    #     131, 30, 12, 70, 69, 65, 87, 109, 122, 29, 6, 11, 64, 105, 102, 41, 3, 
+    #     92, 33, 16, 13, 88, 73, 4, 61, 56, 91, 54, 72, 86, 121, 120, 118, 93, 
+    #     75, 81, 111, 110, 125, 130, 47, 116, 66, 50, 25, 26, 59, 96, 49, 119, 
+    #     35, 62, 8, 117, 15, 114, 89, 48, 76, 127, 78, 74, 124, 112, 123, 113, 
+    #     106, 71, 46, 18, 58, 1, 36, 80, 79, 42, 60, 20, 17, 2, 132, 90, 34, 23, 
+    #     24, 134, 136, 138, 139, 140, 141, 143, 145] 
         
-        vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
-        jaxpr = jax.make_jaxpr(vmap_RoeFlux_3d)(*xs)
-        print(jaxpr)
+    #     vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
+    #     jaxpr = jax.make_jaxpr(vmap_RoeFlux_3d)(*xs)
+    #     print(jaxpr)
 
-        deriv_fn = jax.jit(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums, count_ops=True))
-        veres, aux = deriv_fn(*xs)
+    #     deriv_fn = jax.jit(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums, count_ops=True))
+    #     veres, aux = deriv_fn(*xs)
         
-        deriv_jaxpr = jax.make_jaxpr(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums))(*xs)
+    #     print("rev num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
-        revres = jax.jacrev(vmap_RoeFlux_3d, argnums=argnums)(*xs)
+    #     revres = jax.jacrev(vmap_RoeFlux_3d, argnums=argnums)(*xs)
         
-        for i in range(3):
-            print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
-            print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
-            print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
-            print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
-            print("err5", jnp.abs(veres[i][4] - revres[i][4]).mean())
-            print("err6", jnp.abs(veres[i][5] - revres[i][5]).mean())
-        print("ddpat", len(jaxpr.jaxpr.eqns))
+    #     for i in range(3):
+    #         print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
+    #         print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
+    #         print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
+    #         print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
+    #         print("err5", jnp.abs(veres[i][4] - revres[i][4]).mean())
+    #         print("err6", jnp.abs(veres[i][5] - revres[i][5]).mean())
+    #     print("ddpat", len(jaxpr.jaxpr.eqns))
 
-        self.assertTrue(tree_allclose(veres, revres)) 
-    
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+        
+    # def test_BlackScholes_Jacobian(self):
+    #     xs = [jnp.ones((1,)) for _ in range(5)]
+    #     argnums = list(range(len(xs)))
+        
+    #     order = [16, 15, 31, 33, 36, 37, 38, 40, 42, 43, 41, 49, 50, 54, 55, 57,
+    #              58, 59, 61, 63, 64, 62, 70, 71, 75, 76, 79, 80, 89, 96, 5, 6, 
+    #              7, 9, 10, 11, 12, 13, 20, 23, 24, 25, 28, 44, 45, 46, 47, 48, 
+    #              51, 52, 65, 66, 67, 68, 69, 72, 73, 85, 86, 92, 93, 95, 100, 
+    #              101, 115, 120, 1, 8, 14, 17, 26, 29, 32, 34, 39, 53, 56, 60, 
+    #              74, 77, 81, 82, 83, 84, 88, 90, 91, 98, 99, 103, 104, 105, 110, 
+    #              112, 114, 116, 117, 118, 124, 128, 131, 133, 19, 27, 94, 106, 
+    #              111, 113, 121, 126, 4, 78, 107, 2, 21, 123, 119, 18, 102, 130, 
+    #              30, 35, 97, 109, 87, 125, 3, 22, 108]
+
+    #     vmap_BSJ = jax.vmap(BlackScholes_Jacobian)
+    #     jaxpr = jax.make_jaxpr(vmap_BSJ)(*xs)
+    #     print(jaxpr)
+    #     print("ddpat", len(jaxpr.jaxpr.eqns), len(order))
+
+    #     deriv_fn = jax.jit(jacve(vmap_BSJ, order=order, argnums=argnums, count_ops=True))
+    #     veres, aux = deriv_fn(*xs)
+        
+    #     deriv_jaxpr = jax.make_jaxpr(jacve(vmap_BSJ, order=order, argnums=argnums))(*xs)
+    #     print("rev num_muls", aux["num_muls"])
+    #     print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
+                
+    #     revres = jax.jacrev(vmap_BSJ, argnums=argnums)(*xs)
+        
+    #     for i in range(5):
+    #         print("err1", jnp.abs(veres[i][0] - revres[i][0]).mean())
+    #         print("err2", jnp.abs(veres[i][1] - revres[i][1]).mean())
+    #         print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
+    #         print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
+    #         print("err5", jnp.abs(veres[i][4] - revres[i][4]).mean())
+    #     print("ddpat", len(jaxpr.jaxpr.eqns))
+
+    #     self.assertTrue(tree_allclose(veres, revres)) 
+        
        
 if __name__ == '__main__':
     unittest.main()
