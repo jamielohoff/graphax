@@ -5,7 +5,6 @@ import jax.nn as jnn
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
-import jax.tree_util as jtu
 
 import numpy as np
 
@@ -39,7 +38,7 @@ def glorot(key, shape):
     return jrand.normal(key, shape)*jnp.sqrt(2/(shape[0] + shape[1]))
 
 
-### GELU activation function
+### GeLU activation function
 def gelu(x):
     return x/2*(1 + lax.erf(x/jnp.sqrt(2.0)))
 
@@ -50,23 +49,14 @@ def softmax_attn(q, k, v):
     return jnn.softmax(a, axis=0) @ v
 
 def _proj_head(W, X, num_heads: int = 8):
-    return jnp.reshape(W @ X, (X.shape[-1], num_heads, -1))
+    return jnp.reshape(W @ X, (X.shape[-1], num_heads, -1)) 
 
-def multihead_softmax_attention(X, WQ, WK, WV, WO, num_heads: int = 8):
-    q = _proj_head(WQ, X, num_heads=num_heads)
-    k = _proj_head(WK, X, num_heads=num_heads)
-    v = _proj_head(WV, X, num_heads=num_heads)
+def efficient_multihead_softmax_attention(X, WQKV, WO, num_heads: int = 8):
+    qkv = _proj_head(WQKV, X, num_heads=num_heads)
+    q, k, v = jnp.split(qkv, 3, axis=-1)
     out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=1)(q, k, v)
     out = jnp.reshape(out, (-1, X.shape[-1]))
-    return WO @ out    
-
-# TODO make this work with graphax.
-def efficient_multihead_softmax_attention(X, W, WO, num_heads: int = 8):
-    qkv = _proj_head(W, X, num_heads=num_heads)
-    q, k, v = jnp.split(qkv, 3, axis=-1) # NOTE: implementing like this requires the support for multiple outputs in graphax
-    out = jax.vmap(softmax_attn, in_axes=(1, 1, 1), out_axes=1)(q, k, v)
-    out = jnp.reshape(out, (X.shape[-1], -1))
-    return WO @ out  
+    return WO @ out 
 
 
 ### MLP implementation
@@ -92,9 +82,9 @@ def layer_norm(X):
 
 
 ### Attention Block
-def multihead_attention_block(X, WQ, WK, WV, WO, W1, b1, W2, b2):
+def multihead_attention_block(X, WQKV, WO, W1, b1, W2, b2):
     out = layer_norm(X)
-    out = multihead_softmax_attention(out, WQ, WK, WV, WO)
+    out = efficient_multihead_softmax_attention(out, WQKV, WO)
     out = out + X
     out = layer_norm(out)
     out = MLP(out, W1, b1, W2, b2)
@@ -106,10 +96,8 @@ def make_weights(key, num_attn_blocks: int = 2, dk: int = 512, num_heads: int = 
     weights = []
     for _ in range(num_attn_blocks):
         # Weigths for self-attention
-        qkey, kkey, vkey, okey, key = jrand.split(key, 5)
-        WQ = glorot(qkey, (dk*num_heads, embedding_dim))
-        WK = glorot(kkey, (dk*num_heads, embedding_dim))
-        WV = glorot(vkey, (dk*num_heads, embedding_dim))
+        qkvkey, okey, key = jrand.split(key, 5)
+        WQKV = glorot(qkvkey, (dk*num_heads*3, embedding_dim))
         WO = glorot(okey, (embedding_dim, dk*num_heads))
         
         # Weights for MLP layers
@@ -118,7 +106,7 @@ def make_weights(key, num_attn_blocks: int = 2, dk: int = 512, num_heads: int = 
         b1 = jnp.zeros((1024,))
         W2 = glorot(W2key, (embedding_dim, 1024))
         b2 = jnp.zeros((embedding_dim,))
-        
-        weights.extend([WQ, WK, WV, WO, W1, b1, W2, b2])
+
+        weights.extend([WQKV, WO, W1, b1, W2, b2])
     return weights
 

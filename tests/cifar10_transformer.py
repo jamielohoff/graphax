@@ -24,16 +24,18 @@ from _transformer import (multihead_attention_block, glorot, gelu,
 
 
 epochs = 25
-batchsize = 256
-num_heads = 8
-dk = 1024
+batchsize = 16
+num_heads = 8 # this seems to impact performance a lot
+dk = 64
 
 tiling = (4, 4)
 input_shape = (3, 32, 32)
 embedding_dim = input_shape[0]*input_shape[1]*input_shape[2]//(tiling[0]*tiling[1])
 seq_len = tiling[0]*tiling[1] + 1
 
-transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+transform = transforms.Compose([transforms.ToTensor(), 
+                                transforms.Normalize((0.5, 0.5, 0.5), 
+                                                    (0.5, 0.5, 0.5))])
 
 trainset = datasets.CIFAR10(root='./data', train=True, transform=transform)
 trainloader = DataLoader(trainset, batch_size=batchsize, shuffle=True, num_workers=4)
@@ -63,41 +65,40 @@ positional_encoding = make_positional_encoding(seq_len, embedding_dim)
 ### Transformer model
 @partial(jax.vmap, in_axes=(0, None, None, None, None, None, None, None, None, 
                             None, None, None, None, None, None, None, None, None,
-                            None, None, None, None, None, None, None, None,
-                            None, None, None, None))
-def transformer(X, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
-                    WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
-                    W7, b7, W8, b8):
+                            None, None, None, None, None, None))
+def transformer(X, CT, WQKV1, WO1, W1, b1, W2, b2, 
+                        WQKV2, WO2, W3, b3, W4, b4, 
+                        WQKV3, WO3, W5, b5, W6, b6,
+                        W7, b7, W8, b8):
     X = jnp.concatenate((CT, X), axis=1)
     X = positional_encoding(X)
-    X = multihead_attention_block(X, WQ1, WK1, WV1, WO1, W1, b1, W2, b2)
-    X = multihead_attention_block(X, WQ2, WK2, WV2, WO2, W3, b3, W4, b4)
-    X = multihead_attention_block(X, WQ3, WK3, WV3, WO3, W5, b5, W6, b6)
+    X = multihead_attention_block(X, WQKV1, WO1, W1, b1, W2, b2)
+    X = multihead_attention_block(X, WQKV2, WO2, W3, b3, W4, b4)
+    X = multihead_attention_block(X, WQKV3, WO3, W5, b5, W6, b6)
     
     X = X[:, 0]
     return W8 @ gelu(W7 @ X + b7) + b8
 
 
-def model(X, labels, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
-                WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
-                W7, b7, W8, b8):
-    out = transformer(X, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                    WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
-                    WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
-                    W7, b7, W8, b8)
+def model(X, labels, CT, WQKV1, WO1, W1, b1, W2, b2, 
+                        WQKV2, WO2, W3, b3, W4, b4, 
+                        WQKV3, WO3, W5, b5, W6, b6,
+                        W7, b7, W8, b8):
+    out = transformer(X, CT, WQKV1, WO1, W1, b1, W2, b2, 
+                            WQKV2, WO2, W3, b3, W4, b4, 
+                            WQKV3, WO3, W5, b5, W6, b6,
+                            W7, b7, W8, b8)
     return softmax_ce_loss(out, labels)
 
 
-def batched_model(X, labels, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
-                WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
-                W7, b7, W8, b8):
-    return model(X, labels, CT, WQ1, WK1, WV1, WO1, W1, b1, W2, b2, 
-                WQ2, WK2, WV2, WO2, W3, b3, W4, b4, 
-                WQ3, WK3, WV3, WO3, W5, b5, W6, b6,
-                W7, b7, W8, b8).sum()
+def batched_model(X, labels, CT, WQKV1, WO1, W1, b1, W2, b2, 
+                                WQKV2, WO2, W3, b3, W4, b4, 
+                                WQKV3, WO3, W5, b5, W6, b6,
+                                W7, b7, W8, b8):
+    return model(X, labels, CT, WQKV1, WO1, W1, b1, W2, b2, 
+                                WQKV2, WO2, W3, b3, W4, b4, 
+                                WQKV3, WO3, W5, b5, W6, b6,
+                                W7, b7, W8, b8).sum()
     
 
 ### Function to subdivide image into tiles for vision transformer
@@ -123,19 +124,19 @@ def train(batch, labels, weights, opt_state):
     xs = subdivide(batch)
     argnums = range(2, len(weights) + 2)
     loss = batched_model(xs, one_hot_labels, *weights)
-    # grads = jax.jacrev(batched_model, argnums=argnums)(xs, one_hot_labels, *weights)
+
     grads = gx.jacve(batched_model, order="rev", argnums=argnums)(xs, one_hot_labels, *weights)
+    _grads = jax.jacrev(batched_model, argnums=argnums)(xs, one_hot_labels, *weights)
             
+    close = gx.tree_allclose(grads, _grads)
+    jax.debug.print("Close: {x}", x=close)
+    
     updates, opt_state = optim.update(grads, opt_state)
     weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
     return loss, weights
 
 optim = optax.adam(1e-4)
 opt_state = optim.init(weights)
-
-x = jnp.ones((batchsize, 3, 32, 32))
-y = jnp.ones((batchsize, 10))
-train(x, y, weights, opt_state)
 
 ### Training loop
 st = time.time()
