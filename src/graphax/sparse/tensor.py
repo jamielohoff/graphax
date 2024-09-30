@@ -3,7 +3,6 @@ Sparse tensor algebra implementation
 """
 import copy
 from typing import Callable, Sequence, Tuple, Union
-from functools import reduce
 
 import jax
 import jax.lax as lax
@@ -116,7 +115,8 @@ class SparseTensor:
         replicating the tensor `d.size` times using `jnp.tile`.
 
         Args:
-            iota (Array): _description_
+            iota (Array): The Kronecker matrix/tensor that is used to 
+                materialize the tensor.
 
         Returns:
             Array: Dense representation of the sparse tensor.
@@ -171,10 +171,10 @@ def _checkify_tensor(st: SparseTensor) -> bool:
     are ordered correctly and sizes match the shape of `val`.
 
     Args:
-        st (SparseTensor): _description_
+        st (SparseTensor): SparseTensor object we want to validate.
 
     Returns:
-        bool: _description_
+        bool: True if the `SparseTensor` object is consistent.
     """
     # Check if d.size matches val.shape[d.val_dim] for all d
     matching_size = all([d.size == st.val.shape[d.val_dim] 
@@ -256,7 +256,6 @@ def _get_fully_materialized_shape(st: SparseTensor) -> Tuple[int]:
 
     return out_shape + primal_shape
 
-    
     
 def _is_pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     return all([True if type(r) is DenseDimension and type(l) is DenseDimension
@@ -776,7 +775,17 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     
 def _get_val_dim(st: SparseTensor, id: int) -> int:
-    """TODO add docstring
+    """Function to get the `val_dim` of both `SparseDimension` objects in the 
+    `out_dims` and `primal_dims` lists of a `SparseTensor` object.
+    
+    Args:
+        st (SparseTensor): SparseTensor object whose `val_dim` we want to know.
+        id (int): `SparseDimension` object with id `id` we want to compute the 
+                `val_dim` for.
+
+    Returns:
+        int: The `val_dim` of the `SparseDimension` object with id `id`.
+    
     """
     dims = st.out_dims + st.primal_dims
     i = 0
@@ -791,7 +800,17 @@ def _get_val_dim(st: SparseTensor, id: int) -> int:
 
 
 def _get_val_dim_when_swapped(st: SparseTensor, id: int) -> int:
-    """TODO add docstring
+    """ Function to get the `val_dim` of both `SparseDimension` objects in the
+    `out_dims` and `primal_dims` lists of a `SparseTensor` object where the axes
+    have been swapped.
+    
+    Args:
+        st (SparseTensor): SparseTensor object whose `val_dim` we want to know.
+        id (int): `SparseDimension` object with id `id` we want to compute the 
+                `val_dim` for.
+                
+    Returns:
+        int: The `val_dim` of the `SparseDimension` object with id `id`.
     """
     dims = st.out_dims + st.primal_dims
     i = 0
@@ -960,11 +979,14 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     TODO write code for DenseDimension with val_dim = None
 
     Args:
-        lhs (SparseTensor): _description_
-        rhs (SparseTensor): _description_
+        lhs (SparseTensor): SparseTensor object whose `val` property we want to
+                            multiply with `rhs.val`.
+        rhs (SparseTensor): SparseTensor object whose `val` property we want to
+                            multiply with `lhs.val`.
 
     Returns:
-        SparseTensor: _description_
+        SparseTensor: SparseTensor object with `val` property resulting from
+                        the mixed multiplication of `lhs.val` and `rhs.val`.
     """
     new_out_dims, new_primal_dims = [], []
     l, r = len(lhs.out_dims), len(rhs.out_dims)
@@ -1098,20 +1120,34 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
 
 def _materialize_dimensions(st: SparseTensor, dims: Sequence[int]) -> Array:
+    """Function that materializes the `val` property of a `SparseTensor` object
+    along a given set of axes. This is necessary to enable broadcasting multiplication
+    of two `SparseTensor` objects where one of them has a `DenseDimension` object
+    in its `out_dims` list and the other one has a `SparseDimension` object in
+    the corresponding `primal_dims` list or vice versa.
+    
+
+    Args:
+        st (SparseTensor): The `SparseTensor` object whose `val` property we want
+                            to materialize along the axes given in `dims`.
+        dims (Sequence[int]): The axes along which we want to materialize the `val`
+                                property of `st`.
+
+    Returns:
+        Array: The `val` property of `st` materialized along the axes given in `dims`.
+    """
     if len(dims) == 0:
         return st.val
     dims = sorted(dims) # reverse=True
     # dims = [d if d <= st.val.ndim else -1 for d in dims]
     _dims, counter = [], st.val.ndim
     for d in dims:
-        print(d)
         if d <= st.val.ndim:
             _dims.append(d)
             counter += 1
         else:
             _dims.append(counter)
             counter += 1
-    print(_dims)
     return jnp.expand_dims(st.val, axis=_dims)
 
 
@@ -1220,10 +1256,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                 _rshape.append(1)
             new_primal_dims.append(DenseDimension(ld.id, ld.size, dim))
                         
-    print(ldims, rdims)
     lhs_val = _materialize_dimensions(lhs, ldims)
     rhs_val = _materialize_dimensions(rhs, rdims)
-    # print(lhs_val.shape, rhs_val.shape)
     
     ltiling = [1]*len(lhs_val.shape)
     rtiling = [1]*len(rhs_val.shape)
@@ -1303,8 +1337,18 @@ def get_num_muls(lhs: SparseTensor, rhs: SparseTensor) -> int:
 
 # TODO fix this, algorithm might not be correct
 def get_num_adds(lhs: SparseTensor, rhs: SparseTensor) -> int:
-    # Function that counts the number of multiplications done by addition
-    # of two SparseTensor objects    
+    """Function that counts the number of multiplications done by addition
+    of two `SparseTensor` objects. 
+    
+    Args:
+        lhs (SparseTensor): SparseTensor object whose `val` property we want to
+                            add to `rhs.val`.
+        rhs (SparseTensor): SparseTensor object whose `val` property we want to
+                            add to `lhs.val`.
+                            
+    Returns:
+        int: The number of additions done by addition of `lhs.val` and `rhs.val`.
+    """
     num_adds = 1
     
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):

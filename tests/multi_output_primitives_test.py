@@ -10,6 +10,8 @@ from graphax import jacve, tree_allclose
 from graphax.sparse.utils import count_muls, count_muls_jaxpr
 
 class MultiOutputTest(unittest.TestCase): 
+    # jnp.split is not a true multi-output primitive, but instead a chain of
+    # slicing operations
     def test_split(self):
         def array_split(x, y):
             z, u, v = jnp.split(x, [2, 4], axis=0)

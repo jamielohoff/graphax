@@ -96,7 +96,7 @@ def make_weights(key, num_attn_blocks: int = 2, dk: int = 512, num_heads: int = 
     weights = []
     for _ in range(num_attn_blocks):
         # Weigths for self-attention
-        qkvkey, okey, key = jrand.split(key, 5)
+        qkvkey, okey, key = jrand.split(key, 3)
         WQKV = glorot(qkvkey, (dk*num_heads*3, embedding_dim))
         WO = glorot(okey, (embedding_dim, dk*num_heads))
         

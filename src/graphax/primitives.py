@@ -34,7 +34,7 @@ def get_aval_shape(val):
         return val.aval.shape
     
 
-# TODO simplify this
+# TODO simplify this!
 def make_parallel_jacobian(i, primals, val_out, elemental):
     primal = primals[i]
     primal_size = get_ndim(primal)
@@ -324,7 +324,6 @@ def dot_general_elemental_rule(primals, **params):
     dimension_numbers = params["dimension_numbers"][0]
     batch_dims = params["dimension_numbers"][1]
     # NOTE: Batch dimensions are just treated as SparseDimensions.
-    # However, currently the implementation only supports a single batch dimension
     
     lhs_contracting_dims = dimension_numbers[0]
     rhs_contracting_dims = dimension_numbers[1]
@@ -338,6 +337,8 @@ def dot_general_elemental_rule(primals, **params):
         
     lhs_out_dims, rhs_out_dims = [], []
     lhs_primal_dims, rhs_primal_dims = [], []
+    
+    num_out_dims = len(out_shape)
         
     i, ii = 0, 0
     batch_dim_counter = 0
@@ -354,21 +355,21 @@ def dot_general_elemental_rule(primals, **params):
                 # with a valid `val_dim`
                 dim = rhs_batch_dims[ii]
                 ii += 1
-                # TODO do not just use 0 here so that we can use multiple batch dimensions
+
                 lhs_out_dims.insert(batch_dim_counter, SparseDimension(batch_dim_counter, ld, dim, other_lid))
                 lhs_primal_dims.append(SparseDimension(other_lid, ld, dim, batch_dim_counter))
                 batch_dim_counter += 1
                 for d in lhs_out_dims[batch_dim_counter:]:
                     d.id += 1
                     if type(d) is SparseDimension:
-                        _d = lhs_primal_dims[d.other_id-len(lhs_out_dims)]
+                        _d = lhs_primal_dims[d.other_id-num_out_dims]
                         _d.other_id += 1
             else:
-                # Otherwise, we can just set `val_dim`` to None
+                # Otherwise, we can just set `val_dim` to None
                 _lid = len(lhs_out_dims)
                 lhs_out_dims.append(SparseDimension(_lid, ld, None, other_lid))
                 lhs_primal_dims.append(SparseDimension(other_lid, ld, None, _lid))
-                rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid)) # TODO need to use insert here!
+                rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid))
           
     j, jj = 0, 0   
     batch_dim_counter = 0
@@ -381,8 +382,8 @@ def dot_general_elemental_rule(primals, **params):
             j += 1
         else:
             if rid in rhs_batch_dims:
-                # If it is a batch dimension, we need to treat it as a SparseDimension
-                # with a valid `val_dim`
+                # If it is a batch dimension, we need to treat it as a 
+                # SparseDimension with a valid `val_dim`
                 dim = lhs_batch_dims[jj]
                 jj += 1
                 rhs_out_dims.insert(batch_dim_counter, SparseDimension(batch_dim_counter, rd, dim, other_rid))
@@ -391,14 +392,14 @@ def dot_general_elemental_rule(primals, **params):
                 for d in rhs_out_dims[batch_dim_counter:]:
                     d.id += 1
                     if type(d) is SparseDimension:
-                        _d = rhs_primal_dims[d.other_id-len(rhs_out_dims)]
+                        _d = rhs_primal_dims[d.other_id-num_out_dims]
                         _d.other_id += 1
             else:
                 # Otherwise, we can just set `val_dim` to None
                 _rid = len(rhs_out_dims)
                 rhs_out_dims.append(SparseDimension(_rid, rd, None, other_rid))
                 rhs_primal_dims.append(SparseDimension(other_rid, rd, None, _rid))
-                lhs_out_dims.append(DenseDimension(len(lhs_out_dims), rd, rid)) # TODO need to use insert here!
+                lhs_out_dims.append(DenseDimension(len(lhs_out_dims), rd, rid))
         
     lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, rhs)
     rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)   
@@ -452,6 +453,13 @@ class JacobianTransform:
         return self.inverse_transform(tensor, iota)
 
 
+def inverse_permutation(permutation):
+    inverse = [0] * len(permutation)
+    for i, p in enumerate(permutation):
+        inverse[p] = i
+    return inverse
+
+
 # Should work for high-dimensional stuff
 def transpose_elemental_rule(primals, **params):
     # This primitive is written such that it applies the transpose to the out_dims 
@@ -479,14 +487,17 @@ def transpose_elemental_rule(primals, **params):
         new_out_dims = post.out_dims
         new_primal_dims = []
         counter = len(post.out_dims)
-        
-        for p in permutation:
+
+        # This implementation is faulty!
+        inv_permutation = inverse_permutation(permutation)
+        for p in inv_permutation:
             new_primal_dims.append(post.primal_dims[p])
             new_primal_dims[-1].id = counter
             if type(new_primal_dims[-1]) is SparseDimension:
                 other_id = new_primal_dims[-1].other_id
                 new_out_dims[other_id].other_id = counter
             counter += 1   
+        
         return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, post.val))
     transform = JacobianTransform(transpose_transform, inverse_transpose_transform)
     return val_out, [SparseTensor([], [], None, [transform])]
@@ -579,6 +590,7 @@ def slice_elemental_rule(primals, **params):
         new_out_dims = []
         new_primal_dims = []
         counter = 0
+        
         for d in post.out_dims:
             new_out_dims.append(DenseDimension(counter, d.size, counter))
             new_shape.append(d.size)
@@ -973,8 +985,10 @@ def concatenate_elemental_rule(primals, **params):
     def inverse_concatenate_transform(primal, post, iota):
         new_out_dims = list(copy.deepcopy(post.out_dims))
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
-
-        d = new_primal_dims[dim]
+        
+        d = None
+        if len(new_primal_dims) > 0:
+            d = new_primal_dims[dim]
         if type(d) is DenseDimension:
             if d.val_dim is not None:
                 new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
