@@ -80,7 +80,7 @@ def eye_like_copy(shape, out_len, iota):
                     else:
                         sub_iota = lax.slice(iota, (0, 0), (o, o))
                         kronecker = sub_iota.reshape(_shape)
-                val *= kronecker
+                val *= kronecker # NOTE: This thing is crazy expensive to compute and not always necessary?
         return val
     
     

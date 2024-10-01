@@ -143,6 +143,7 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
             else:
                 edge_outval = _post_val
                 
+            # print("Edge_outval:", edge_outval)
             # Offload the remain Jacobian transforms to the output tensor
             if len(post_val.post_transforms) > 0:
                 edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
@@ -260,27 +261,25 @@ def _build_graph(env, graph, transpose_graph, jaxpr, args, consts, var_id, vo_ve
                 vertex = var_id[invar]
                 vo_vertices.add(vertex)
                 
-        print("eqn:", eqn)
-        print("invars", eqn.invars)
-        print("outvars", eqn.outvars)
+        # print("eqn:", eqn)
+        # print("invars", eqn.invars)
+        # print("outvars", eqn.outvars)
         invals = safe_map(read, eqn.invars)              
         if eqn.primitive is lax.stop_gradient_p:
             primal_outvals = lax.stop_gradient_p.bind(*invals, **eqn.params)
             safe_map(write, eqn.outvars, [primal_outvals])
             
-        elif eqn.primitive is jax._src.pjit.pjit_p:
-            import copy
-            primal_outvals = jax._src.pjit.pjit_p.bind(*invals, **eqn.params)
-            print(primal_outvals)
-            safe_map(write, eqn.outvars, [primal_outvals])
-            # NOTE: pjit operations are unrolled recursively
-            print(eqn.params["name"])
-            print(eqn.params["jaxpr"])
-            _build_graph(env, graph, transpose_graph, eqn.params["jaxpr"].jaxpr, 
-                        args, consts, var_id, vo_vertices, counter, level=level+1)
+        # elif eqn.primitive is jax._src.pjit.pjit_p:
+        #     import copy
+        #     primal_outvals = jax._src.pjit.pjit_p.bind(*invals, **eqn.params)
+        #     safe_map(write, eqn.outvars, [primal_outvals])
+        #     # NOTE: pjit operations are unrolled recursively
             
-            env[eqn.outvars[0]] = copy.copy(env[eqn.params["jaxpr"].jaxpr.outvars[0]])
-            del env[eqn.params["jaxpr"].jaxpr.outvars[0]]
+        #     _build_graph(env, graph, transpose_graph, eqn.params["jaxpr"].jaxpr, 
+        #                 args, consts, var_id, vo_vertices, counter, level=level+1)
+            
+        #     env[eqn.outvars[0]] = copy.copy(env[eqn.params["jaxpr"].jaxpr.outvars[0]])
+        #     del env[eqn.params["jaxpr"].jaxpr.outvars[0]]
             
         else:
             if eqn.primitive not in elemental_rules:

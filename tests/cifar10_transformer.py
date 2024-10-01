@@ -24,7 +24,7 @@ from _transformer import (multihead_attention_block, glorot, gelu,
 
 
 epochs = 25
-batchsize = 16
+batchsize = 4
 num_heads = 8 # this seems to impact performance a lot
 dk = 64
 
@@ -73,8 +73,8 @@ def transformer(X, CT, WQKV1, WO1, W1, b1, W2, b2,
     X = jnp.concatenate((CT, X), axis=1)
     X = positional_encoding(X)
     X = multihead_attention_block(X, WQKV1, WO1, W1, b1, W2, b2)
-    X = multihead_attention_block(X, WQKV2, WO2, W3, b3, W4, b4)
-    X = multihead_attention_block(X, WQKV3, WO3, W5, b5, W6, b6)
+    # X = multihead_attention_block(X, WQKV2, WO2, W3, b3, W4, b4)
+    # X = multihead_attention_block(X, WQKV3, WO3, W5, b5, W6, b6)
     
     X = X[:, 0]
     return W8 @ gelu(W7 @ X + b7) + b8
@@ -138,23 +138,36 @@ def train(batch, labels, weights, opt_state):
 optim = optax.adam(1e-4)
 opt_state = optim.init(weights)
 
+batch, labels = next(iter(trainloader))
+batch = batch.numpy()
+labels = labels.numpy()
+
+one_hot_labels = jnn.one_hot(labels, 10)
+xs = subdivide(batch)
+argnums = range(2, len(weights) + 2)
+
+print(jax.make_jaxpr(gx.jacve(batched_model, order="rev", argnums=argnums))(xs, one_hot_labels, *weights))
+# bxh
+# print(jax.make_jaxpr(jax.jacrev(batched_model, argnums=argnums))(xs, one_hot_labels, *weights))
+# bfv
+
 ### Training loop
-st = time.time()
-pbar = tqdm.tqdm(range(epochs))
-for epoch in pbar:
-    for (batch, labels) in tqdm.tqdm(trainloader):
-        batch = batch.numpy()
-        labels = labels.numpy()
-        loss, weights = train(batch, labels, weights, opt_state)
-        pbar.set_description(f"loss: {loss:.4f}")
+# st = time.time()
+# pbar = tqdm.tqdm(range(epochs))
+# for epoch in pbar:
+#     for (batch, labels) in tqdm.tqdm(trainloader):
+#         batch = batch.numpy()
+#         labels = labels.numpy()
+#         loss, weights = train(batch, labels, weights, opt_state)
+#         pbar.set_description(f"loss: {loss:.4f}")
         
-    if epoch % 1 == 0:
-        accs = []
-        for (batch, labels) in testloader:
-            batch = batch.numpy()
-            labels = labels.numpy()
-            acc = get_test_accuracy(batch, labels, weights)
-            accs.append(acc)
-        print(f"Test accuracy: {np.mean(accs)*100:.2f}%")
-print(f"Training took {time.time() - st:.2f} seconds")
+#     if epoch % 1 == 0:
+#         accs = []
+#         for (batch, labels) in testloader:
+#             batch = batch.numpy()
+#             labels = labels.numpy()
+#             acc = get_test_accuracy(batch, labels, weights)
+#             accs.append(acc)
+#         print(f"Test accuracy: {np.mean(accs)*100:.2f}%")
+# print(f"Training took {time.time() - st:.2f} seconds")
     
