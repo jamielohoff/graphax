@@ -1,3 +1,4 @@
+from typing import Callable
 from functools import partial
 import copy
 
@@ -196,6 +197,16 @@ def atan2_elemental_rule(x, y):
     abs2 = (x**2+y**2)
     return (y/abs2, -x/abs2)
 defelemental(lax.atan2_p, atan2_elemental_rule)
+
+
+def max_elemental_rule(x, y):
+    return (jnp.where(x > y, 1, 0), jnp.where(x > y, 0, 1))
+defelemental(lax.max_p, max_elemental_rule)
+
+
+def min_elemental_rule(x, y):
+    return (jnp.where(x < y, 1, 0), jnp.where(x < y, 0, 1))
+defelemental(lax.min_p, min_elemental_rule)
 
 
 # TODO This needs the correct gradients
@@ -426,15 +437,14 @@ elemental_rules[lax.device_put_p] = device_put_elemental_rule
 
 
 ### Transforms
-from typing import Callable
 
-Transform = Callable[[SparseTensor, SparseTensor, jnp.ndarray | None], SparseTensor]
+Transform = Callable[[SparseTensor, SparseTensor, jnp.ndarray], SparseTensor]
 
 class JacobianTransform:
-    transform: Transform | None
-    inverse_transform: Transform | None
+    transform: Transform
+    inverse_transform: Transform
     
-    def __init__(self, transform: Transform, inverse_transform: Transform | None = None) -> None:
+    def __init__(self, transform: Transform, inverse_transform: Transform = None) -> None:
         self.transform = transform
         self.inverse_transform = inverse_transform
         
@@ -442,12 +452,12 @@ class JacobianTransform:
         return f"JacobianTransform(transform={self.transform}, " \
                 f"inverse_transform={self.inverse_transform})"
         
-    def apply(self, tensor: SparseTensor, iota: jnp.ndarray | None) -> SparseTensor:
+    def apply(self, tensor: SparseTensor, iota: jnp.ndarray) -> SparseTensor:
         if self.transform is None:
             raise NotImplementedError("Transform not implemented!")
         return self.transform(tensor, iota)
     
-    def apply_inverse(self, tensor: SparseTensor, iota: jnp.ndarray | None) -> SparseTensor:
+    def apply_inverse(self, tensor: SparseTensor, iota: jnp.ndarray) -> SparseTensor:
         if self.inverse_transform is None:
             raise NotImplementedError("Inverse transform not implemented!")
         return self.inverse_transform(tensor, iota)

@@ -1,5 +1,5 @@
-import time
 from functools import partial
+import time
 import tqdm
 
 import jax
@@ -8,8 +8,6 @@ import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jrand
 import jax.tree_util as jtu
-
-import numpy as np
 
 import optax
 
@@ -38,10 +36,10 @@ transform = transforms.Compose([transforms.ToTensor(),
                                                     (0.5, 0.5, 0.5))])
 
 trainset = datasets.CIFAR10(root='./data', train=True, transform=transform)
-trainloader = DataLoader(trainset, batch_size=batchsize, shuffle=True, num_workers=4)
+trainloader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
 
 testset = datasets.CIFAR10(root='./data', train=False, transform=transform)
-testloader = DataLoader(testset, batch_size=batchsize, shuffle=False, num_workers=2)
+testloader = DataLoader(testset, batch_size=batchsize, shuffle=False)
 
 key = jrand.PRNGKey(42)
 weights = make_weights(key, 3, dk, num_heads, embedding_dim)
@@ -129,7 +127,7 @@ def train(batch, labels, weights, opt_state):
     _grads = jax.jacrev(batched_model, argnums=argnums)(xs, one_hot_labels, *weights)
             
     close = gx.tree_allclose(grads, _grads)
-    jax.debug.print("Close: {x}", x=close)
+    # jax.debug.print("Close: {x}", x=close)
     
     updates, opt_state = optim.update(grads, opt_state)
     weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
@@ -146,28 +144,30 @@ one_hot_labels = jnn.one_hot(labels, 10)
 xs = subdivide(batch)
 argnums = range(2, len(weights) + 2)
 
-print(jax.make_jaxpr(gx.jacve(batched_model, order="rev", argnums=argnums))(xs, one_hot_labels, *weights))
+# print(jax.make_jaxpr(batched_model)(xs, one_hot_labels, *weights))
+
+#print(jax.make_jaxpr(gx.jacve(batched_model, order="rev", argnums=argnums))(xs, one_hot_labels, *weights))
 # bxh
 # print(jax.make_jaxpr(jax.jacrev(batched_model, argnums=argnums))(xs, one_hot_labels, *weights))
 # bfv
 
 ### Training loop
-# st = time.time()
-# pbar = tqdm.tqdm(range(epochs))
-# for epoch in pbar:
-#     for (batch, labels) in tqdm.tqdm(trainloader):
-#         batch = batch.numpy()
-#         labels = labels.numpy()
-#         loss, weights = train(batch, labels, weights, opt_state)
-#         pbar.set_description(f"loss: {loss:.4f}")
+st = time.time()
+pbar = tqdm.tqdm(range(epochs))
+for epoch in pbar:
+    for (batch, labels) in tqdm.tqdm(trainloader):
+        batch = batch.numpy()
+        labels = labels.numpy()
+        loss, weights = train(batch, labels, weights, opt_state)
+        pbar.set_description(f"loss: {loss:.4f}")
         
-#     if epoch % 1 == 0:
-#         accs = []
-#         for (batch, labels) in testloader:
-#             batch = batch.numpy()
-#             labels = labels.numpy()
-#             acc = get_test_accuracy(batch, labels, weights)
-#             accs.append(acc)
-#         print(f"Test accuracy: {np.mean(accs)*100:.2f}%")
-# print(f"Training took {time.time() - st:.2f} seconds")
+    if epoch % 1 == 0:
+        accs = []
+        for (batch, labels) in testloader:
+            batch = batch.numpy()
+            labels = labels.numpy()
+            acc = get_test_accuracy(batch, labels, weights)
+            accs.append(acc)
+        print(f"Test accuracy: {jnp.mean(accs)*100:.2f}%")
+print(f"Training took {time.time() - st:.2f} seconds")
     

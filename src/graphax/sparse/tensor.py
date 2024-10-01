@@ -381,7 +381,7 @@ def _checkify_broadcast_compatibility(lhs_val: Array, rhs_val: Array) -> bool:
     
     
 def _get_permutation_from_tensor(st: SparseTensor,
-                                shape: Sequence[int] | None = None) -> Sequence[int]:
+                                shape: Sequence[int] = None) -> Sequence[int]:
     """Function that calculates the permutation of the axes of the `val` property
     so as that `st.val.shape` matches `shape`. This is necessary to enable proper
     broadcasting multiplication.s
@@ -671,7 +671,7 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
 
 def _get_output_tensor(lhs: SparseTensor, 
                         rhs: SparseTensor,
-                        val: Array | None) -> SparseTensor:
+                        val: Array) -> SparseTensor:
     """Function that computes the `out_dims` and `primal_dims` properties
     of a `SparseTensor` object of a broadcast multiplication of two `SparseTensor`
     objects. This is separated from the actual multiplication and broadcasting
