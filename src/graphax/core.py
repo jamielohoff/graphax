@@ -232,6 +232,16 @@ def jacve(fun: Callable,
 
 def _iota_shape(jaxpr: core.Jaxpr, argnums: Sequence[int]) -> jnp.ndarray:
     """
+    Function that computes the largest input and output tensors of the function
+    by looking at the invals and outvals of the jaxpression. It then computes
+    the corresponding larges Kronecker symbol that would be necessary to 
+    materialize possibly arising sparse tensors. The Kronecker symbol computed 
+    here will also be used throughout the vertex elimination computations.
+
+    Args:
+
+    Returns:
+
 
     """
     largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
@@ -535,8 +545,20 @@ def _prune_graph(graph: ComputationalGraph,
                 jaxpr: core.Jaxpr, 
                 argnums: Sequence[int]) -> None:
     """
-    TODO implement proper pruning that does not accidentially kill off edges                  
-    Prune the computational graph
+    Function that prunes a given computational graph based on the argnums we
+    give it, i.e. for argnums that we do not differentiate for we can just ignore
+    them and all edges solely connected to them. This might incur significant
+    savings. It also checks for dead intermediate vertices that have either no
+    input or no output edges. These typically arise from a lax.stop_grad operation
+    somewhere in the function we want to differentiate. These dead vertices and
+    all associated edges are deleted as well.
+
+    Args:
+
+    Returns:
+
+
+    TODO: Implement some unit tests for pruning. Maybe disable it for now?
     """
     has_dead_vertices = True
     for i, invar in enumerate(jaxpr.invars):
@@ -583,7 +605,23 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                             sparse_representation: bool = False
     ) -> Sequence[Sequence[jnp.ndarray]]:    
     """
-    Function
+    Function that generates a new vertex elimination jaxpression based on the 
+    vertex elimination jaxpression `jaxpr` found by JAX through tracing the 
+    function `fun` we intend to differentiate. The function operates in three 
+    stages:\n
+    1.) It creates a computational graph representation amenable to the vertex 
+    elimination rule. This is mainly facilitated through `_build_graph`.\n
+    2.) It applies the vertex elimination rule to every vertex following the 
+    given `order` using `_eliminate_vertex`.\n
+    3.) It performs post processing. This includes the application of several 
+    Jacobian transformation, densifying sparse tensors and reordering output 
+    values.
+
+    Args:
+
+    Returns:
+
+
     """
     
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
