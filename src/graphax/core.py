@@ -1,4 +1,4 @@
-from typing import Callable, Sequence, Union
+from typing import Callable, Dict, Sequence, Set, Tuple, Union
 from functools import wraps, partial
 from collections import defaultdict
 
@@ -166,11 +166,42 @@ def cce_subtrace(main, primals):
     yield [t.primal for t in out_tracers]
 
 
+EliminationOrder = Union[Sequence[int], str]
+ComputationalGraph = Dict[Dict[core.Var]]
+
 def jacve(fun: Callable, 
-            order: Union[Sequence[int], str], 
+            order: EliminationOrder, 
             argnums: Sequence[int] = (0,),
             count_ops: bool = False,
-            dense_representation: bool = True) -> Callable:
+            sparse_representation: bool = False) -> Callable:
+    """
+    Jacobian `fun` with respect to the `argnums` using the vertex elimination method.
+    The vertex elimination order can be specified as a sequence of integers or 
+    as a string "forward" or "fwd" for forward elimination and "reverse" or 
+    "rev" for reverse elimination. The forward order basically corresponds to 
+    the elimination order [1, 2, 3, ...] while the reverse order corresponds to
+    [..., 3, 2, 1]. For custom orders, just pass the sequence of  integers in 
+    the desired order. Additionally, the `count_ops` flag can be set
+    to True to count the number of multiplications and additions during the
+    elimination process, i.e. the Jacobian accumulation. The 
+    `sparsee_representation` flag can be set to `True` to return the Jacobian in 
+    a sparse representation using the `SparseTensor` class.
+
+    Args:
+        fun (Callable): Function to differentiate.
+        order (Union[Sequence[int], str]): Vertex elimination order. Either pass
+            the desired order directly or specify a string. Allows options are
+            "forward", "fwd", "reverse" and "rev".
+        argnums (Sequence[int], optional): Argument numbers to differentiate 
+                                            with respect to. Defaults to (0,).
+        count_ops (bool, optional): Count the number of operations during the 
+                                    elimination process. Defaults to `False`.
+        sparse_representation (bool, optional): Return the Jacobian in a sparse 
+                                            representation. Defaults to `False`.
+
+    Returns:
+        Callable: The function that returns the Jacobian of `fun`.
+    """
     @wraps(fun)
     def jacfun(*args, **kwargs):
 
@@ -184,7 +215,7 @@ def jacve(fun: Callable,
                                         *args, 
                                         argnums=argnums,
                                         count_ops=count_ops,
-                                        dense_representation=dense_representation)
+                                        sparse_representation=sparse_representation)
         if count_ops: 
             out, op_counts = out
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
@@ -199,7 +230,10 @@ def jacve(fun: Callable,
     return jacfun
 
 
-def _iota_shape(jaxpr, argnums):
+def _iota_shape(jaxpr: core.Jaxpr, argnums: Sequence[int]) -> jnp.ndarray:
+    """
+
+    """
     largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
     largest_output = get_largest_tensor(jaxpr._outvars)
         
@@ -242,17 +276,29 @@ def append_pre_transforms(pre, out, iota):
     return out
         
     
-def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
-    """Function that eliminates a vertex from the computational graph.
-    everything that has a _val in its name is a SparseTensor object
+def _eliminate_vertex(vertex: int, 
+                        jaxpr: core.Jaxpr, 
+                        graph: ComputationalGraph, 
+                        transpose_graph: ComputationalGraph, 
+                        iota: jnp.ndarray, 
+                        vo_vertices: Set[core.Var]):
+    """
+    Function that eliminates a vertex from the computational graph.
+    everything that has a _val in its name is a `SparseTensor` object
 
     Args:
-        vertex (_type_): _description_
-        jaxpr (_type_): _description_
-        graph (_type_): _description_
-        transpose_graph (_type_): _description_
-        iota (_type_): _description_
-        vo_vertices (_type_): _description_
+        vertex (int): The vertex we want to eliminate from the computational graph
+                    according to the vertex elimination rule as described in 
+                    cross-country elimination.
+        jaxpr (core.Jaxpr): The jaxpression derived by tracing the input function
+                            whose Jacobian we intend to calculate.
+        graph (ComputationalGraph): Computational graph representation derived 
+                                    from `jaxpr`.
+        transpose_graph (ComputationalGraph): Transpose computational graph
+                                                derived from `jaxpr`.
+        iota (jnp.ndarray): A Kronecker delta/unit matrix which is helpful when
+                            materializing sparse tensors.
+        vo_vertices (Set[core.Var]): A `set` containing all the output vertices.
     """
     # print("vertex:", vertex)
     eqn = jaxpr.eqns[vertex-1]
@@ -347,7 +393,26 @@ def _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices):
     return num_mul, num_add
 
 
-def _checkify_order(order, jaxpr, vo_vertices):
+def _checkify_order(order: EliminationOrder, 
+                    jaxpr: core.Jaxpr, 
+                    vo_vertices: Set[core.Var]) -> EliminationOrder:
+    """
+    Function that checks if the supplied elimination order is valid for the 
+    given computational graph/jaxpr. In the case of an elimination order that
+    has been provided as a string, it first maps the string to the respective
+    order:
+    - "fwd", "forward": [1, 2, 3, ...]
+    - "rev", "reverse": [..., 3, 2, 1]
+
+    
+    Args: 
+        order (EliminationOrder): test
+        jaxpr (core.Jaxpr): 
+        vo_vertices (Set[core.Var]):
+
+    Returns:
+        EliminationOrder: A valid elimination order.
+    """
     if type(order) is str:
         if order == "forward" or order == "fwd":
             return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
@@ -367,14 +432,45 @@ def _checkify_order(order, jaxpr, vo_vertices):
     return order
 
 
-def _build_graph(env, graph, transpose_graph, jaxpr, args, consts, var_id, vo_vertices, counter, level=0):
-    """This function performs the tracing of the jaxpression and it's transformation
-    into a computational graph.
-
-    env stores primal values
-    graph, graph_transpose store partial derivatives
+def _build_graph(jaxpr: core.Jaxpr, 
+                args: Sequence[jnp.ndarray], 
+                consts: Sequence[core.Literal]
+    ) -> Tuple[ComputationalGraph, ComputationalGraph, Set[core.Var]]:
     """
-    
+    This function performs the `tracing` of the jaxpression into a computational
+    graph representation that is amenable to the vertex elimination procedure.
+    The computational graph is stored as a dict of dicts where basically every
+    item can be accessed through `graph[source_vertex][dest_vertex]` and yields 
+    the corresponding "partial Jacobian". The transpose computational graph stores
+    the same information in reverse order, i.e. \n
+
+    \t ``graph[sv][dv] == transpose_graph[dv][sv]`` \n
+
+    where sv is the source and dv is the destination vertex. The computational 
+    graph will later evolve by applying the vertex elimination rule. In addition
+    to the two graph obejects, this function also generates a `set` containing
+    all intermediate and output vertices. This is necessary in order to later be
+    able to determine ...
+
+    Args:
+
+
+    Returns:
+
+
+    """
+    env = {} # env stores the primal value associated with the core.Var object
+
+    graph = defaultdict(lambda: defaultdict()) # Input connectivity
+    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
+        
+    vo_vertices = set() # contains all intermediate and output vertices
+    counter = 1 # vertex id counter
+    var_id = {} # associates every application of a JaxprEqn with a unique integer
+    # identifier that is later used when using the vertex elimination order.
+    # NOTE: This only works well if the output is a single value.
+    # It is ill-defined when having functions with more than one output!.
+
     # Reads variable and corresponding traced shaped array
     def read(var):
         if type(var) is core.Literal:
@@ -411,7 +507,7 @@ def _build_graph(env, graph, transpose_graph, jaxpr, args, consts, var_id, vo_ve
                 vertex = var_id[invar]
                 vo_vertices.add(vertex)
                 
-        print("eqn:", eqn)
+        # print("eqn:", eqn)
         # print("invars", eqn.invars)
         # print("outvars", eqn.outvars)
         invals = safe_map(read, eqn.invars)              
@@ -419,28 +515,9 @@ def _build_graph(env, graph, transpose_graph, jaxpr, args, consts, var_id, vo_ve
             primal_outvals = lax.stop_gradient_p.bind(*invals, **eqn.params)
             safe_map(write, eqn.outvars, [primal_outvals])
             
-        elif type(eqn.primitive) is core.AxisPrimitive:
-            print("invals", invals)
-            primal_outvals = jax._src.pjit.pjit_p.bind(*invals, **eqn.params)
-            safe_map(write, eqn.outvars, primal_outvals)
-            subjaxpr = eqn.params["jaxpr"].jaxpr
-            # primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
-            _build_graph(env, graph, transpose_graph, subjaxpr, invals, consts, 
-                        var_id, vo_vertices, counter, level+1)
-            # print("primal_outvals:", primal_outvals)
-            # print("elemental_outvals:", elemental_outvals)
-
-            #  invars = [invar for invar in eqn.invars if type(invar) is core.Var]
-            # NOTE: Currently only able to treat one output variable
-
-            # _write_elemental = partial(write_elemental, eqn.outvars[0])
-            # if len(invars) == len(elemental_outvals):
-            #     safe_map(_write_elemental, invars, elemental_outvals)
-            
         else:
             if eqn.primitive not in elemental_rules:
                 raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
-            print("invals:", invals)
             primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
             safe_map(write, eqn.outvars, [primal_outvals])
             invars = [invar for invar in eqn.invars if type(invar) is core.Var]
@@ -449,11 +526,18 @@ def _build_graph(env, graph, transpose_graph, jaxpr, args, consts, var_id, vo_ve
             _write_elemental = partial(write_elemental, eqn.outvars[0])
             if len(invars) == len(elemental_outvals):
                 safe_map(_write_elemental, invars, elemental_outvals)
+        
+    return graph, transpose_graph, vo_vertices
 
 
-def _prune_graph(graph, transpose_graph, jaxpr, argnums):
-    # TODO implement proper pruning that does not accidentially kill off edges                  
-    # Prune the computational graph
+def _prune_graph(graph: ComputationalGraph, 
+                transpose_graph: ComputationalGraph, 
+                jaxpr: core.Jaxpr, 
+                argnums: Sequence[int]) -> None:
+    """
+    TODO implement proper pruning that does not accidentially kill off edges                  
+    Prune the computational graph
+    """
     has_dead_vertices = True
     for i, invar in enumerate(jaxpr.invars):
         if i not in argnums:
@@ -496,17 +580,14 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                             *args, 
                             argnums: Sequence[int] = (0,),
                             count_ops: bool = False,
-                            dense_representation: bool = True):    
-    env = {}
-    graph = defaultdict(lambda: defaultdict()) # Input connectivity
-    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
-        
-    vo_vertices = set() # contains all intermediate and output vertices
-    counter = 1
-    var_id = {}
+                            sparse_representation: bool = False
+    ) -> Sequence[Sequence[jnp.ndarray]]:    
+    """
+    Function
+    """
     
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
-    _build_graph(env, graph, transpose_graph, jaxpr, args, consts, var_id, vo_vertices, counter)
+    graph, transpose_graph, vo_vertices = _build_graph(jaxpr, args, consts)
     _prune_graph(graph, transpose_graph, jaxpr, argnums)
     
     iota = _iota_shape(jaxpr, argnums)
@@ -538,13 +619,13 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                     graph[invar][outvar] = tensor
     
     # Collect outputs  
-    if dense_representation:   
-        jac_vals = [graph[invar][outvar].dense(iota) 
-                    if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
-                    for outvar in jaxpr.outvars for invar in jaxpr_invars]
-    else:
+    if sparse_representation:   
         jac_vals = [graph[invar][outvar]
                     if outvar in list(graph[invar].keys()) else None
+                    for outvar in jaxpr.outvars for invar in jaxpr_invars]
+    else:
+        jac_vals = [graph[invar][outvar].dense(iota) 
+                    if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
         
     # Restructure Jacobians for more complicated pytrees
@@ -554,6 +635,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
         
     if count_ops:
+        # TODO: this needs to be reworked, aux should contain the primal values
+        # so that we can compute stuff like loss_and_grad
         order_counts = [(int(o), int(c[0])) for o, c in zip(order, counts)]
         aux = {"num_muls": num_muls, 
                 "num_adds": num_adds, 
