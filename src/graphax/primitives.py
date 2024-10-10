@@ -170,6 +170,7 @@ defelemental(lax.atanh_p, lambda x: 1./(1. - x**2))
 
 defelemental(lax.erf_p, lambda x: 2.*jnp.exp(-x**2)/jnp.sqrt(jnp.pi))
 
+
 # TODO this can be significantly optimized
 def add_elemental_rule(x, y):
     return (jnp.ones_like(y), jnp.ones_like(x))
@@ -213,6 +214,20 @@ defelemental(lax.min_p, min_elemental_rule)
 def eq_elemental_rule(x, y):
     return (jnp.zeros_like(y), jnp.zeros_like(x))
 defelemental(lax.eq_p, eq_elemental_rule)
+defelemental(lax.gt_p, eq_elemental_rule)
+defelemental(lax.lt_p, eq_elemental_rule)
+
+
+def select_elemental_rule(primals, **params):
+    val_out = lax.select_n_p.bind(*primals, **params)
+    size = primals[0].size
+    jacsize = (size, size)
+    num_cases = len(primals) - 1
+    new_out_dims = [SparseDimension(0, 1, size, 1)]
+    new_primal_dims = [SparseDimension(1, 1, size, 0)]
+    jacval = jnp.zeros(jacsize)
+    return val_out, [SparseTensor(new_out_dims, new_primal_dims, jacval) for _ in range(num_cases)]
+elemental_rules[lax.select_n_p] = select_elemental_rule
 
 
 def pow_elemental_rule(out, x, y):
@@ -468,6 +483,14 @@ def inverse_permutation(permutation):
     for i, p in enumerate(permutation):
         inverse[p] = i
     return inverse
+
+
+def pjit_elemental_rule(primals, **params):
+    val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
+
+    return val_out, [v for v in val_out]
+
+elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
 
 
 # Should work for high-dimensional stuff

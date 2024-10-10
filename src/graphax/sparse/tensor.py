@@ -15,7 +15,7 @@ from chex import Array
 from .utils import eye_like_copy, eye_like
 
 
-# NOTE a val_dim of None means that we have a possible replication of the tensor 
+# NOTE: a val_dim of None means that we have a possible replication of the tensor 
 # along the respective dimension `d.size` times to manage broadcasting 
 # operations such as broadcasted additions or multiplications.
 # TODO what do we when we have a tensor that consists only of DenseDimensions 
@@ -34,7 +34,7 @@ class DenseDimension:
         return f"DenseDimension(id={self.id}, size={self.size}, val_dim={self.val_dim})"
 
 
-# NOTE a val_dim of None means that we have a factored Kronecker delta in
+# NOTE: a val_dim of None means that we have a factored Kronecker delta in
 # our tensor at the respective dimensions.
 # Also we can have unmatching size and val.shape[d.val_dim] for SparseDimensions
 # if the size is 1. This is necessary to enable broadcasting operations.
@@ -66,7 +66,7 @@ class SparseTensor:
     and the `val` field contains the value of the singleton partial
     """
     out_dims: Sequence[Dimension]
-    primal_dims: Sequence[Dimension]
+    primal_dims: Sequence[Dimension] # input dimensions
     shape: Sequence[int] # True shape of the tensor
     val: ShapedArray
     pre_transforms: Sequence[Callable] 
@@ -159,14 +159,39 @@ class SparseTensor:
         return jnp.tile(index_map*val, tiling)
         
     def copy(self, val=None):
+        """
+        Function that copies the given sparse tensor object entirely except for
+        the `val` property which can be replaced by a new value.
+
+        Args:
+            val (Array, optional): The new value of the `val` property. Defaults to None.
+
+        Returns:
+            SparseTensor: A copy of the original SparseTensor object.
+        """
         out_dims = copy.deepcopy(self.out_dims)
         primal_dims = copy.deepcopy(self.primal_dims)
         val = self.val if val is None else val
         return SparseTensor(out_dims, primal_dims, val, self.pre_transforms, self.post_transforms)
     
+
+def sparse_tensor_zeros_like(st: SparseTensor) -> SparseTensor:
+    """
+    Function that generates a new `SparseTensor` with only zeros with the 
+    same shape as the given `SparseTensor` `st`.
+
+    Args:
+        st (SparseTensor): `SparseTensor` whose shape we want to use to initialize
+                            the new `SparseTensor` object.
+    Returns:
+        SparseTensor:  A copy of a given `SparseTensor` object with only zeros.
+    """
+    return st.copy(jnp.zeros_like(st.val))
+    
     
 def _checkify_tensor(st: SparseTensor) -> bool:
-    """Function that validates the consistency of a `SparseTensor` object,
+    """
+    Function that validates the consistency of a `SparseTensor` object,
     i.e. checks if the `val` property has the correct shape and if the dimensions
     are ordered correctly and sizes match the shape of `val`.
 
@@ -258,18 +283,52 @@ def _get_fully_materialized_shape(st: SparseTensor) -> Tuple[int]:
 
     
 def _is_pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
+    """
+    Function that checks if two `SparseTensor` objects are compatible for a
+    dot product multiplication. 
+
+    Args:
+        lhs (SparseTensor): The left-hand side `SparseTensor` object.
+        rhs (SparseTensor): The right-hand side `SparseTensor` object.
+    
+    Returns:
+        bool: Are the tensors compatible for multiplication?
+    """
     return all([True if type(r) is DenseDimension and type(l) is DenseDimension
                 else False for r, l in zip(lhs.primal_dims, rhs.out_dims)])
 
 
 def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
+    """
+    Function that checks if two `SparseTensor` objects are compatible for a
+    broadcast multiplication.
+
+    Args:
+        lhs (SparseTensor): The left-hand side `SparseTensor` object.
+        rhs (SparseTensor): The right-hand side `SparseTensor` object.
+
+    Returns:
+        bool: Are the tensors compatible for multiplication?
+    """
     return all([True if type(r) is SparseDimension or type(l) is SparseDimension
                 else False for r, l in zip(lhs.primal_dims, rhs.out_dims)])
 
     
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
-    TODO docstring
+    Function that multiplies two `SparseTensor` objects together. The function
+    first performs a sequence of checks to guarantee the integrity of both 
+    `SparseTensor` objects. It then proceeds to check if the two tensors are
+    compatible for multiplication. If they are, it performs the right 
+    multiplicationn type (dot product, broadcast, mixed)
+    and returns the resulting `SparseTensor` object.
+
+    Args:
+        lhs (SparseTensor): The left-hand side `SparseTensor` object.
+        rhs (SparseTensor): The right-hand side `SparseTensor` object.
+
+    Returns:
+        SparseTensor: The resulting `SparseTensor` object.
     """                                   
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
@@ -282,6 +341,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     _lhs = lhs.copy()
     _rhs = rhs.copy()
     if lhs.shape == () and rhs.shape == ():
+        # If both tensors are scalars, we can just multiply them directly
         return SparseTensor((), (), lhs.val*rhs.val)
     elif _is_pure_dot_product_mul(_lhs, _rhs):
         res = _pure_dot_product_mul(_lhs, _rhs)
@@ -296,7 +356,17 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
 def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
-    TODO docstring
+    Function that multiplies two `SparseTensor` objects together. The function
+    first performs a sequence of checks to guarantee the integrity of both 
+    `SparseTensor` objects. It then proceeds to add both tensors, thereby
+    possibly materializing certain sparse dimensions.
+
+    Args:
+        lhs (SparseTensor): The left-hand side `SparseTensor` object.
+        rhs (SparseTensor): The right-hand side `SparseTensor` object.
+
+    Returns:
+        SparseTensor: The resulting `SparseTensor` object.
     """                           
     assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
     assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
@@ -363,7 +433,8 @@ def _get_padding(lhs_out_dims: Sequence[Dimension],
 
 
 def _checkify_broadcast_compatibility(lhs_val: Array, rhs_val: Array) -> bool:
-    """Function that checks if two arrays are compatible for broadcast multiplication. 
+    """
+    Function that checks if two arrays are compatible for broadcast multiplication. 
     
     Args:
         lhs_val (Array): Array that we want to multiply with `rhs_val`.
@@ -382,7 +453,8 @@ def _checkify_broadcast_compatibility(lhs_val: Array, rhs_val: Array) -> bool:
     
 def _get_permutation_from_tensor(st: SparseTensor,
                                 shape: Sequence[int] = None) -> Sequence[int]:
-    """Function that calculates the permutation of the axes of the `val` property
+    """
+    Function that calculates the permutation of the axes of the `val` property
     so as that `st.val.shape` matches `shape`. This is necessary to enable proper
     broadcasting multiplication.s
     
@@ -878,7 +950,8 @@ def _replicate_along_axis(st: SparseTensor, ids: Sequence[int]) -> SparseTensor:
 
 
 def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> Tuple[Sequence[int], Sequence[int]]:
-    """Function that computes the axes along which the `val` properties of two
+    """
+    Function that computes the axes along which the `val` properties of two
     `SparseTensor` objects will get contracted. This is necessary to enable
     broadcasting multiplication of two `SparseTensor` objects where both of them
     have a `DenseDimension` object in their `out_dims` list.
@@ -905,9 +978,10 @@ def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> Tuple[Sequenc
 
 
 def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
-    """This function takes care of the cases where all dimensions in 
+    """
+    This function takes care of the cases where all dimensions in 
     `lhs.primal_dims` and `rhs.out_dims` are of type `DenseDimension`.
-    Then we only need to do `lax.dot_general` wiht the right dimension numbers
+    Then we only need to do `lax.dot_general` with the right dimension numbers
     to get the result.
 
     Args:
@@ -971,7 +1045,8 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
 
 def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
-    """This is the general case where we have dot-product multiplications as
+    """
+    This is the general case where we have dot-product multiplications as
     well as broadcast multiplications. We first do the dot-product multiplications
     and then the broadcast multiplications by extracting the diagonal of the
     corresponding axes of the resulting tensor of the dot-product contraction.
@@ -1122,7 +1197,8 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
 
 def _materialize_dimensions(st: SparseTensor, dims: Sequence[int]) -> Array:
-    """Function that materializes the `val` property of a `SparseTensor` object
+    """
+    Function that materializes the `val` property of a `SparseTensor` object
     along a given set of axes. This is necessary to enable broadcasting multiplication
     of two `SparseTensor` objects where one of them has a `DenseDimension` object
     in its `out_dims` list and the other one has a `SparseDimension` object in
@@ -1154,7 +1230,8 @@ def _materialize_dimensions(st: SparseTensor, dims: Sequence[int]) -> Array:
 
 
 def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
-    """TODO write a function that does the addition of two SparseTensor objects
+    """
+    TODO write a function that does the addition of two SparseTensor objects
     and break it down into several functions that do the different steps of the
     process. This is a mess right now!
 

@@ -25,9 +25,9 @@ def SNN_timeloop(S_in, S, U, W, V, T):
         S, U = simple_SNN(S_in, S, U, W, V)
         grads = gx.jacve(simple_SNN, order="rev", argnums=(1, 2, 3, 4), dense_representation=False)(S_in, S, U, W, V)
         if t == 0:
-            G = jtu.tree_map(lambda x: jnp.zeros_like(x.val) if x is not None else None, grads)
+            G = jtu.tree_map(lambda x: gx.sparse_tensor_zeros_like(x) if x is not None else None, grads)
         else:
-            G = jtu.tree_map(lambda x, y: x * y.val, G, grads)
+            G = jtu.tree_map(lambda x, y: y * x, G, grads)
         print(G)
     return S, U
 

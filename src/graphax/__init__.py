@@ -1,6 +1,7 @@
 import sys
 from .core import jacve, tree_allclose
 from .equinox_bindings import filter_jacve
+from .sparse import custom_elemental, sparse_tensor_zeros_like
 
 from .perf import (measure_execution_time, 
                     measure_execution_time_with_jax,
