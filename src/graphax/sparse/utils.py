@@ -1,14 +1,27 @@
-from functools import reduce
 import copy
+from typing import Sequence
+from functools import reduce
 
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
-from jax.core import JaxprEqn, ClosedJaxpr
+from jax.core import JaxprEqn, ClosedJaxpr, ShapedArray
 
 
-def zeros_like(invar, outvar):
+def zeros_like(invar: ShapedArray, outvar: ShapedArray) -> jnp.ndarray:
+    """
+    Function that creates an array of zeros. The shape of the array is the
+    concatenation of the shapes of the input and output dimensions.
+
+    Args:
+        invar (ShapedArray): The input variable.
+        outvar (ShapedArray): The output variable.
+
+    Returns:
+        jnp.ndarray: An array of zeros with the shape of the concatenation of the
+                    shapes of the input and output dimensions.
+    """
     in_shape = invar.aval.shape
     out_shape = outvar.aval.shape
     
@@ -19,7 +32,18 @@ def zeros_like(invar, outvar):
         return jnp.zeros(shape)
     
 
-def eye_like(shape, out_len):
+def eye_like(shape: Sequence[int], out_len: int) -> jnp.ndarray:
+    """
+    Function that creates a higher order tensor that is a product of Kronecker deltas.
+
+    Args:
+        shape (Sequence[int]): The shape of the higher order tensor that we want to create.
+        out_len (int): The length of the output tensor, i.e. the number of 
+                        output dimensions.
+    
+    Returns:
+        jnp.ndarray: The higher order tensor that is a product of Kronecker deltas.
+    """
     primal_shape = shape[out_len:]
     out_shape = shape[:out_len]
     if any([primal_shape == out_shape]):
@@ -37,7 +61,23 @@ def eye_like(shape, out_len):
         return val
 
 
-def eye_like_copy(shape, out_len, iota):
+def eye_like_copy(shape: Sequence[int], out_len: int, iota: jnp.ndarray) -> jnp.ndarray:
+    """
+    Function that creates a higher order tensor that is a product of Kronecker deltas.
+    It tries to reuse the identity matrix `iota` as much as possible to create the
+    higher order tensor. If `iota` is too small, it creates a new identity matrix
+    of the appropriate size.
+
+    Args:
+        shape (Sequence[int]): The shape of the higher order tensor that we want to create.
+        out_len (int): The length of the output tensor, i.e. the number of 
+                        output dimensions.
+        iota (jnp.ndarray): The identity matrix that we use to create the higher 
+                            order tensor.
+
+    Returns:
+        jnp.ndarray: The higher order tensor that is a product of Kronecker deltas.
+    """
     primal_shape = shape[out_len:]
     out_shape = shape[:out_len]
     if any([primal_shape == out_shape]):
@@ -56,7 +96,7 @@ def eye_like_copy(shape, out_len, iota):
             return sub_iota.reshape(*shape)
     else:
         # This piece of code creates a proper higher order tensor as that is a
-        # product of kronecker deltas
+        # product of Kronecker deltas
         # It does so by creating 2d tensors of the appropriate shape and then
         # reshaping them to the correct higher order shape and then multiplying
         # them together
@@ -84,7 +124,17 @@ def eye_like_copy(shape, out_len, iota):
         return val
     
     
-def get_largest_tensor(tensors):
+def get_largest_tensor(tensors: Sequence[ShapedArray]) -> int:
+    """
+    Function that computes the size of the largest tensor in a list of tensors.
+
+    Args:
+        tensors (Sequence): A list of tensors for which we want to know the size 
+                            of the largest tensor.
+
+    Returns:
+        int: The size of the largest tensor in the list of tensors.
+    """
     sizes = [t.aval.size for t in tensors]
     return max(sizes)   
 
@@ -92,6 +142,16 @@ def get_largest_tensor(tensors):
 def count_muls(eqn: JaxprEqn) -> int:
     """
     Function that counts the number of multiplications done by a jaxpr equation.
+    The implementation treats every primitive as zero multiplications except for
+    the `lax.dot_general` and `lax.mul` primitives. For these, simple algorithms
+    for counting the number of multiplications are implemented.
+
+    Args:
+        eqn (core.JaxprEqn): The `JaxprEqn` of which we want to know how many
+                            multiplications are happening.
+
+    Returns:
+        int: The number of multiplications done inside the jaxpr equation.
     """
     if eqn.primitive is lax.dot_general_p:
         contraction_dims = eqn.params["dimension_numbers"][0]
@@ -114,6 +174,13 @@ def count_muls(eqn: JaxprEqn) -> int:
 def count_muls_jaxpr(jaxpr: ClosedJaxpr) -> int:
     """
     Function that counts the number of multiplications done within a jaxpr.
+
+    Args:
+        jaxpr (core.ClosedJaxpr): The `ClosedJaxpr` of which we want to know
+                                how many multiplications are performed.
+    
+    Returns:
+        int: The number of multiplications done within the jax
     """
     return sum([count_muls(eqn) for eqn in jaxpr.eqns])
 

@@ -125,7 +125,7 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     return val_out, elementals_out
 
 
-# Useful for stuff such as exp_p
+# NOTE: Useful for stuff such as exp_p
 def defelemental2(primitive, elementalrule):
     assert isinstance(primitive, core.Primitive)
     assert not primitive.multiple_results
