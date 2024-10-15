@@ -167,7 +167,7 @@ def cce_subtrace(main, primals):
 
 
 EliminationOrder = Union[Sequence[int], str]
-ComputationalGraph = Dict[Dict[core.Var]]
+ComputationalGraph = Dict[core.Var, Dict[core.Var, jnp.ndarray]]
 
 def jacve(fun: Callable, 
             order: EliminationOrder, 
@@ -239,10 +239,13 @@ def _iota_shape(jaxpr: core.Jaxpr, argnums: Sequence[int]) -> jnp.ndarray:
     here will also be used throughout the vertex elimination computations.
 
     Args:
+        jaxpr (core.Jaxpr): The jaxpr we want to differentiate.
+        argnums (Sequence[int]): The argument numbers we want to differentiate
+                                with respect to.
 
     Returns:
-
-
+        jnp.ndarray: A Kronecker delta/unit matrix that is used for materializing
+                    sparse tensors during the vertex elimination process.
     """
     largest_input = get_largest_tensor([jaxpr._invars[arg] for arg in argnums])
     largest_output = get_largest_tensor(jaxpr._outvars)
@@ -291,7 +294,7 @@ def _eliminate_vertex(vertex: int,
                         graph: ComputationalGraph, 
                         transpose_graph: ComputationalGraph, 
                         iota: jnp.ndarray, 
-                        vo_vertices: Set[core.Var]):
+                        vo_vertices: Set[core.Var]) -> Tuple[int, int]:
     """
     Function that eliminates a vertex from the computational graph.
     everything that has a _val in its name is a `SparseTensor` object
@@ -309,6 +312,14 @@ def _eliminate_vertex(vertex: int,
         iota (jnp.ndarray): A Kronecker delta/unit matrix which is helpful when
                             materializing sparse tensors.
         vo_vertices (Set[core.Var]): A `set` containing all the output vertices.
+
+    Returns:
+        Tuple[int, int]: The number of multiplications and additions that were
+                        performed during the elimination of the vertex
+
+    TODO: Having the function return the number of multiplications and additions
+    is probably not the best idea. Can we do this somehow more beautifully?
+    Maybe have a impure function and add an additional argument instead?
     """
     # print("vertex:", vertex)
     eqn = jaxpr.eqns[vertex-1]
@@ -414,11 +425,10 @@ def _checkify_order(order: EliminationOrder,
     - "fwd", "forward": [1, 2, 3, ...]
     - "rev", "reverse": [..., 3, 2, 1]
 
-    
     Args: 
-        order (EliminationOrder): test
-        jaxpr (core.Jaxpr): 
-        vo_vertices (Set[core.Var]):
+        order (EliminationOrder): The elimination order to check.
+        jaxpr (core.Jaxpr): The jaxpr we want to differentiate.
+        vo_vertices (Set[core.Var]): A `set` containing all the output vertices.
 
     Returns:
         EliminationOrder: A valid elimination order.
@@ -463,7 +473,10 @@ def _build_graph(jaxpr: core.Jaxpr,
     able to determine ...
 
     Args:
-
+        jaxpr (core.Jaxpr): The jaxpr we want to differentiate.
+        args (Sequence[jnp.ndarray]): The input arguments of the function as a 
+                                        flattened PyTree.
+        consts (Sequence[core.Literal]): The constant arguments of the function.
 
     Returns:
 
@@ -554,9 +567,13 @@ def _prune_graph(graph: ComputationalGraph,
     all associated edges are deleted as well.
 
     Args:
-
-    Returns:
-
+        graph (ComputationalGraph): The computational graph representation of the
+                                    jaxpr.
+        transpose_graph (ComputationalGraph): The transpose computational graph
+                                            representation of the jaxpr.
+        jaxpr (core.Jaxpr): The jaxpr we want to differentiate.
+        argnums (Sequence[int]): The argument numbers we want to differentiate
+                                with respect to.
 
     TODO: Implement some unit tests for pruning. Maybe disable it for now?
     """
@@ -618,9 +635,27 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     values.
 
     Args:
+        jaxpr (core.Jaxpr): The jaxpr we want to differentiate.
+        order (Union[Sequence[int], str]): Vertex elimination order. Either pass
+                                        the desired order directly or specify a 
+                                        string. Allows options are "forward", 
+                                        "fwd", "reverse" and "rev".
+        consts (Sequence[core.Literal]): The constant arguments of the function.
+        *args (Any): The input arguments of the function as a flattened PyTree.
+        argnums (Sequence[int], optional): Argument numbers to differentiate
+                                            with respect to. Defaults to (0,).
+        count_ops (bool, optional): Count the number of operations during the
+                                    elimination process. Defaults to `False`.
+        sparse_representation (bool, optional): Return the Jacobian in a sparse
+                                            representation. Defaults to `False`.
 
     Returns:
-
+        Sequence[Sequence[jnp.ndarray]]: The Jacobian of the function `fun`.
+                                        The output is a list of lists which 
+                                        corresponds to a flattened PyTree of the
+                                        actual input parameters and will be 
+                                        reassambled into the correct PyTree
+                                        by `jacve`.
 
     """
     

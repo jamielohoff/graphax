@@ -3,12 +3,12 @@ Sparse tensor algebra implementation
 """
 import copy
 from typing import Callable, Sequence, Tuple, Union
-
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
 from jax._src.core import ShapedArray
+from jax.tree_util import register_pytree_node_class
 
 from chex import Array
 
@@ -58,7 +58,8 @@ Dimension = Union[DenseDimension, SparseDimension]
         
 
 class SparseTensor:
-    """The `SparseTensor object enables` the representation of sparse tensors
+    """
+    The `SparseTensor object enables` the representation of sparse tensors
     that 
     if out_dims or primal_dims is empty, this implies a scalar dependent or
     independent variable. 
@@ -100,7 +101,7 @@ class SparseTensor:
                 f"   val = {self.val},\n" \
                 f"   pre_transforms = {self.pre_transforms},\n" \
                 f"   post_transforms = {self.post_transforms})\n"
-                
+                    
     def __add__(self, _tensor):
         return _add(self, _tensor)
     
@@ -173,7 +174,7 @@ class SparseTensor:
         primal_dims = copy.deepcopy(self.primal_dims)
         val = self.val if val is None else val
         return SparseTensor(out_dims, primal_dims, val, self.pre_transforms, self.post_transforms)
-    
+
 
 def sparse_tensor_zeros_like(st: SparseTensor) -> SparseTensor:
     """
