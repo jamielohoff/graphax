@@ -172,6 +172,7 @@ ComputationalGraph = Dict[core.Var, Dict[core.Var, jnp.ndarray]]
 def jacve(fun: Callable, 
             order: EliminationOrder, 
             argnums: Sequence[int] = (0,),
+            has_aux: bool = False,
             count_ops: bool = False,
             sparse_representation: bool = False) -> Callable:
     """
@@ -194,6 +195,7 @@ def jacve(fun: Callable,
             "forward", "fwd", "reverse" and "rev".
         argnums (Sequence[int], optional): Argument numbers to differentiate 
                                             with respect to. Defaults to (0,).
+        has_aux (bool): _description_
         count_ops (bool, optional): Count the number of operations during the 
                                     elimination process. Defaults to `False`.
         sparse_representation (bool, optional): Return the Jacobian in a sparse 
@@ -213,6 +215,7 @@ def jacve(fun: Callable,
                                         order, 
                                         closed_jaxpr.literals, 
                                         *args, 
+                                        has_aux=has_aux,
                                         argnums=argnums,
                                         count_ops=count_ops,
                                         sparse_representation=sparse_representation)
@@ -222,6 +225,12 @@ def jacve(fun: Callable,
             if len(closed_jaxpr.jaxpr.outvars) == 1:
                 return out[0], op_counts
             return jtu.tree_unflatten(out_tree, out), op_counts
+        elif has_aux:
+            primal_out, grads = out
+            out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
+            if len(closed_jaxpr.jaxpr.outvars) == 1:
+                return primal_out[0], grads[0]
+            return jtu.tree_unflatten(out_tree, primal_out), jtu.tree_unflatten(out_tree, grads)
         else:
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
             if len(closed_jaxpr.jaxpr.outvars) == 1:
@@ -550,7 +559,7 @@ def _build_graph(jaxpr: core.Jaxpr,
             if len(invars) == len(elemental_outvals):
                 safe_map(_write_elemental, invars, elemental_outvals)
         
-    return graph, transpose_graph, vo_vertices
+    return env, graph, transpose_graph, vo_vertices
 
 
 def _prune_graph(graph: ComputationalGraph, 
@@ -587,7 +596,7 @@ def _prune_graph(graph: ComputationalGraph,
                 
             del graph[invar]
             del transpose_graph[invar]
-            print("Pruned input variable:", invar)
+            # print("Pruned input variable:", invar)
         
     already_deleted = []
     while has_dead_vertices:
@@ -607,7 +616,7 @@ def _prune_graph(graph: ComputationalGraph,
                     
                 del graph[ov]
                 del transpose_graph[ov] 
-                print("Pruned output variable:", ov)
+                # print("Pruned output variable:", ov)
             already_deleted.extend(to_delete)
         else:
             has_dead_vertices = False
@@ -617,6 +626,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                             order: Union[Sequence[int], str], 
                             consts: Sequence[core.Literal], 
                             *args, 
+                            has_aux: bool = False,
                             argnums: Sequence[int] = (0,),
                             count_ops: bool = False,
                             sparse_representation: bool = False
@@ -644,6 +654,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         *args (Any): The input arguments of the function as a flattened PyTree.
         argnums (Sequence[int], optional): Argument numbers to differentiate
                                             with respect to. Defaults to (0,).
+        has_aux (bool): _description_
         count_ops (bool, optional): Count the number of operations during the
                                     elimination process. Defaults to `False`.
         sparse_representation (bool, optional): Return the Jacobian in a sparse
@@ -656,12 +667,11 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                                         actual input parameters and will be 
                                         reassambled into the correct PyTree
                                         by `jacve`.
-
     """
     
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
-    graph, transpose_graph, vo_vertices = _build_graph(jaxpr, args, consts)
-    _prune_graph(graph, transpose_graph, jaxpr, argnums)
+    env, graph, transpose_graph, vo_vertices = _build_graph(jaxpr, args, consts)
+    # _prune_graph(graph, transpose_graph, jaxpr, argnums) NOTE graph pruning is disabled for now
     
     iota = _iota_shape(jaxpr, argnums)
         
@@ -715,6 +725,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                 "num_adds": num_adds, 
                 "order_counts": order_counts}
         return jac_vals, aux
+    if has_aux:
+        return [env[var] for var in jaxpr.outvars], jac_vals
 
     return jac_vals
 

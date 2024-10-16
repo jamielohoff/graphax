@@ -485,12 +485,12 @@ def inverse_permutation(permutation):
     return inverse
 
 
-def pjit_elemental_rule(primals, **params):
-    val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
+# def pjit_elemental_rule(primals, **params):
+#     val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
 
-    return val_out, [v for v in val_out]
+#     return val_out, [v for v in val_out]
 
-elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
+# elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
 
 
 # Should work for high-dimensional stuff

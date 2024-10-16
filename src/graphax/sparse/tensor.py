@@ -995,7 +995,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the dense dot-product multiplication of `lhs.val` and `rhs.val`.
     """
-    print("dense mul before", lhs.val.shape, rhs.val.shape)
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
     new_out_dims = lhs.out_dims
@@ -1039,7 +1038,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     # Do the math using dot_general
     dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
     dimension_numbers = (dimension_numbers, ((), ()))
-    print("dense mul after", lhs.val.shape, rhs.val.shape, dimension_numbers)
     new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
     
     return SparseTensor(new_out_dims, new_primal_dims, new_val)
