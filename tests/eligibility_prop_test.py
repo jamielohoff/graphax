@@ -43,14 +43,13 @@ surrogate = lambda x: 1. / (1. + 10.*jnp.abs(x))
 # Simple SNN model implementation according to the following paper:
 # Zenke and Neftci, and Bellec et al.
 # this is basically the f function of the recursion relation
-# TODO: This shit needs a proper API!
+# TODO Anil and Jamie: This shit needs a proper API!
 def simple_SNN(x, z, v, W, V):
     beta = 0.95
     v_next = beta * v + (1. - beta) * (jnp.dot(W, x) + jnp.dot(V, z))
-    # implementation of surrogate gradient without custom gradient features
-    surr = surrogate(v_next) # spiking behavior needs working pjit!
-    # TODO Jamie: fix heaviside function
-    z_next = lax.stop_gradient(jnp.heaviside(v_next, 0.) - surr) + surr #  lax.stop_gradient(jnp.heaviside(v_next, 0.) - surr) + surr
+    # Implementation of surrogate gradient without custom gradient features
+    surr = surrogate(v_next)
+    z_next = lax.stop_gradient(jnp.heaviside(v_next, 0.) - surr) + surr
     return z_next, v_next
 
 
@@ -169,6 +168,7 @@ optim = optax.adam(1e-3)
 weights = (W, V, W_out)
 opt_state = optim.init(weights)
 
+
 @jax.jit
 def eprop_train_step(xs, target, opt_state, weights, G_W0, G_V0):
     _W, _V, _W_out = weights
@@ -177,6 +177,7 @@ def eprop_train_step(xs, target, opt_state, weights, G_W0, G_V0):
     updates, opt_state = optim.update(grads, opt_state)
     weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
     return loss, weights, opt_state
+
 
 @jax.jit
 def bptt_train_step(xs, target, opt_state, weights):
@@ -187,7 +188,7 @@ def bptt_train_step(xs, target, opt_state, weights):
     return loss, weights, opt_state
 
 
-# NOTE training loop
+# Training loop
 for data, targets in tqdm(train_dataloader):
     xs = jnp.array(data.numpy()).squeeze()
     targets = jnp.array(targets.numpy())
