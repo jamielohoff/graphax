@@ -50,15 +50,6 @@ def simple_SNN(x, z, v, W, V):
     return z_next, v_next
 
 
-# xs = jnp.ones(10)
-# z = jnp.zeros(10)
-# v = jnp.zeros(10)
-# W = jnp.ones((10, 10))
-# V = jnp.ones((10, 10))
-# # print(jax.make_jaxpr(simple_SNN)(xs, z, v, W, V))
-# grads = gx.jacve(simple_SNN, order="rev", argnums=(2, 3, 4), sparse_representation=True)(xs, z, v, W, V)
-# print(grads)
-
 def simple_SNN_stopgrad(x, z, v, W, V):
     beta = 0.95
     v_next = beta * v + (1. - beta) * (jnp.dot(W, x) + jnp.dot(V, z))
@@ -83,15 +74,12 @@ def SNN_eprop_timeloop(xs, tgt, z0, v0, W, V, W_out, G_W0, G_V0):
     # G should be materalized as a PyTree of sparse tensors
     def loop_fn(carry, xs):
         z, v, G_W_val, G_V_val, W_grad_val, V_grad_val, W_out_grad_val, loss = carry
-        # TODO Jamie: This is inefficient because we effectively evaluate simple_SNN twice!
-        # next_z, next_v = simple_SNN(xs, z, v, W, V)
         output, grads = gx.jacve(simple_SNN, order="rev", argnums=(2, 3, 4), has_aux=True, sparse_representation=True)(xs, z, v, W, V)
         next_z, next_v = output
         grads = grads[1]
         # By neglecting the gradient wrt. z, we basically compute only the 
         # implicit recurrence, but not the explicit recurrence
         # Look at OTTT, OSTL, FPTT etc.
-        # print("H_E", grads[0]) # This guy is dense! but we could make it sparse...
         F_W, F_V = grads[1], grads[2]
         G_W = F_W.copy(G_W_val)
         G_V = F_V.copy(G_V_val)
@@ -100,7 +88,6 @@ def SNN_eprop_timeloop(xs, tgt, z0, v0, W, V, W_out, G_W0, G_V0):
         G_W = H_I * G_W + F_W
         G_V = H_I * G_V + F_V
         
-        # loss += loss_fn(next_z, tgt, W_out) # TODO Jamie: Again, we need to remove the inefficiency here!
         _loss, loss_grads = gx.jacve(loss_fn, order="rev", argnums=(0, 2), has_aux=True, sparse_representation=True)(next_z, tgt, W_out)
         loss += _loss
         loss_grad, W_out_grad = loss_grads[0], loss_grads[1]
@@ -114,7 +101,8 @@ def SNN_eprop_timeloop(xs, tgt, z0, v0, W, V, W_out, G_W0, G_V0):
         new_carry = (next_z, next_v, G_W.val, G_V.val, W_grad_val, V_grad_val, W_out_grad_val, loss)
         return new_carry, None
     
-    # TODO: implement pytree handling for SparseTensor types
+    # TODO Jamie: implement pytree handling for SparseTensor types so that we can use
+    # them directly in the loop_fn
     final_carry, _ = lax.scan(loop_fn, (z0, v0, G_W0, G_V0, G_W0, G_V0, jnp.zeros((num_targets, size)), 0.), xs, length=num_time_bins)
     _, _, _, _, W_grad, V_grad, W_out_grad, loss = final_carry
     return loss, W_grad, V_grad, W_out_grad # final gradients
@@ -136,7 +124,7 @@ def SNN_bptt_timeloop(xs, tgt, z0, v0, W, V, W_out):
     # TODO: implement pytree handling for SparseTensor types
     carry, _ = lax.scan(loop_fn, (z0, v0, 0.), xs, length=num_time_bins)
     z, v, loss = carry
-    return loss # final gradients
+    return loss 
 
 
 vmap_SNN_bptt_timeloop = jax.vmap(SNN_bptt_timeloop, in_axes=(0, 0, None, None, None, None, None))
@@ -200,35 +188,4 @@ for data, targets in tqdm(train_dataloader):
 # TODO Anil: you can make the bptt example mathematically equivalen to eprop by
 # putting a stopgrad in the right place. do that and compare the gradients!
 # also check convergence for all cases
-
-
-
-# xs = jnp.ones((num_time_bins, size))
-# tgt = jnp.ones((size,))
-
-
-# eprop_grads = SNN_eprop_timeloop(xs, z0, v0, W, V, T, tgt, G_W0, G_V0)
-# bptt_grad_fn =jax.jacrev(SNN_BPTT_timeloop, argnums=(3, 4))
-# jitted_bptt_grad_fn = jax.jit(bptt_grad_fn, static_argnums=5)
-# bptt_grads = jitted_bptt_grad_fn(xs, z0, v0, W, V, T, tgt)
-
-
-# rtrl_grad_fn = jax.jacfwd(SNN_BPTT_timeloop, argnums=(3, 4))
-# jitted_rtrl_grad_fn = jax.jit(rtrl_grad_fn, static_argnums=5)
-# rtrl_grads = jitted_rtrl_grad_fn(xs, z0, v0, W, V, T, tgt)
-
-# import time
-# start = time.time()
-# eprop_grads = SNN_eprop_timeloop(xs, z0, v0, W, V, T, tgt, G_W0, G_V0)
-# print("E-prop time elapsed", time.time() - start)
-# start = time.time()
-# bptt_grads = jitted_bptt_grad_fn(xs, z0, v0, W, V, T, tgt)
-# print("BPTT Time elapsed", time.time() - start)
-# start = time.time()
-# rtrl_grads = jitted_rtrl_grad_fn(xs, z0, v0, W, V, T, tgt)
-# print("RTRL Time elapsed", time.time() - start)
-
-
-# print("e-prop gradients", eprop_grads)
-# print("bptt gradients", bptt_grads)
 
