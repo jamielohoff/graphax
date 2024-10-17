@@ -543,7 +543,7 @@ def _build_graph(jaxpr: core.Jaxpr,
         # print("invars", eqn.invars)
         # print("outvars", eqn.outvars)
         invals = safe_map(read, eqn.invars)      
-        
+
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
         primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)

@@ -451,6 +451,13 @@ def device_put_elemental_rule(primals, **params):
 elemental_rules[lax.device_put_p] = device_put_elemental_rule
 
 
+def stop_gradient_elemental_rule(primals, **params):
+    val_out = lax.stop_gradient_p.bind(*primals, **params)
+    return val_out, []
+
+elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
+
+
 ### Transforms
 
 Transform = Callable[[SparseTensor, SparseTensor, jnp.ndarray], SparseTensor]
@@ -478,27 +485,99 @@ class JacobianTransform:
         return self.inverse_transform(tensor, iota)
 
 
-def inverse_permutation(permutation):
+def _inverse_permutation(permutation):
     inverse = [0] * len(permutation)
     for i, p in enumerate(permutation):
         inverse[p] = i
     return inverse
 
 
+from collections import defaultdict
+from jax._src.util import safe_map
+
+# Proper pjit and custom grad implementation only possible with a proper tracing system
+
+def _trace_subjaxpr(jaxpr, args, consts):
+    env = {} # env stores the primal value associated with the core.Var object
+
+    graph = defaultdict(lambda: defaultdict()) # Input connectivity
+    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
+        
+    vo_vertices = set() # contains all intermediate and output vertices
+    counter = 1 # vertex id counter
+    var_id = {} # associates every application of a JaxprEqn with a unique integer
+    # identifier that is later used when using the vertex elimination order.
+    # NOTE: This only works well if the output is a single value.
+    # It is ill-defined when having functions with more than one output!.
+
+    # Reads variable and corresponding traced shaped array
+    def read(var):
+        if type(var) is core.Literal:
+            return var.val
+        return env[var]
+
+    # Adds new variable and corresponding traced shaped array
+    def write(var, val):
+        env[var] = val
+        
+    # Writes a new elemental partial to the graph and transpose_graph
+    def write_elemental(outvar, invar, val):
+        # _checkify_tensor(val)
+        if isinstance(invar, core.Var):
+            graph[invar][outvar] = val
+            transpose_graph[outvar][invar] = val
+                            
+    safe_map(write, jaxpr.invars, args)
+    safe_map(write, jaxpr.constvars, consts)
+
+    # NOTE: this is essentially the tracing part. Probably should write a proper
+    # tracing system with lift etc. for better compatibility with JAX
+    # Loop though elemental partials and create an abstract representation of
+    # the computational graph
+    for eqn in jaxpr.eqns:
+        # Treatment of intermediate variables that are also output variables
+        for outvar in eqn.outvars:
+            if type(outvar) is core.Var and outvar not in var_id.keys():
+                var_id[outvar] = counter
+                counter += 1
+                    
+        for invar in eqn.invars:
+            if invar in jaxpr._outvars:
+                vertex = var_id[invar]
+                vo_vertices.add(vertex)
+                
+        print("eqn:", eqn)
+        print("invars", eqn.invars)
+        print("outvars", eqn.outvars)
+        invals = safe_map(read, eqn.invars)      
+        
+        if eqn.primitive not in elemental_rules:
+            raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
+        primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
+        if type(primal_outvals) is list:
+            safe_map(write, eqn.outvars, primal_outvals)
+        else:
+            safe_map(write, eqn.outvars, [primal_outvals])
+        invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        # NOTE: Currently only able to treat one output variable
+
+        _write_elemental = partial(write_elemental, eqn.outvars[0])
+        if len(invars) == len(elemental_outvals):
+            safe_map(_write_elemental, invars, elemental_outvals)
+
+    return env, graph, transpose_graph
+
 # TODO: this is a very ugly hack that treats pjit as a normal primitive with a 
 # stop_grad property
 def pjit_elemental_rule(primals, **params):
     val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
+    # TODO Jamie: How do we handle the gradients here?
+
+    env, graph, transpose_graph = _trace_subjaxpr(params["jaxpr"].jaxpr, primals, [])
+
     return val_out, []
 
 elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
-
-
-def stop_gradient_elemental_rule(primals, **params):
-    val_out = lax.stop_gradient_p.bind(*primals, **params)
-    return val_out, []
-
-elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
 
 
 # Should work for high-dimensional stuff
@@ -530,7 +609,7 @@ def transpose_elemental_rule(primals, **params):
         counter = len(post.out_dims)
 
         # This implementation is faulty!
-        inv_permutation = inverse_permutation(permutation)
+        inv_permutation = _inverse_permutation(permutation)
         for p in inv_permutation:
             new_primal_dims.append(post.primal_dims[p])
             new_primal_dims[-1].id = counter

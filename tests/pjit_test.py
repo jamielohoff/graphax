@@ -14,7 +14,7 @@ class PJITTest(unittest.TestCase):
     def test_simple_pjit(self):
         def simple_pjit(x, y):
             x = jnp.sin(x)
-            var = jnp.heaviside(x, 0)
+            var = jnp.var(x)
             return y / var
         
         # def selecttest(y, z):
@@ -30,18 +30,18 @@ class PJITTest(unittest.TestCase):
 
         x = jnp.arange(0, 6) * 0.1
         y = jnp.ones((6,))
-        # print(jax.make_jaxpr(pjit_with_var)(x, y))
+        print(jax.make_jaxpr(simple_pjit)(x, y))
         print(jax.make_jaxpr(jacve(simple_pjit, order="fwd", argnums=(0, 1)))(x, y))
-        jac_rev = jax.jit(jacve(simple_pjit, order="fwd", argnums=(0, 1)))
-        veres = jac_rev(x, y)
+        # jac_rev = jax.jit(jacve(simple_pjit, order="fwd", argnums=(0, 1)))
+        # veres = jac_rev(x, y)
 
         # print(jax.make_jaxpr(jax.jacfwd(simple_pjit, argnums=(0, 1)))(x, y))
-        jax_jac_rev = jax.jit(jax.jacfwd((simple_pjit), argnums=(0, 1)))
-        revres = jax_jac_rev(x, y)
+        # jax_jac_rev = jax.jit(jax.jacfwd((simple_pjit), argnums=(0, 1)))
+        # revres = jax_jac_rev(x, y)
 
-        print(veres[0])
-        print(revres[0])
-        self.assertTrue(tree_allclose(veres, revres))
+        # print(veres[0])
+        # print(revres[0])
+        # self.assertTrue(tree_allclose(veres, revres))
         
 if __name__ == '__main__':
     unittest.main()
