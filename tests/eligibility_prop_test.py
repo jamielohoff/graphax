@@ -33,10 +33,7 @@ trans = transforms.Compose([transforms.ToFrame(sensor_size=sensor_size,
 train_dataset = tonic.datasets.SHD(save_to="./data", train=True, transform=trans)
 test_dataset = tonic.datasets.SHD(save_to="./data", train=False, transform=trans)
 
-train_dataloader = DataLoader(train_dataset, 
-                            batch_size=batchsize, 
-                            shuffle=True)
-
+train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=True)
 test_dataloader = DataLoader(test_dataset, batch_size=batchsize, shuffle=False)
 
 surrogate = lambda x: 1. / (1. + 10.*jnp.abs(x))
