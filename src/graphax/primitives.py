@@ -485,12 +485,20 @@ def inverse_permutation(permutation):
     return inverse
 
 
-# def pjit_elemental_rule(primals, **params):
-#     val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
+# TODO: this is a very ugly hack that treats pjit as a normal primitive with a 
+# stop_grad property
+def pjit_elemental_rule(primals, **params):
+    val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
+    return val_out, []
 
-#     return val_out, [v for v in val_out]
+elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
 
-# elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
+
+def stop_gradient_elemental_rule(primals, **params):
+    val_out = lax.stop_gradient_p.bind(*primals, **params)
+    return val_out, []
+
+elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
 
 
 # Should work for high-dimensional stuff

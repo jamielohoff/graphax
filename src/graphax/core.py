@@ -542,22 +542,21 @@ def _build_graph(jaxpr: core.Jaxpr,
         # print("eqn:", eqn)
         # print("invars", eqn.invars)
         # print("outvars", eqn.outvars)
-        invals = safe_map(read, eqn.invars)              
-        if eqn.primitive is lax.stop_gradient_p:
-            primal_outvals = lax.stop_gradient_p.bind(*invals, **eqn.params)
-            safe_map(write, eqn.outvars, [primal_outvals])
-            
+        invals = safe_map(read, eqn.invars)      
+        
+        if eqn.primitive not in elemental_rules:
+            raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
+        primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
+        if type(primal_outvals) is list:
+            safe_map(write, eqn.outvars, primal_outvals)
         else:
-            if eqn.primitive not in elemental_rules:
-                raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
-            primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
             safe_map(write, eqn.outvars, [primal_outvals])
-            invars = [invar for invar in eqn.invars if type(invar) is core.Var]
-            # NOTE: Currently only able to treat one output variable
+        invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        # NOTE: Currently only able to treat one output variable
 
-            _write_elemental = partial(write_elemental, eqn.outvars[0])
-            if len(invars) == len(elemental_outvals):
-                safe_map(_write_elemental, invars, elemental_outvals)
+        _write_elemental = partial(write_elemental, eqn.outvars[0])
+        if len(invars) == len(elemental_outvals):
+            safe_map(_write_elemental, invars, elemental_outvals)
         
     return env, graph, transpose_graph, vo_vertices
 
