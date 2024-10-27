@@ -185,7 +185,7 @@ defelemental(lax.sub_p, sub_elemental_rule)
 
     
 def mul_elemental_rule(x, y):
-    return (jnp.sinh(jnp.ones(3)), jnp.cosh(jnp.ones(4))) # NOTE: This is not correct! Reset when commit.
+    return (jnp.ones_like(y), jnp.ones_like(x)) # (jnp.sinh(jnp.ones(3)), jnp.cosh(jnp.ones(4))) # NOTE: This is not correct! Reset when commit.
 defelemental(lax.mul_p, mul_elemental_rule)
     
 

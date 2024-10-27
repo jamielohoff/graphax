@@ -13,7 +13,7 @@ from neuron_models import SNN_LIF
 
 # Handling the dataset:
 BATCH_SIZE = 128
-NUM_TIMESTEPS = 200
+NUM_TIMESTEPS = 250
 EPOCHS = 100
 NUM_HIDDEN = 256
 NUM_LABELS = 20
@@ -30,14 +30,13 @@ torch.manual_seed(42)
 train_loader = torch.utils.data.DataLoader(dataset=train_set, shuffle=True, batch_size=BATCH_SIZE, drop_last=True)
 test_loader = torch.utils.data.DataLoader(dataset=test_set, shuffle=True, batch_size=BATCH_SIZE, drop_last=True)
 
-frames, target = next(iter(test_loader))
-
 # Use cross-entropy loss
 def loss_fn(z, tgt, W_out):
     out = W_out @ z
-    # log_probs = jax.nn.log_softmax(out) 
-    return optax.softmax_cross_entropy(out, tgt)
-    # return -jnp.dot(tgt, log_probs) # cross-entopy loss
+    probs = jax.nn.softmax(out) 
+    log_probs = jnp.log(probs + 1e-8)
+    # return optax.softmax_cross_entropy(out, tgt)
+    return -jnp.dot(tgt, log_probs) # cross-entopy loss
     
 '''
 G: Accumulated gradient of U (hidden state) w.r.t. parameters W and V.
@@ -47,6 +46,7 @@ in_seq: (batch_dim, num_timesteps, sensor_size)
 '''
 
 def SNN_eprop_timeloop(in_seq, target, z0, u0, W, V, W_out, G_W0, G_V0):
+    # NOTE: we have a vanishing gradient problem here!
     def loop_fn(carry, in_seq):
         z, u, G_W_val, G_V_val, W_grad_val, V_grad_val, W_out_grad_val, loss = carry
         outputs, grads = gx.jacve(SNN_LIF, order = 'rev', argnums=(2, 3, 4), has_aux=True, sparse_representation=True)(in_seq, z, u, W, V)
@@ -94,7 +94,7 @@ def xavier_normal(key, shape):
     # Generate random numbers from a normal distribution
     return stddev * jax.random.normal(key, shape)
 
-init_ = xavier_normal # jax.nn.initializers.he_normal()
+init_ = jax.nn.initializers.orthogonal() #  xavier_normal # jax.nn.initializers.he_normal()
 
 W = init_(wkey, (NUM_HIDDEN, NUM_CHANNELS))
 V = init_(vkey, (NUM_HIDDEN, NUM_HIDDEN))
@@ -116,8 +116,7 @@ def SNN_bptt_timeloop(in_seq, tgt, z0, u0, W, V, W_out):
         loss += loss_fn(next_z, tgt, W_out)
         new_carry = (next_z, next_u, loss)
         return new_carry, None
-    
-    # TODO: implement pytree handling for SparseTensor types
+
     carry, _ = jax.lax.scan(loop_fn, (z0, u0, 0.), in_seq, length=NUM_TIMESTEPS)
     z, v, loss = carry
     return loss 
@@ -125,18 +124,20 @@ def SNN_bptt_timeloop(in_seq, tgt, z0, u0, W, V, W_out):
 
 batch_vmap_SNN_bptt_timeloop = jax.vmap(SNN_bptt_timeloop, in_axes=(0, 0, None, None, None, None, None))
 
+
 @partial(jax.jacrev, argnums=(4, 5, 6), has_aux=True)
-def loss_and_grad(in_seq, target, z0, u0, _W, _V, _W_out):
+def bptt_loss_and_grad(in_seq, target, z0, u0, _W, _V, _W_out):
     # losses = batch_vmap_SNN_eprop_timeloop(in_seq, target, z0, u0, _W, _V, _W_out)
     losses = batch_vmap_SNN_bptt_timeloop(in_seq, target, z0,u0, _W, _V, _W_out)
-    return jnp.mean(losses), jnp.mean(losses) # has to return this twice so that it returns loss and grad!
+    loss = jnp.mean(losses)
+    return loss, loss
 
 # Train for one batch:
 @jax.jit
 def eprop_train_step(in_batch, target, opt_state, weights, G_W0, G_V0):
     _W, _V, _W_out = weights
     loss, W_grad, V_grad, W_out_grad = batch_vmap_SNN_eprop_timeloop(in_batch, target, z0, u0, _W, _V, _W_out, G_W0, G_V0)
-    grads = (W_grad.mean(), V_grad.mean(), W_out_grad.mean()) # take the mean across the batch dim for all gradient updates
+    grads = (W_grad.mean(0), V_grad.mean(0), W_out_grad.mean(0)) # take the mean across the batch dim for all gradient updates
     updates, opt_state = optim.update(grads, opt_state)
     weights = jax.tree_util.tree_map(lambda x, y: x + y, weights, updates)
     return loss, weights, opt_state
@@ -145,7 +146,7 @@ def eprop_train_step(in_batch, target, opt_state, weights, G_W0, G_V0):
 @jax.jit
 def bptt_train_step(in_seq, target, opt_state, weights):
     _W, _V, _W_out = weights
-    grads, loss = loss_and_grad(in_seq, target, z0, u0, _W, _V, _W_out)
+    grads, loss = bptt_loss_and_grad(in_seq, target, z0, u0, _W, _V, _W_out)
     updates, opt_state = optim.update(grads, opt_state)
     weights = jax.tree_util.tree_map(lambda x, y: x + y, weights, updates)
     return loss, weights, opt_state
@@ -195,6 +196,6 @@ for ep in range(EPOCHS):
         # just comment out 'bptt' with 'eprop' to switch between the two training methods
         loss, weights, opt_state = eprop_train_step(in_batch, target_batch, opt_state, weights, G_W0, G_V0)
         # loss, weights, opt_state = bptt_train_step(in_batch, target_batch, opt_state, weights)
-        print("Epoch: ", ep + 1, ", loss: ", loss.mean())
+        print("Epoch: ", ep + 1, ", loss: ", loss.mean() / NUM_TIMESTEPS)
     test_model(weights)
     
