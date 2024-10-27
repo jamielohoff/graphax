@@ -1,94 +1,68 @@
-from functools import partial
-from tqdm import tqdm
-
+import graphax as gx
 import jax
-import jax.nn as jnn
-import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
-import jax.tree_util as jtu
-
+import equinox as eqx
+import tonic
+import torch
 import optax
 
-import graphax as gx
+from functools import partial
+from tqdm import tqdm
+from neuron_models import SNN_LIF
 
-import tonic
-from tonic import transforms
+# Handling the dataset:
+BATCH_SIZE = 128
+NUM_TIMESTEPS = 200
+EPOCHS = 100
+NUM_HIDDEN = 256
+NUM_LABELS = 20
+NUM_CHANNELS = 700
+SENSOR_SIZE = tonic.datasets.SHD.sensor_size
+frame_transform = tonic.transforms.ToFrame(sensor_size=SENSOR_SIZE, 
+                                            n_time_bins=NUM_TIMESTEPS)
 
-from torch.utils.data import DataLoader
+transform = tonic.transforms.Compose([frame_transform,])
+train_set = tonic.datasets.SHD(save_to='./data', train=True, transform=transform)
+test_set = tonic.datasets.SHD(save_to='./data', train=False, transform=transform)
 
+torch.manual_seed(42)
+train_loader = torch.utils.data.DataLoader(dataset=train_set, shuffle=True, batch_size=BATCH_SIZE, drop_last=True)
+test_loader = torch.utils.data.DataLoader(dataset=test_set, shuffle=True, batch_size=BATCH_SIZE, drop_last=True)
 
-batchsize = 16
-num_channels = 700
-N_hidden = 128
-num_time_bins = 200
-num_targets = 20 # 20 classes because numbers 0-9 are in English and German
-
-
-# Load dataset with tonic
-sensor_size = tonic.datasets.SHD.sensor_size
-trans = transforms.Compose([transforms.ToFrame(sensor_size=sensor_size, 
-                                                n_time_bins=num_time_bins)])
-
-train_dataset = tonic.datasets.SHD(save_to="./data", train=True, transform=trans)
-test_dataset = tonic.datasets.SHD(save_to="./data", train=False, transform=trans)
-
-train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=True)
-test_dataloader = DataLoader(test_dataset, batch_size=batchsize, shuffle=False)
-
-surrogate = lambda x: 1. / (1. + 10.*jnp.abs(x))
-# Simple SNN model implementation according to the following paper:
-# Zenke and Neftci, and Bellec et al.
-# this is basically the f function of the recursion relation
-# TODO Anil and Jamie: This shit needs a proper API!
-def simple_SNN(x, z, v, W, V):
-    beta = 0.95
-    v_next = beta * v + (1. - beta) * (jnp.dot(W, x) + jnp.dot(V, z))
-    # Implementation of surrogate gradient without custom gradient features
-    surr = surrogate(v_next)
-    z_next = lax.stop_gradient(jnp.heaviside(v_next, 0.) - surr) + surr
-    return z_next, v_next
-
-
-def simple_SNN_stopgrad(x, z, v, W, V):
-    beta = 0.95
-    v_next = beta * v + (1. - beta) * (jnp.dot(W, x) + jnp.dot(V, z))
-    # implementation of surrogate gradients without custom gradient features
-    surr = surrogate(v_next)
-    z_next = lax.stop_gradient(jnp.heaviside(v_next, 0.) - surr) + surr
-    return z_next, v_next
-
+frames, target = next(iter(test_loader))
 
 # Use cross-entropy loss
 def loss_fn(z, tgt, W_out):
     out = W_out @ z
-    probs = jnn.softmax(out) # TODO Jamie: why does log_softmax not work in graphax?
-    return -jnp.dot(tgt, jnp.log(probs)) # cross-entopy loss
+    # log_probs = jax.nn.log_softmax(out) 
+    return optax.softmax_cross_entropy(out, tgt)
+    # return -jnp.dot(tgt, log_probs) # cross-entopy loss
+    
+'''
+G: Accumulated gradient of U (hidden state) w.r.t. parameters W and V.
+F: Immediate gradient of U (hidden state) w.r.t. parameters W and V.
+H: Gradient of current U w.r.t. previous timestep U.
+in_seq: (batch_dim, num_timesteps, sensor_size)
+'''
 
+def SNN_eprop_timeloop(in_seq, target, z0, u0, W, V, W_out, G_W0, G_V0):
+    def loop_fn(carry, in_seq):
+        z, u, G_W_val, G_V_val, W_grad_val, V_grad_val, W_out_grad_val, loss = carry
+        outputs, grads = gx.jacve(SNN_LIF, order = 'rev', argnums=(2, 3, 4), has_aux=True, sparse_representation=True)(in_seq, z, u, W, V)
+        next_z, next_u = outputs
+        # grads contain the gradients of z_next and u_next w.r.t. u, W and V. But we ignore grads of z (explicit recurrence) 
+        u_grads = grads[1] # only gradient of u_next w.r.t. u, W and V.
+        # W is the 
+        F_W, F_V = u_grads[1], u_grads[2] # gradients of u_next w.r.t. W and V respectively.
+        G_W = F_W.copy(G_W_val) # G_W_val is the gradient of prev. timestep u w.r.t. W.
+        G_V = F_V.copy(G_V_val) # G_V_val is the gradient of prev. timestep u w.r.t. V.
 
-# For loop that iterates over T time steps
-# Accumulates the actual gradient G_t through recursion
-# weight sharing -/-> trace sharing in convnets
-# @partial(jax.jit, static_argnums=(5,))
-def SNN_eprop_timeloop(xs, tgt, z0, v0, W, V, W_out, G_W0, G_V0):
-    # G should be materalized as a PyTree of sparse tensors
-    def loop_fn(carry, xs):
-        z, v, G_W_val, G_V_val, W_grad_val, V_grad_val, W_out_grad_val, loss = carry
-        output, grads = gx.jacve(simple_SNN, order="rev", argnums=(2, 3, 4), has_aux=True, sparse_representation=True)(xs, z, v, W, V)
-        next_z, next_v = output
-        grads = grads[1]
-        # By neglecting the gradient wrt. z, we basically compute only the 
-        # implicit recurrence, but not the explicit recurrence
-        # Look at OTTT, OSTL, FPTT etc.
-        F_W, F_V = grads[1], grads[2]
-        G_W = F_W.copy(G_W_val)
-        G_V = F_V.copy(G_V_val)
-
-        H_I = grads[0] # gradient of the implicit recurrence
+        H_I = u_grads[0] # grad. of u_next w.r.t. previous timestep u.
         G_W = H_I * G_W + F_W
         G_V = H_I * G_V + F_V
-        
-        _loss, loss_grads = gx.jacve(loss_fn, order="rev", argnums=(0, 2), has_aux=True, sparse_representation=True)(next_z, tgt, W_out)
+
+        _loss, loss_grads = gx.jacve(loss_fn, order = 'rev', argnums=(0, 2), has_aux=True, sparse_representation=True)(next_z, target, W_out)
         loss += _loss
         loss_grad, W_out_grad = loss_grads[0], loss_grads[1]
         W_grad = loss_grad * G_W
@@ -98,94 +72,129 @@ def SNN_eprop_timeloop(xs, tgt, z0, v0, W, V, W_out, G_W0, G_V0):
         V_grad_val += V_grad.val
         W_out_grad_val += W_out_grad.val
 
-        new_carry = (next_z, next_v, G_W.val, G_V.val, W_grad_val, V_grad_val, W_out_grad_val, loss)
+        new_carry = (next_z, next_u, G_W.val, G_V.val, W_grad_val, V_grad_val, W_out_grad_val, loss)
         return new_carry, None
-    
-    # TODO Jamie: implement pytree handling for SparseTensor types so that we can use
-    # them directly in the loop_fn
-    final_carry, _ = lax.scan(loop_fn, (z0, v0, G_W0, G_V0, G_W0, G_V0, jnp.zeros((num_targets, size)), 0.), xs, length=num_time_bins)
+    final_carry, _ = jax.lax.scan(loop_fn, (z0, u0, G_W0, G_V0, G_W0, G_V0, jnp.zeros((NUM_LABELS, NUM_HIDDEN)), .0), in_seq, length=NUM_TIMESTEPS)
     _, _, _, _, W_grad, V_grad, W_out_grad, loss = final_carry
-    return loss, W_grad, V_grad, W_out_grad # final gradients
+    return loss, W_grad, V_grad, W_out_grad
 
+batch_vmap_SNN_eprop_timeloop = jax.vmap(SNN_eprop_timeloop, in_axes=(0, 0, None, None, None, None, None, None, None))
 
-vmap_SNN_eprop_timeloop = jax.vmap(SNN_eprop_timeloop, in_axes=(0, 0, None, None, None, None, None, None, None))
+z0 = jnp.zeros(NUM_HIDDEN)
+u0 = jnp.zeros(NUM_HIDDEN)
 
+key = jrand.PRNGKey(0)
+wkey, vkey, G_W_key, G_V_key, woutkey = jrand.split(key, 5)
 
-def SNN_bptt_timeloop(xs, tgt, z0, v0, W, V, W_out):
-    def loop_fn(carry, xs):
-        z, v, loss = carry
-        next_z, next_v = simple_SNN_stopgrad(xs, z, v, W, V)
+def xavier_normal(key, shape):
+    # Calculate the standard deviation for Xavier normal initialization
+    fan_in, fan_out = shape
+    stddev = jnp.sqrt(2.0 / (fan_in + fan_out))
+    
+    # Generate random numbers from a normal distribution
+    return stddev * jax.random.normal(key, shape)
+
+init_ = xavier_normal # jax.nn.initializers.he_normal()
+
+W = init_(wkey, (NUM_HIDDEN, NUM_CHANNELS))
+V = init_(vkey, (NUM_HIDDEN, NUM_HIDDEN))
+W_out = init_(woutkey, (NUM_LABELS, NUM_HIDDEN))
+
+G_W0 = init_(G_W_key, (NUM_HIDDEN, NUM_CHANNELS))
+G_V0 = init_(G_V_key, (NUM_HIDDEN, NUM_HIDDEN))
+
+optim = optax.adamax(1e-3)
+weights = (W, V, W_out)
+opt_state = optim.init(weights)
+
+def SNN_bptt_timeloop(in_seq, tgt, z0, u0, W, V, W_out):
+    def loop_fn(carry, in_seq):
+        z, u, loss = carry
+        next_z, next_u = SNN_LIF(in_seq, z, u, W, V)
         # By neglecting the gradient wrt. S, we basically compute only the 
         # implicit recurrence, but not the explicit recurrence
         loss += loss_fn(next_z, tgt, W_out)
-        new_carry = (next_z, next_v, loss)
+        new_carry = (next_z, next_u, loss)
         return new_carry, None
     
     # TODO: implement pytree handling for SparseTensor types
-    carry, _ = lax.scan(loop_fn, (z0, v0, 0.), xs, length=num_time_bins)
+    carry, _ = jax.lax.scan(loop_fn, (z0, u0, 0.), in_seq, length=NUM_TIMESTEPS)
     z, v, loss = carry
     return loss 
 
 
-vmap_SNN_bptt_timeloop = jax.vmap(SNN_bptt_timeloop, in_axes=(0, 0, None, None, None, None, None))
-
+batch_vmap_SNN_bptt_timeloop = jax.vmap(SNN_bptt_timeloop, in_axes=(0, 0, None, None, None, None, None))
 
 @partial(jax.jacrev, argnums=(4, 5, 6), has_aux=True)
-def loss_and_grad(xs, target, z0, v0, _W, _V, _W_out):
-    losses = vmap_SNN_bptt_timeloop(xs, target, z0, v0, _W, _V, _W_out)
+def loss_and_grad(in_seq, target, z0, u0, _W, _V, _W_out):
+    # losses = batch_vmap_SNN_eprop_timeloop(in_seq, target, z0, u0, _W, _V, _W_out)
+    losses = batch_vmap_SNN_bptt_timeloop(in_seq, target, z0,u0, _W, _V, _W_out)
     return jnp.mean(losses), jnp.mean(losses) # has to return this twice so that it returns loss and grad!
 
-
-size = N_hidden
-z0 = jnp.zeros(size)
-v0 = jnp.zeros(size)
-
-key = jrand.PRNGKey(0)
-wkey, vkey, woutkey = jrand.split(key, 3)
-W = jrand.normal(wkey, (size, num_channels))
-V = jrand.normal(vkey, (size, size))
-W_out = jrand.normal(woutkey, (num_targets, size))
-
-G_W0 = jnp.zeros((size, num_channels)) # gx.sparse_tensor_zeros_like(grads[1])
-G_V0 = jnp.zeros((size, size)) # gx.sparse_tensor_zeros_like(grads[2])
-
-optim = optax.adam(1e-3)
-weights = (W, V, W_out)
-opt_state = optim.init(weights)
-
-
+# Train for one batch:
 @jax.jit
-def eprop_train_step(xs, target, opt_state, weights, G_W0, G_V0):
+def eprop_train_step(in_batch, target, opt_state, weights, G_W0, G_V0):
     _W, _V, _W_out = weights
-    loss, W_grad, V_grad, W_out_grad = vmap_SNN_eprop_timeloop(xs, target, z0, v0, _W, _V, _W_out, G_W0, G_V0)
+    loss, W_grad, V_grad, W_out_grad = batch_vmap_SNN_eprop_timeloop(in_batch, target, z0, u0, _W, _V, _W_out, G_W0, G_V0)
     grads = (W_grad.mean(), V_grad.mean(), W_out_grad.mean()) # take the mean across the batch dim for all gradient updates
     updates, opt_state = optim.update(grads, opt_state)
-    weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
+    weights = jax.tree_util.tree_map(lambda x, y: x + y, weights, updates)
     return loss, weights, opt_state
 
 
 @jax.jit
-def bptt_train_step(xs, target, opt_state, weights):
+def bptt_train_step(in_seq, target, opt_state, weights):
     _W, _V, _W_out = weights
-    grads, loss = loss_and_grad(xs, target, z0, v0, _W, _V, _W_out)
+    grads, loss = loss_and_grad(in_seq, target, z0, u0, _W, _V, _W_out)
     updates, opt_state = optim.update(grads, opt_state)
-    weights = jtu.tree_map(lambda x, y: x + y, weights, updates)
+    weights = jax.tree_util.tree_map(lambda x, y: x + y, weights, updates)
     return loss, weights, opt_state
 
 
+def predict(in_seq, weights):
+    W, V, W_out = weights
+    def loop_fn(carry, in_seq):
+        z, u = carry
+        z_next, u_next = SNN_LIF(in_seq, z, u, W, V)
+        carry = (z_next, u_next)
+        return carry, None
+
+    carry_final, _ = jax.lax.scan(loop_fn, (z0, u0), in_seq) # loop over the timesteps
+    z_final = carry_final[0]
+    # print('carry_final: ', carry_final)
+    out = W_out @ z_final
+    probs = jax.nn.softmax(out)
+    return jnp.argmax(probs, axis=0)
+
+# Test for one batch:
+
+def test_step(in_batch, target_batch, weights):
+    preds_batch = jax.vmap(predict, in_axes=(0, None))(in_batch, weights) # vmap over batch dimension
+    # print('preds_batch: ', preds_batch)
+    # print('target_batch: ', target_batch)
+    return (preds_batch == target_batch).mean()
+
+# Test loop
+def test_model(weights):
+    accuracy_batch = 0.
+    num_iters = len(test_loader)
+    for data, target_batch in tqdm(test_loader):
+        in_batch = jnp.array(data.numpy()).squeeze()
+        target_batch = jnp.array(target_batch.numpy())
+        accuracy_batch += test_step(in_batch, target_batch, weights)
+    accuracy = accuracy_batch / num_iters
+    print('Accuracy: ', accuracy)
+
 # Training loop
-for data, targets in tqdm(train_dataloader):
-    xs = jnp.array(data.numpy()).squeeze()
-    targets = jnp.array(targets.numpy())
-    targets = jnn.one_hot(targets, num_targets)
-    # just comment out 'bptt' with 'eprop' to switch between the two training methods
-    loss, weights, opt_state = eprop_train_step(xs, targets, opt_state, weights, G_W0, G_V0)
-    # loss, weights, opt_state = bptt_train_step(xs, targets, opt_state, weights)
-    print("loss", loss.mean())
+for ep in range(EPOCHS):
+    for data, target_batch in tqdm(train_loader):
+        in_batch = jnp.array(data.numpy()).squeeze()
+        target_batch = jnp.array(target_batch.numpy())
+        target_batch = jax.nn.one_hot(target_batch, NUM_LABELS)
 
-
-# TODO Anil: implement test loop and accuracy computation here and in the loop above
-# TODO Anil: you can make the bptt example mathematically equivalen to eprop by
-# putting a stopgrad in the right place. do that and compare the gradients!
-# also check convergence for all cases
-
+        # just comment out 'bptt' with 'eprop' to switch between the two training methods
+        loss, weights, opt_state = eprop_train_step(in_batch, target_batch, opt_state, weights, G_W0, G_V0)
+        # loss, weights, opt_state = bptt_train_step(in_batch, target_batch, opt_state, weights)
+        print("Epoch: ", ep + 1, ", loss: ", loss.mean())
+    test_model(weights)
+    

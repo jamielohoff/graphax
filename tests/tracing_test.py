@@ -13,9 +13,9 @@ from graphax.sparse.utils import count_muls, count_muls_jaxpr
 class PJITTest(unittest.TestCase): 
     def test_simple_pjit(self):
         def simple_pjit(x, y):
-            x = jnp.sin(x)
-            var = jnp.var(x)
-            return y / var
+            z = x*y
+            w = jnp.sin(z)
+            return z + w, jnp.log(w)
         
         # def selecttest(y, z):
         #     x = jnp.array([2, 0, 1])
@@ -27,15 +27,15 @@ class PJITTest(unittest.TestCase):
         # arr2 = jnp.array([1., 2., 3.])
         # arr3 = jnp.array([.1, .2, .3])
         # print(jax.jacrev(selecttest)(arr2, arr3))
+        x = jnp.arange(1, 7, dtype=jnp.float32) 
+        y = jnp.ones((6,), dtype=jnp.float32)
 
-        x = jnp.arange(0, 6) * 0.1
-        y = jnp.ones((6,))
-        # print(jax.make_jaxpr(simple_pjit)(x, y))
-        print(jax.make_jaxpr(jacve(simple_pjit, order="fwd", argnums=(0, 1)))(x, y))
-        # jac_rev = jax.jit(jacve(simple_pjit, order="fwd", argnums=(0, 1)))
-        # veres = jac_rev(x, y)
+        print()
+        print("#" * 80)
+        print()
 
-        # print(jax.make_jaxpr(jax.jacfwd(simple_pjit, argnums=(0, 1)))(x, y))
+        print(jax.jit(jacve(simple_pjit, order="fwd", argnums=(0, 1)))(x, y))
+        # print(jax.jit(jax.jacfwd(simple_pjit, argnums=(0, 1)))(x, y))
         # jax_jac_rev = jax.jit(jax.jacfwd((simple_pjit), argnums=(0, 1)))
         # revres = jax_jac_rev(x, y)
 

@@ -1,13 +1,15 @@
 from typing import Callable, Dict, Sequence, Set, Tuple, Union
 from functools import wraps, partial
 from collections import defaultdict
+import contextlib
+import itertools as it
 
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from jax._src.util import safe_map
+from jax._src.util import safe_map, safe_zip
 import jax._src.core as core
 
 from .primitives import elemental_rules
@@ -15,11 +17,18 @@ from .sparse.tensor import get_num_muls, get_num_adds, _checkify_tensor
 from .sparse.utils import zeros_like, get_largest_tensor
 
 from jax._src import linear_util as lu
-from jax._src.util import unzip2
-from jax._src.api_util import argnums_partial
+from jax._src.util import unzip2, weakref_lru_cache
+from jax._src.api_util import argnums_partial, lru_cache
 import jax._src.interpreters.partial_eval as pe
+from jax._src import source_info_util
 
 
+from jax.tree_util import tree_flatten
+from jax._src.api_util import flatten_fun_nokwargs
+from jax._src import dispatch
+
+# map = safe_map
+# zip = safe_zip
 # elemental_rules = {}
 
 def tree_allclose(tree1, tree2, equal_nan: bool = False) -> bool:
@@ -28,146 +37,137 @@ def tree_allclose(tree1, tree2, equal_nan: bool = False) -> bool:
     return jtu.tree_reduce(jnp.logical_and, is_equal)
 
 
-class CCETracer(core.Tracer):
-    __slots__ = ["primal", "elemental"]
-    def __init__(self, trace, primal, elemental):
-        self._trace = trace
-        self.primal = primal
-        print("primal at construction:", primal)
-        self.elemental = elemental
+# class CCETracer(core.Tracer):
+#     __slots__ = ["primal", "elemental"]
+#     def __init__(self, trace, primal, elemental):
+#         self._trace = trace
+#         self.primal = primal
+#         self.elemental = elemental
         
-    @property
-    def aval(self):
-        return core.get_aval(self.primal)
+#     @property
+#     def aval(self):
+#         return core.get_aval(self.primal)
     
-    def full_lower(self):
-        return core.full_lower(self.primal)
+#     def full_lower(self):
+#         return core.full_lower(self.primal)
     
 
-class CCETrace(core.Trace):
+# class CCETrace(core.Trace):
 
-    def pure(self, val):
-        return CCETracer(self, val, 0)
+#     def pure(self, val):
+#         print("pure:", val)
+#         return CCETracer(self, val, 0.)
     
-    def lift(self, val):
-        return CCETracer(self, val, 0)
+#     def lift(self, val):
+#         print("lift:", val)
+#         return CCETracer(self, val, 0.5)
     
-    def sublift(self, val):
-        return CCETracer(self, val.primal, val.elemental)
+#     def sublift(self, val):
+#         print("sublift:", val)
+#         return CCETracer(self, val.primal, val.elemental)
     
-    def process_primitive(self, primitive, tracers, params):
-        elemental_rule = elemental_rules.get(primitive)
-        primal_out, elemental_out = elemental_rule([t.primal for t in tracers], **params)
-        # primal_out = primitive.bind(*[t.primal for t in tracers], **params)
-        print("primitive", primitive)
-        print("process primitive primal_out:", primal_out)
-        print("process primitive elemental_out:", elemental_out)
-        # if primitive.multiple_results:
-        # print("CCE", [CCETracer(self, p, e) for p, e in zip(primal_out, elemental_out)])
-        # return [CCETracer(self, p, e) for p, e in zip(primal_out, elemental_out)]
-        # else:
-        print("CCE", CCETracer(self, primal_out[0], elemental_out[0]))
-        return primal_out # CCETracer(self, primal_out[0], elemental_out[0])
+#     def process_primitive(self, primitive, tracers, params):
+#         print()
+#         print("PPP### primitive:", primitive)
+#         print("### tracers:", tracers)
+#         elemental_rule = elemental_rules.get(primitive)
+#         out_primals, out_elementals = elemental_rule([t.primal for t in tracers], **params)
+
+#         print("### out_elementals:", out_elementals)
+#         if primitive.multiple_results:
+#             out_tracers = [CCETracer(self, p, out_elementals) for p in out_primals]
+#         else:
+#             out_tracers = CCETracer(self, out_primals, out_elementals)
+#         print("### out_tracers:", out_tracers)
+#         return out_tracers # CCETracer(self, out_primals, out_elementals)
 
 
-def _jacve(fun: Callable) -> Callable:
-    @wraps(fun)
-    def jacfun(*args, **kwargs):
-        f = lu.wrap_init(fun)
-
-        f_jac = _cce(f, *args)
-        print("Result:", f_jac(*args)) # *args
-        return f_jac(*args) # *args
-    
-    return jacfun
+# def jacve(fun: Callable, order=None, argnums=None) -> Callable:
+#     @wraps(fun)
+#     def jacfun(*args, **kwargs):
+#         f = lu.wrap_init(fun)
+#         f_jac = cce(f)
+#         print("args", args)
+#         return f_jac.call_wrapped(args, (0, 0))
+#     return jacfun
 
 
-from jax.tree_util import tree_flatten
-from jax._src.api_util import flatten_fun_nokwargs
-from jax._src import dispatch
+# def cce(fun: lu.WrappedFun, transform_stack=True):
+#     jac_fn = ccefun(cce_subtrace(fun), transform_stack)
+#     return jac_fn
+
+# # first arg is always static arg for lu.transformation
+# @lu.transformation
+# def ccefun(transform_stack, primals, elementals):
+#     print("***primals:", primals)
+#     print("***elementals:", elementals)
+#     # NOTE: Do we have to register the `transform_name_stack` somewhere?
+#     ctx = (source_info_util.transform_name_stack("cce") if transform_stack
+#             else contextlib.nullcontext())
+#     with core.new_main(CCETrace) as main, ctx:
+#         out_primals, out_elementals = yield (main, primals, elementals), {}
+#         del main
+#     yield out_primals, out_elementals
 
 
-def _cce(fun: lu.WrappedFun, *primals):
-    primals_flat, in_tree = tree_flatten(primals)
-    for arg in primals_flat: dispatch.check_arg(arg)
-    flat_fun, out_tree = flatten_fun_nokwargs(fun, in_tree)
-    jac_fn = cce(flat_fun, primals_flat)
-    out_tree = out_tree()
-    # out_primals, jac, aux = cce(fun, primals, has_aux=has_aux)
-    return jac_fn
+# @lu.transformation
+# def cce_subtrace(main, primals, elementals):
+#     trace = CCETrace(main, core.cur_sublevel())
+#     for x in list(primals):
+#         if isinstance(x, core.Tracer):
+#             if x._trace.level >= trace.level:
+#                 raise core.escaped_tracer_error(
+#                     x, f"Tracer from a higher level: {x} in trace {trace}")
+#             assert x._trace.level < trace.level
+
+#     print("///primals:", primals)
+#     print("///trace:", trace)
+#     # this is the piece that causes all the trouble
+#     in_tracers = [CCETracer(trace, x, 0) for x in primals]
+#     print("///in_tracers:", list(in_tracers))
+#     ans = yield in_tracers, {}
+#     # ans = [CCETracer(trace, x, 0) for x in ans]
+#     print("///ans:", ans)
+#     # NOTE: at this point somehow the tracer levels are incorrect, so 
+#     # an automatic lift() is applied to the primal values, which kills the 
+#     # derivatives
+#     out_tracers = map(trace.full_raise, ans)
+#     out_tracers = list(out_tracers)
+#     print("///out_tracers:", list(out_tracers))
+#     yield unzip2([(out_tracer.primal, out_tracer.elemental) 
+#                     for out_tracer in out_tracers])
 
 
-###
-def cce(traceable, primals,):
-    pvals, jaxpr, consts = ccetrace(traceable, *primals)
-    return partial(core.eval_jaxpr, jaxpr, consts)
+# def cce_jaxpr(jaxpr: core.ClosedJaxpr) -> tuple[core.ClosedJaxpr]:
+#     return _cce_jaxpr(jaxpr)
 
 
-from jax._src.api_util import flatten_fun
-from jax.tree_util import tree_unflatten
+# @weakref_lru_cache
+# def _cce_jaxpr(jaxpr):
+#     f = lu.wrap_init(core.jaxpr_as_fun(jaxpr))
+#     f_cce = f_cce_traceable(cce(f, transform_stack=False))
+#     elemental_avals = [aval for aval in jaxpr.in_avals]
+#     avals_in = list(it.chain(jaxpr.in_avals, elemental_avals))
+#     print("avals_in:", avals_in)
+#     jaxpr_out, avals_out, literals_out, () = pe.trace_to_jaxpr_dynamic(f_cce, avals_in)
+#     return core.ClosedJaxpr(jaxpr_out, literals_out)
 
 
-# aka linearize
-def ccetrace(traceable, *primals, **kwargs):
-    _traceable = cce_subtrace(traceable)
-    print("traceable:", _traceable)
-    cce_fun = ccefun(_traceable)
-    print("cce_fun:", cce_fun)
-
-    # We have to use pe.PartialVal.unknown to enable jaxpr tracing
-    in_pvals = tuple(pe.PartialVal.unknown(core.get_aval(p)) for p in primals)
-    print("in_pvals:", in_pvals)
-
-    # Inputs have to have the shape *args, **kwargs with {} representing no kwargs
-    _, in_tree = tree_flatten((primals, {}))
-    ccefun_flat, out_tree = flatten_fun(cce_fun, in_tree)
-
-    jaxpr, out_pvals, consts = pe.trace_to_jaxpr_nounits(ccefun_flat, in_pvals)
-    print("out_pvals:", out_pvals)
-    print("consts:", consts)
-    print(jaxpr)
-
-    out_primals_pvals = tree_unflatten(out_tree(), out_pvals)
-    out_primals_consts = [pval.get_known() for pval in out_primals_pvals]
-    print("out_primals_pvals:", out_primals_pvals)
-    print("out_primals_consts:", out_primals_consts)
-    return out_primals_pvals, jaxpr, consts
-
-from jax._src import source_info_util
-import contextlib
-
-@lu.transformation
-def ccefun(*primals):
-    ctx = contextlib.nullcontext()
-    with core.new_main(CCETrace) as main, ctx:
-        out_primals = yield (main, primals), {}
-        del main
-    # out_tangents = [instantiate_zeros(t) if inst else t for t, inst
-    #               in zip(out_tangents, instantiate)]
-    # print("ccefun out_primals:", out_primals)
-    yield out_primals
-
-
-@lu.transformation
-def cce_subtrace(main, primals):
-    trace = CCETrace(main, core.cur_sublevel())
-    for x in list(primals):
-        if isinstance(x, core.Tracer):
-            if x._trace.level >= trace.level:
-                raise core.escaped_tracer_error(
-                    x, f"Tracer from a higher level: {x} in trace {trace}")
-            assert x._trace.level < trace.level
-
-    in_tracers = [CCETracer(trace, x, 0)
-                for x in primals]
-    ans = yield in_tracers, {}
-    out_tracers = map(trace.full_raise, ans)
-    # print("out_tracers:", list(out_tracers))
-    yield [t.primal for t in out_tracers]
+# @lu.transformation
+# def f_cce_traceable(*primals_and_elementals):
+#     print("primals_and_elementals:", primals_and_elementals)
+#     num_primals = len(primals_and_elementals) // 2
+#     primals = primals_and_elementals[:num_primals]
+#     elementals = primals_and_elementals[num_primals:]
+#     out_primals, out_elementals = yield (primals, elementals), {}
+#     print("out_primals:", out_primals)
+#     print("out_elementals:", out_elementals)
+#     yield list(out_primals) + list(out_elementals)
 
 
 EliminationOrder = Union[Sequence[int], str]
 ComputationalGraph = Dict[core.Var, Dict[core.Var, jnp.ndarray]]
+
 
 def jacve(fun: Callable, 
             order: EliminationOrder, 
@@ -546,8 +546,9 @@ def _build_graph(jaxpr: core.Jaxpr,
 
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
-        primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
-        if type(primal_outvals) is list:
+        cce = elemental_rules.get(eqn.primitive)
+        primal_outvals, elemental_outvals = cce(invals, **eqn.params)
+        if eqn.primitive.multiple_results:
             safe_map(write, eqn.outvars, primal_outvals)
         else:
             safe_map(write, eqn.outvars, [primal_outvals])

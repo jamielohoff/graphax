@@ -185,7 +185,7 @@ defelemental(lax.sub_p, sub_elemental_rule)
 
     
 def mul_elemental_rule(x, y):
-    return (y, x)
+    return (jnp.sinh(jnp.ones(3)), jnp.cosh(jnp.ones(4))) # NOTE: This is not correct! Reset when commit.
 defelemental(lax.mul_p, mul_elemental_rule)
     
 
@@ -546,15 +546,16 @@ def _trace_subjaxpr(jaxpr, args, consts):
                 vertex = var_id[invar]
                 vo_vertices.add(vertex)
                 
-        print("eqn:", eqn)
-        print("invars", eqn.invars)
-        print("outvars", eqn.outvars)
+        # print("eqn:", eqn)
+        # print("invars", eqn.invars)
+        # print("outvars", eqn.outvars)
         invals = safe_map(read, eqn.invars)      
         
         if eqn.primitive not in elemental_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
-        primal_outvals, elemental_outvals = elemental_rules[eqn.primitive](invals, **eqn.params)
-        if type(primal_outvals) is list:
+        cce = elemental_rules.get(eqn.primitive)
+        primal_outvals, elemental_outvals = cce(invals, **eqn.params)
+        if eqn.primitive.multiple_results:
             safe_map(write, eqn.outvars, primal_outvals)
         else:
             safe_map(write, eqn.outvars, [primal_outvals])
@@ -565,19 +566,40 @@ def _trace_subjaxpr(jaxpr, args, consts):
         if len(invars) == len(elemental_outvals):
             safe_map(_write_elemental, invars, elemental_outvals)
 
-    return env, graph, transpose_graph
+    return eqn.outvars, graph, transpose_graph, vo_vertices
 
 # TODO: this is a very ugly hack that treats pjit as a normal primitive with a 
-# stop_grad property
-def pjit_elemental_rule(primals, **params):
-    val_out = jax._src.pjit.pjit_p.bind(*primals, **params)
+
+# from . import core as cce_core
+from jax._src.pjit import pjit_p
+
+def pjit_elemental_rule(primals, jaxpr, in_shardings, out_shardings, in_layouts, out_layouts,
+                        resource_env, donated_invars, name, keep_unused, inline):
     # TODO Jamie: How do we handle the gradients here?
+    # jaxpr_cce = cce_core.cce_jaxpr(jaxpr)
+    # print("pjit primals", primals)
+    # print("pjit zero", zero_elementals)
+    # print("pjit jaxpr", jaxpr)
+    # outs, elementals, subgraph, transpose_subgraph, vo_vertices = _trace_subjaxpr(jaxpr.jaxpr, primals, ())
+    # print("### pjit outs", outs)
+    # print("### pjit elementals", elementals)
+    print("### pjit jaxpr", jaxpr)
+    outputs = pjit_p.bind(*primals,
+                        jaxpr=jaxpr,
+                        in_shardings=(*in_shardings,),
+                        out_shardings=(*out_shardings,),
+                        in_layouts=(*in_layouts,),
+                        out_layouts=(*out_layouts,),
+                        resource_env=resource_env,
+                        donated_invars=(*donated_invars,),
+                        name=name,
+                        keep_unused=keep_unused,
+                        inline=inline)
+    # print("pjit val_out:", outputs)
+    out_primals = outputs
+    return out_primals, []
 
-    env, graph, transpose_graph = _trace_subjaxpr(params["jaxpr"].jaxpr, primals, [])
-
-    return val_out, []
-
-elemental_rules[jax._src.pjit.pjit_p] = pjit_elemental_rule
+elemental_rules[pjit_p] = pjit_elemental_rule
 
 
 # Should work for high-dimensional stuff

@@ -5,11 +5,36 @@ import jax.lax as lax
 import jax.numpy as jnp
 
 from jax._src.interpreters import mlir
+from jax._src.interpreters import partial_eval as pe
 
 import jax._src.core as core
+from jax._src.util import safe_map
 from jax._src import custom_api_util
 import jax._src.linear_util as lu
 from jax._src.custom_derivatives import process_env_traces
+
+map = safe_map
+# Create new primitive for custom_elemental_call
+
+# ------------------ custom_elemental implementation ------------------
+custom_elemental_p = core.Primitive("custom_elemental")
+custom_elemental_p.multiple_results = False
+
+def _custom_elemental_abstract_eval(x, **params):
+    print("x: ", x)
+    return core.ShapedArray(x.shape, x.dtype)
+
+custom_elemental_p.def_abstract_eval(_custom_elemental_abstract_eval)
+
+def _custom_elemental_call_impl(*args):
+    return jnp.sin(*args)
+
+custom_elemental_p.def_impl(_custom_elemental_call_impl)
+
+
+# register with base interpreter, jaxpr interpreter and batch interpreter
+# write a custom_elemental decorator that wraps the function and the elemental
+
 
 
 def dynamic_jaxpr_custom_elemental_call(primitive, fn: lu.WrappedFun, elemental, 
