@@ -583,7 +583,7 @@ def pjit_elemental_rule(primals, jaxpr, in_shardings, out_shardings, in_layouts,
     # outs, elementals, subgraph, transpose_subgraph, vo_vertices = _trace_subjaxpr(jaxpr.jaxpr, primals, ())
     # print("### pjit outs", outs)
     # print("### pjit elementals", elementals)
-    print("### pjit jaxpr", jaxpr)
+    # print("### pjit jaxpr", jaxpr)
     outputs = pjit_p.bind(*primals,
                         jaxpr=jaxpr,
                         in_shardings=(*in_shardings,),
