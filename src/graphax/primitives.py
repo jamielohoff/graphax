@@ -172,6 +172,7 @@ defelemental(lax.erf_p, lambda x: 2.*jnp.exp(-x**2)/jnp.sqrt(jnp.pi))
 
 
 # TODO this can be significantly optimized
+# Currently we are creating a new array of ones everytime. Not smart!
 def add_elemental_rule(x, y):
     return (jnp.ones_like(y), jnp.ones_like(x))
 defelemental(lax.add_p, add_elemental_rule)
@@ -185,7 +186,7 @@ defelemental(lax.sub_p, sub_elemental_rule)
 
     
 def mul_elemental_rule(x, y):
-    return (jnp.ones_like(y), jnp.ones_like(x)) # (jnp.sinh(jnp.ones(3)), jnp.cosh(jnp.ones(4))) # NOTE: This is not correct! Reset when commit.
+    return (y, x) # (jnp.sinh(jnp.ones(3)), jnp.cosh(jnp.ones(4))) # NOTE: This is not correct! Reset when commit.
 defelemental(lax.mul_p, mul_elemental_rule)
     
 
