@@ -72,7 +72,7 @@ class SparseTensor:
     val: ShapedArray
     pre_transforms: Sequence[Callable] 
     post_transforms: Sequence[Callable]
-    # TODO: Document pre_transforms and post_transforms. what about addition?
+    # TODO: Document pre_transforms and post_transforms. What about addition?
     # NOTE: We always assume that the dimensions are ordered in ascending order
     
     def __init__(self, 
