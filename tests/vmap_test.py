@@ -19,7 +19,9 @@ vmap_f = jax.vmap(f, in_axes=(0, 0))
 jacrev_f = jax.jit(jacve(vmap_f, order="rev", argnums=(0, 1), count_ops=True))
 jaxpr = jax.make_jaxpr(jacrev_f)(x, y)
 print(jaxpr)
-veres = jacrev_f(x, y)
+
+# results in a tuple with resulting jacobian and metrics dict (num_adds, num, mulls, and order_counts)
+veres, _ = jacrev_f(x, y)
 print(veres)
 
 jac_f = jax.jit(jax.jacrev(vmap_f, argnums=(0, 1)))

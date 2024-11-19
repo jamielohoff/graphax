@@ -2,7 +2,7 @@
 Sparse tensor algebra implementation
 """
 import copy
-from typing import Callable, Sequence, Tuple, Union
+from typing import Callable, Sequence, Union, Generator
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
@@ -13,107 +13,117 @@ from jax.tree_util import register_pytree_node_class
 from chex import Array
 
 from .utils import eye_like_copy, eye_like
+from dataclasses import dataclass
 
 
-# NOTE: a val_dim of None means that we have a possible replication of the tensor 
-# along the respective dimension `d.size` times to manage broadcasting 
-# operations such as broadcasted additions or multiplications.
-# TODO what do we when we have a tensor that consists only of DenseDimensions 
-# with val_dim=None?
+# NOTE: a val_dim of None means that we have a possible replication of the tensor
+#   along the respective dimension `d.size` times to manage broadcasting
+#   operations such as broadcasted additions or multiplications.
+# TODO: what do we do when we have a tensor that consists only of DenseDimensions
+#   with val_dim=None?
+@dataclass
 class DenseDimension:
     id: int
     size: int
-    val_dim: int
-    
-    def __init__(self, id: int, size: int, val_dim: int) -> None:
-        self.id = id
-        self.size = size
-        self.val_dim = val_dim
-        
-    def __repr__(self) -> str:
-        return f"DenseDimension(id={self.id}, size={self.size}, val_dim={self.val_dim})"
-
+    val_dim: int | None
 
 # NOTE: a val_dim of None means that we have a factored Kronecker delta in
-# our tensor at the respective dimensions.
-# Also we can have unmatching size and val.shape[d.val_dim] for SparseDimensions
-# if the size is 1. This is necessary to enable broadcasting operations.
+#   our tensor at the respective dimensions.
+#   Also we can have unmatching size and val.shape[d.val_dim] for SparseDimensions
+#   if the size is 1. This is necessary to enable broadcasting operations.
+@dataclass
 class SparseDimension:
     id: int
     size: int
     val_dim: int
     other_id: int
-    
-    def __init__(self, id: int, size: int, val_dim: int, other_id: int) -> None:
-        self.id = id
-        self.size = size
-        self.val_dim = val_dim
-        self.other_id = other_id
-        
-    def __repr__(self) -> str:
-        return f"SparseDimension(id={self.id}, size={self.size}, val_dim={self.val_dim}, other_id={self.other_id})"
 
-
-Dimension = Union[DenseDimension, SparseDimension]
+Dimension = DenseDimension | SparseDimension
         
 
 class SparseTensor:
     """
     The `SparseTensor object enables` the representation of sparse tensors
-    that 
-    if out_dims or primal_dims is empty, this implies a scalar dependent or
-    independent variable. 
-    if both are empty, then we have a scalar value and everything becomes trivial
-    and the `val` field contains the value of the singleton partial
+    that if out_dims or primal_dims is empty, this implies a scalar dependent or
+    independent variable. if both are empty, then we have a scalar value and
+    everything becomes trivial and the `val` field contains the value of the
+    singleton partial
     """
-    out_dims: Sequence[Dimension]
-    primal_dims: Sequence[Dimension] # input dimensions
-    shape: Sequence[int] # True shape of the tensor
-    val: ShapedArray
-    pre_transforms: Sequence[Callable] 
+    out_dims: tuple[Dimension]
+    primal_dims: tuple[Dimension] # input dimensions
+    shape: tuple[int] # True shape of the tensor
+    val: Array
+    pre_transforms: Sequence[Callable]
     post_transforms: Sequence[Callable]
     # TODO: Document pre_transforms and post_transforms. What about addition?
     # NOTE: We always assume that the dimensions are ordered in ascending order
     
     def __init__(self, 
-                out_dims: Sequence[Dimension], 
-                primal_dims: Sequence[Dimension], 
-                val: ShapedArray, 
-                pre_transforms: Sequence[Callable] = [],
-                post_transforms: Sequence[Callable] = []) -> None:
-                
-        self.out_dims = out_dims if type(out_dims) is Tuple else tuple(out_dims)
-        self.primal_dims = primal_dims if type(primal_dims) is Tuple else tuple(primal_dims)
-        out_shape = [d.size for d in out_dims]
-        primal_shape = [d.size for d in primal_dims]
-        self.shape = tuple(out_shape + primal_shape)
-        self.out_shape = [str(s) for s in out_shape]
-        self.primal_shape = [str(s) for s in primal_shape]
+                 out_dims: Sequence[Dimension],
+                 primal_dims: Sequence[Dimension],
+                 val: Array,
+                 pre_transforms: Sequence[Callable] = None,
+                 post_transforms: Sequence[Callable] = None) -> None:
+
+        if pre_transforms is None:
+            pre_transforms = []
+        if post_transforms is None:
+            post_transforms = []
+
+        self.out_dims = out_dims if isinstance(out_dims, tuple) else tuple(out_dims)
+        self.primal_dims = primal_dims if isinstance(primal_dims, tuple) else tuple(primal_dims)
+
+        self.out_shape = [d.size for d in out_dims]
+        self.primal_shape = [d.size for d in primal_dims]
+
+        self.shape = tuple(self.out_shape + self.primal_shape)
+
         self.val = val
         self.pre_transforms = pre_transforms
         self.post_transforms = post_transforms
+
+        _assert_sparse_tensor_consistency(self)
             
     def __repr__(self) -> str:
-        return f"SparseTensor(\n" \
-                f"   shape = (" + f",".join(self.out_shape) + f"|" + f",".join(self.primal_shape) + "),\n" \
-                f"   out_dims = {self.out_dims},\n" \
-                f"   primal_dims = {self.primal_dims},\n" \
-                f"   val = {self.val},\n" \
-                f"   pre_transforms = {self.pre_transforms},\n" \
-                f"   post_transforms = {self.post_transforms})\n"
+        def map_str(a: Sequence) -> Generator:
+            return (str(s) for s in a)
+
+        def multiline_seq(s: Sequence, brackets: str) -> str:
+            lb, rb, *_ = brackets
+            if s:
+                res = f'{lb}\n\t\t' + ',\n\t\t'.join(map_str(s)) + f',\n\t{rb}'
+            else:
+                res = lb + rb
+            return res
+
+        str_out_shape = ', '.join(map_str(self.out_shape))
+        str_primal_shape = ', '.join(map_str(self.primal_shape))
+
+        multiline_out_dims = multiline_seq(self.out_dims, '()')
+        multiline_primal_dims = multiline_seq(self.primal_dims, '()')
+        multiline_pre_transform = multiline_seq(self.pre_transforms, '[]')
+        multiline_post_transform = multiline_seq(self.post_transforms, '[]')
+
+        return f"""SparseTensor(
+    shape = ({str_out_shape} | {str_primal_shape}),
+    out_dims = {multiline_out_dims},
+    primal_dims = {multiline_primal_dims},
+    val = {self.val},
+    pre_transforms = {multiline_pre_transform},
+    post_transforms = {multiline_post_transform}
+)"""
                     
     def __add__(self, _tensor):
         return _add(self, _tensor)
     
     def __mul__(self, _tensor):
         return _mul(self, _tensor)
-                    
+
+    # TODO: add the case where `val_dim = None` for a `DenseDimension` by
+    #   replicating the tensor `d.size` times using `jnp.tile`.
     def dense(self, iota: Array) -> Array:
         """
         Materializes tensor to actual dense shape.
-        
-        TODO add the case where `val_dim = None` for a `DenseDimension` by
-        replicating the tensor `d.size` times using `jnp.tile`.
 
         Args:
             iota (Array): The Kronecker matrix/tensor that is used to 
@@ -130,8 +140,9 @@ class SparseTensor:
                 return d.size
             else:
                 return 1
-            
-        eye_shape = [eye_dim_fn(d) for d in self.out_dims+self.primal_dims]
+
+        eye_shape = [eye_dim_fn(d) for d in self.out_dims + self.primal_dims]
+
         # If tensor consists only out of Kronecker Delta's, we can just reshape
         # the eye matrix to the shape of the tensor and return it
         if self.val is None: 
@@ -146,20 +157,21 @@ class SparseTensor:
         
         shape = _get_fully_materialized_shape(self)   
         
-        # Get the tiling for DenseDimensions with val_dim = None, i.e. replicating
+        # Get the tiling for DenseDimensions with `val_dim = None`, i.e. replicating
         # dimensions
         def tile_dim_fn(d: Dimension) -> int:
             if isinstance(d, DenseDimension) and d.val_dim is None:
                 return d.size
             else:
                 return 1
-        tiling = [tile_dim_fn(d) for d in self.out_dims+self.primal_dims]
+
+        tiling = [tile_dim_fn(d) for d in self.out_dims + self.primal_dims]
 
         val = self.val.reshape(shape)
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
         return jnp.tile(index_map*val, tiling)
         
-    def copy(self, val=None):
+    def copy(self, val: Array = None):
         """
         Function that copies the given sparse tensor object entirely except for
         the `val` property which can be replaced by a new value.
@@ -190,7 +202,7 @@ def sparse_tensor_zeros_like(st: SparseTensor) -> SparseTensor:
     return st.copy(jnp.zeros_like(st.val))
     
     
-def _checkify_tensor(st: SparseTensor) -> bool:
+def _assert_sparse_tensor_consistency(st: SparseTensor):
     """
     Function that validates the consistency of a `SparseTensor` object,
     i.e. checks if the `val` property has the correct shape and if the dimensions
@@ -203,13 +215,22 @@ def _checkify_tensor(st: SparseTensor) -> bool:
         bool: True if the `SparseTensor` object is consistent.
     """
     # Check if d.size matches val.shape[d.val_dim] for all d
-    matching_size = all([d.size == st.val.shape[d.val_dim] 
-                        if d.val_dim is not None and isinstance(d, DenseDimension)
-                        else True for d in st.out_dims + st.primal_dims])
-    
-    matching_size += all([d.size == st.val.shape[d.val_dim] or d.size == 1 
-                        if d.val_dim is not None and isinstance(d, SparseDimension)
-                        else True for d in st.out_dims + st.primal_dims])
+    matching_sparse_sizes = all(
+        d.size == st.val.shape[d.val_dim]
+        or d.size == 1
+        if isinstance(d, SparseDimension)
+        and d.val_dim is not None else True
+        for d in st.out_dims + st.primal_dims
+    )
+
+    matching_dense_sizes = all(
+        d.size == st.val.shape[d.val_dim]
+        if isinstance(d, DenseDimension)
+        and d.val_dim is not None else True
+        for d in st.out_dims + st.primal_dims
+    )
+
+    matching_sizes = matching_sparse_sizes or matching_dense_sizes
         
     unique_out_dims = [d.val_dim for d in st.out_dims if d.val_dim is not None]
     unique_primal_dims = [d.val_dim for d in st.primal_dims if d.val_dim is not None]
@@ -217,32 +238,30 @@ def _checkify_tensor(st: SparseTensor) -> bool:
     is_uniqe_out_dims = len(unique_out_dims) == len(set(unique_out_dims))
     is_uniqe_primal_dims = len(unique_primal_dims) == len(set(unique_primal_dims))
     has_uniqe_dims = is_uniqe_out_dims and is_uniqe_primal_dims
-    
-    matching_id = True
-    matching_sparse_ids = True
-    for i, d in enumerate(st.out_dims):
-        if i == d.id:
-            matching_id *= True
-        else:
-            matching_id *= False
-        if isinstance(d, SparseDimension):
-            _d = st.primal_dims[d.other_id-len(st.out_dims)]
-            if d.id == _d.other_id and d.other_id == _d.id:
-                matching_sparse_ids *= True
-            else:
-                matching_sparse_ids *= False
-                    
-    # TODO speed this up with a list comprehension                
-    for i, d in enumerate(st.primal_dims, start=len(st.out_dims)):
-        if i == d.id:
-            matching_id *= True
-        else:
-            matching_id *= False
-        
-    return matching_size and matching_id and has_uniqe_dims and matching_sparse_ids
-    
 
-def _get_fully_materialized_shape(st: SparseTensor) -> Tuple[int]:
+    # Check if IDs in out_dims and primal_dims match their index positions
+    matching_id = all(
+        od.id == i and pd.id == i + len(st.out_dims)
+        for i, (od, pd) in enumerate(zip(st.out_dims, st.primal_dims))
+    )
+
+    # Check sparse dimension pairing consistency
+    matching_sparse_ids = all(
+        st.primal_dims[d.other_id - len(st.out_dims)].other_id == d.id
+        if isinstance(d, SparseDimension) else True
+        for d in st.out_dims
+    )
+
+    assert (matching_sizes
+            and has_uniqe_dims
+            and matching_id
+            and matching_sparse_ids
+    ), f"{st} is not self-consistent!"
+
+    # TODO: check if val is consistent with tensor structure?
+
+
+def _get_fully_materialized_shape(st: SparseTensor) -> tuple[int]:
     """
     Function that returns the shape of a `SparseTensor` object if its 'val' 
     property would be fully materialized. Dimensions of size one are inserted 
@@ -256,29 +275,27 @@ def _get_fully_materialized_shape(st: SparseTensor) -> Tuple[int]:
             SparseDimensions gets the val property. Defaults to False.
 
     Returns:
-        Tuple[int]: The fully materialized shape.
+        tuple[int]: The fully materialized shape.
     """
     # Compute out_dims full shape-mul
     def out_dim_fn(d: Dimension) -> int:
-        if d.val_dim is None:
+        # NOTE we need the case `d.size != st.val.shape[d.val_dim]` because SparseDimensions can be matrialized without
+        #   the correct d.size property
+        if d.val_dim is None or d.size != st.val.shape[d.val_dim]:
             return 1
-        elif d.size != st.val.shape[d.val_dim]:
-            return 1 # NOTE we need this case because SparseDimensions can be matrialized without the correct d.size property
         else:
             return d.size
         
-    out_shape = [out_dim_fn(d) for d in st.out_dims]
+    out_shape = tuple(out_dim_fn(d) for d in st.out_dims)
            
     # Compute primal_dims full shape
     def primal_dim_fn(d: Dimension) -> int:
-        if isinstance(d, SparseDimension):
+        if isinstance(d, SparseDimension) or d.val_dim is None:
             return 1
         else:
-            if d.val_dim is None:
-                return 1
-            else:
-                return d.size
-    primal_shape = [primal_dim_fn(d) for d in st.primal_dims]
+            return d.size
+
+    primal_shape = tuple(primal_dim_fn(d) for d in st.primal_dims)
 
     return out_shape + primal_shape
 
@@ -295,8 +312,8 @@ def _is_pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     Returns:
         bool: Are the tensors compatible for multiplication?
     """
-    return all([True if isinstance(r, DenseDimension) and isinstance(l, DenseDimension)
-                else False for r, l in zip(lhs.primal_dims, rhs.out_dims)])
+    return all(True if isinstance(r, DenseDimension) and isinstance(l, DenseDimension)
+               else False for r, l in zip(lhs.primal_dims, rhs.out_dims))
 
 
 def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
@@ -311,8 +328,8 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     Returns:
         bool: Are the tensors compatible for multiplication?
     """
-    return all([True if isinstance(r, SparseDimension) or isinstance(l, SparseDimension)
-                else False for r, l in zip(lhs.primal_dims, rhs.out_dims)])
+    return all(True if isinstance(r, SparseDimension) or isinstance(r, SparseDimension)
+               else False for r, l in zip(lhs.primal_dims, rhs.out_dims))
 
     
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
@@ -330,20 +347,20 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
     Returns:
         SparseTensor: The resulting `SparseTensor` object.
-    """                                   
-    assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
-    assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
-    l = len(lhs.out_dims)
-    r = len(rhs.out_dims) 
-    assert lhs.shape[l:] == rhs.shape[:r], f"{lhs.shape} and {rhs.shape} "\
-                                        "not compatible for multiplication!"
+    """
+    _assert_sparse_tensor_consistency(lhs)
+    _assert_sparse_tensor_consistency(rhs)
 
-    res = None
+    l = len(lhs.out_dims)
+    r = len(rhs.out_dims)
+    assert lhs.shape[l:] == rhs.shape[:r], \
+        f"{lhs.shape} and {rhs.shape} not compatible for multiplication!"
+
     _lhs = lhs.copy()
     _rhs = rhs.copy()
     if lhs.shape == () and rhs.shape == ():
         # If both tensors are scalars, we can just multiply them directly
-        return SparseTensor((), (), lhs.val*rhs.val)
+        res = SparseTensor((), (), lhs.val*rhs.val)
     elif _is_pure_dot_product_mul(_lhs, _rhs):
         res = _pure_dot_product_mul(_lhs, _rhs)
     elif _is_pure_broadcast_mul(_lhs, _rhs):
@@ -351,7 +368,7 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     else:
         res = _mixed_mul(_lhs, _rhs)
 
-    assert _checkify_tensor(res), f"{res} is not self-consistent!"
+    _assert_sparse_tensor_consistency(res)
     return res
 
 
@@ -368,21 +385,24 @@ def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 
     Returns:
         SparseTensor: The resulting `SparseTensor` object.
-    """                           
-    assert _checkify_tensor(lhs), f"{lhs} is not self-consistent!"
-    assert _checkify_tensor(rhs), f"{rhs} is not self-consistent!"
+    """
+    _assert_sparse_tensor_consistency(lhs)
+    _assert_sparse_tensor_consistency(rhs)
 
-    assert lhs.shape == rhs.shape, f"{lhs.shape} and {rhs.shape} "\
-                                        "not compatible for addition!"
+    assert lhs.shape == rhs.shape, \
+        f"{lhs.shape} and {rhs.shape} not compatible for addition!"
     
     res = _sparse_add(lhs, rhs)
     
-    assert _checkify_tensor(res), f"{res} is not self-consistent!"
+    _assert_sparse_tensor_consistency(res)
     return res
 
+def _get_other_val_dim(d: Dimension, st: SparseTensor) -> Dimension:
+    pass
 
-def _get_other_val_dim(d: Dimension, st: SparseTensor) -> int:
-    """Function that computes the new `val_dim` of a `SparseDimension` object
+def _get_new_val_dim(d: Dimension, st: SparseTensor) -> int | None:
+    """
+    Function that computes the new `val_dim` of a `SparseDimension` object
     so that it's position within the `val` property matches the relative position
     of the corresponding `SparseDimension` object in the `primal_dims` list.
     
@@ -394,7 +414,6 @@ def _get_other_val_dim(d: Dimension, st: SparseTensor) -> int:
         int: The new `val_dim` of the `d` object.
     """
     l = len(st.out_dims)
-    dims = []
     if d.id < d.other_id:
         dims = st.out_dims + st.primal_dims[:d.other_id-l]
     else:
@@ -409,22 +428,24 @@ def _get_other_val_dim(d: Dimension, st: SparseTensor) -> int:
 
 
 def _get_padding(lhs_out_dims: Sequence[Dimension], 
-                rhs_primal_dims: Sequence[Dimension])-> Tuple[int]:
-    """Function that calculates how many dimensions have to be prepended/appended
+                 rhs_primal_dims: Sequence[Dimension]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """
+    Function that calculates how many dimensions have to be prepended/appended
     to the `val` property of a `SparseTensor` to make it compatible for broadcast
     multiplication with another `SparseTensor`.
     
     Removes excess dimensions which are artifacts of `SparseTensor` objects.
 
     Args:
-        lhs (SparseDimension): SparseDimension object whose `val` property we 
-                                want to multiply with `rhs.val`.
-        rhs (SparseDimension): SparseDimension object whose `val` property we
-                                want to multiply with `lhs.val`.
+        lhs_out_dims (SparseDimension):
+            SparseDimension object whose `val` property we want to multiply with `rhs.val`.
+        rhs_primal_dims (SparseDimension):
+            SparseDimension object whose `val` property we want to multiply with `lhs.val`.
 
     Returns:
-        Tuple[int]: Tuple of integers that tells us how many dimensions we have
-                    to append/prepend to the `val` property of `lhs` and `rhs`.
+        tuple[tuple[int, ...], tuple[int, ...]]:
+            tuple of integers that tells us how many dimensions we have to
+            append/prepend to the `val` property of `lhs` and `rhs`.
     """
     # Calculate where we have to add additional dimensions to rhs.val
     # due to DenseDimensions in lhs.out_dims    
@@ -433,27 +454,25 @@ def _get_padding(lhs_out_dims: Sequence[Dimension],
     return lhs_pad, rhs_pad
 
 
-def _checkify_broadcast_compatibility(lhs_val: Array, rhs_val: Array) -> bool:
+def _assert_broadcast_compatibility(lhs_val: Array, rhs_val: Array):
     """
     Function that checks if two arrays are compatible for broadcast multiplication. 
     
     Args:
         lhs_val (Array): Array that we want to multiply with `rhs_val`.
         rhs_val (Array): Array that we want to multiply with `lhs_val`.
-        
-    Returns:
-        bool: True if the arrays are compatible for broadcast multiplication,
     """
-    lhs_shape = lhs_val.shape
-    rhs_shape = rhs_val.shape
-    assert len(lhs_shape) == len(rhs_shape), f"Shapes {lhs_shape} and {rhs_shape}"\
-                                                " not compatible for broadcast_mul!"
-    return all([(ls == rs or ls == 1 or rs == 1) 
-                for (ls, rs) in zip(lhs_shape, rhs_shape)])
-    
-    
+    assert (
+        len(lhs_val.shape) == len(rhs_val.shape)
+        and all(
+            (ls == rs or ls == 1 or rs == 1)
+            for (ls, rs) in zip(lhs_val.shape, rhs_val.shape)
+        )
+    ), f"Shapes {lhs_val.shape} and {rhs_val.shape} not compatible for broadcast multiplication!"
+
+
 def _get_permutation_from_tensor(st: SparseTensor,
-                                shape: Sequence[int] = None) -> Sequence[int]:
+                                 shape: Sequence[int] = None) -> list[int]:
     """
     Function that calculates the permutation of the axes of the `val` property
     so as that `st.val.shape` matches `shape`. This is necessary to enable proper
@@ -478,14 +497,10 @@ def _get_permutation_from_tensor(st: SparseTensor,
             if isinstance(d, DenseDimension):
                 permutation[d.val_dim] = i
                 i += 1
-            else:
-                if d.id < d.other_id:
-                    permutation[d.val_dim] = i
-                    i += 1
     return permutation
 
 
-def _get_val_shape(st: SparseTensor) -> Sequence[int]:
+def _get_val_shape(st: SparseTensor) -> list[int]:
     """
     Function that computes the shape of the `val` property of a `SparseTensor`
     from its corresponding `Dimension` objects.
@@ -506,9 +521,8 @@ def _get_val_shape(st: SparseTensor) -> Sequence[int]:
             shape[d.val_dim] = d.size
             
     for d in st.primal_dims:
-        if d.val_dim is not None:
-            if isinstance(d, DenseDimension):
-                shape[d.val_dim] = d.size
+        if d.val_dim is not None and isinstance(d, DenseDimension):
+            shape[d.val_dim] = d.size
     return shape
 
 
@@ -536,17 +550,17 @@ def _swap_axes(st: SparseTensor) -> SparseTensor:
     for ld in st.out_dims:
         # NOTE: not sure if this is a good solution to the problem here:
         if transposed_shape == _get_val_shape(st):
-                break
+            break
         if isinstance(ld, SparseDimension) and ld.val_dim is not None:
-            other_val_dim = _get_other_val_dim(ld, st)
+            new_val_dim = _get_new_val_dim(ld, st)
             for d in st.out_dims + st.primal_dims:
-                if d.id != ld.id and d.id != ld.other_id:
-                    if d.val_dim is not None \
-                        and d.val_dim >= ld.val_dim \
-                        and d.val_dim <= other_val_dim:
-                        d.val_dim -= 1
-            ld.val_dim = other_val_dim
-            st.primal_dims[ld.other_id-l].val_dim = other_val_dim
+                if (d.id != ld.id
+                    and d.id != ld.other_id
+                    and d.val_dim is not None
+                    and ld.val_dim <= d.val_dim <= new_val_dim):
+                    d.val_dim -= 1
+            ld.val_dim = new_val_dim
+            st.primal_dims[ld.other_id-l].val_dim = new_val_dim
 
     permutation = _get_permutation_from_tensor(st)
     st.val = jnp.transpose(st.val, permutation)
@@ -554,7 +568,8 @@ def _swap_axes(st: SparseTensor) -> SparseTensor:
 
 
 def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
-    """Function that pads the `val` properties of two `SparseTensor` objects for 
+    """
+    Function that pads the `val` properties of two `SparseTensor` objects for
     proper broadcast multiplication. It does the following three things:
         1. It appends new axes to the `lhs` tensor for every `DenseDimension` in
             the `rhs.primal_dims` list.
@@ -592,10 +607,10 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
                             pad for broadcasting multiplication.
     
     Returns:
-        Tuple[SparseTensor, SparseTensor]: Tuple of SparseTensor objects with
-                                            appropriately padded `val` properties
-                                            and corresponding changes to the
-                                            `val_dim` properties.
+        tuple[SparseTensor, SparseTensor]: tuple of SparseTensor objects with
+                                           appropriately padded `val` properties
+                                           and corresponding changes to the
+                                           `val_dim` properties.
     """
     lhs_shape, rhs_shape = list(lhs.val.shape), list(rhs.val.shape)
     r = len(rhs.out_dims)
@@ -606,8 +621,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
         if rd.val_dim is not None:
             if isinstance(rd, DenseDimension):
                 rd.val_dim += len(rhs_pad)
-            else:
-                if rd.id < rd.other_id:
+            elif rd.id < rd.other_id:
                     rd.val_dim += len(rhs_pad)
                     primal_dim = rhs.primal_dims[rd.other_id-r]
                     primal_dim.val_dim += len(rhs_pad)
@@ -621,7 +635,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             continue
         # ld is sparse
         if ld.val_dim is None and isinstance(ld, SparseDimension):
-            other_val_dim = _get_other_val_dim(ld, lhs)
+            other_val_dim = _get_new_val_dim(ld, lhs)
             if other_val_dim is not None:
                 other_val_dim += 1
             else:
@@ -630,10 +644,13 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             lhs_shape.insert(other_val_dim, 1)
             ld.val_dim = other_val_dim
             lhs.out_dims[ld.other_id].val_dim = other_val_dim
+
             for d in lhs.out_dims + lhs.primal_dims:
-                if d.id != ld.id and d.id != ld.other_id:
-                    if d.val_dim is not None and d.val_dim >= other_val_dim:
-                        d.val_dim += 1
+                if (d.id != ld.id
+                    and d.id != ld.other_id
+                    and d.val_dim is not None
+                    and d.val_dim >= other_val_dim):
+                    d.val_dim += 1
                    
         # rd is sparse
         elif rd.val_dim is None and isinstance(rd, SparseDimension):
@@ -647,9 +664,11 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             rhs.primal_dims[rd.other_id-r].val_dim = new_val_dim
 
             for d in rhs.out_dims + rhs.primal_dims:
-                if d.id != rd.id and d.id != rd.other_id:
-                    if d.val_dim is not None and d.val_dim >= new_val_dim:
-                        d.val_dim += 1    
+                if (d.id != rd.id
+                    and d.id != rd.other_id
+                    and d.val_dim is not None
+                    and d.val_dim >= new_val_dim):
+                    d.val_dim += 1
                         
         # ld is replicating        
         elif ld.val_dim is None and isinstance(ld, DenseDimension):
@@ -674,9 +693,10 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             rd.val_dim = new_val_dim
 
             for d in rhs.out_dims + rhs.primal_dims:
-                if d.id != rd.id:
-                    if d.val_dim is not None and d.val_dim >= new_val_dim:
-                        d.val_dim += 1    
+                if (d.id != rd.id
+                    and d.val_dim is not None
+                    and d.val_dim >= new_val_dim):
+                    d.val_dim += 1
 
     # Only do a reshape if the shape differs from the unmodified one
     if lhs_shape != lhs.val.shape:
@@ -688,7 +708,8 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
 
 
 def _swap_back_axes(st: SparseTensor) -> SparseTensor:
-    """After two `SparseTensor` objects have been broadcast multiplied, the
+    """
+    After two `SparseTensor` objects have been broadcast multiplied, the
     resulting tensor usually has the `val` not reshaped so that the dimensions
     of it are sorted in ascending order according to the order in which the
     corresponding dimensions appear. This function does this.
@@ -838,9 +859,7 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         # Add padding
         lhs, rhs = _pad_tensors(lhs, rhs)
             
-        assert _checkify_broadcast_compatibility(lhs.val, rhs.val), \
-                f"Shapes {lhs.val.shape} and {rhs.val.shape} "\
-                "not compatible for broadcast multiplication!"
+        _assert_broadcast_compatibility(lhs.val, rhs.val)
         new_val = lhs.val * rhs.val
         out = _get_output_tensor(lhs, rhs, new_val)
         res = _swap_back_axes(out)
@@ -866,8 +885,7 @@ def _get_val_dim(st: SparseTensor, id: int) -> int:
         if d.val_dim is not None:
             if isinstance(d, DenseDimension):
                 i += 1
-            else:
-                if d.id < d.other_id:
+            elif d.id < d.other_id:
                     i += 1
     return i
 
@@ -891,8 +909,7 @@ def _get_val_dim_when_swapped(st: SparseTensor, id: int) -> int:
         if d.val_dim is not None:
             if isinstance(d, DenseDimension):
                 i += 1
-            else:
-                if d.id > d.other_id:
+            elif d.id > d.other_id:
                     i += 1
     return i
     
@@ -933,7 +950,7 @@ def _replicate_along_axis(st: SparseTensor, ids: Sequence[int]) -> SparseTensor:
     tiling = []              
     for d in dims:
         if d.val_dim is not None:
-            if type(d) is DenseDimension:
+            if isinstance(d, DenseDimension):
                 if st.val.shape[d.val_dim] != d.size:
                     tiling.append(d.size)
                 else:
@@ -950,7 +967,7 @@ def _replicate_along_axis(st: SparseTensor, ids: Sequence[int]) -> SparseTensor:
     return st
 
 
-def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> Tuple[Sequence[int], Sequence[int]]:
+def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> tuple[Sequence[int], Sequence[int]]:
     """
     Function that computes the axes along which the `val` properties of two
     `SparseTensor` objects will get contracted. This is necessary to enable
@@ -964,7 +981,7 @@ def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> Tuple[Sequenc
                             replicate along a given axis.
     
     Returns:
-        Tuple[Sequence[int], Sequence[int]]: Tuple of sequences of integers that
+        tuple[Sequence[int], Sequence[int]]: tuple of sequences of integers that
                                             tell us along which axes the `val`
                                             properties of `lhs` and `rhs` will
                                             get contracted.
@@ -1251,7 +1268,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the sparse addition of `lhs.val` and `rhs.val`.
     """    
-    assert lhs.shape == rhs.shape, f"Incompatible shapes {lhs.shape} and {rhs.shape} for addition!"
+    assert lhs.shape == rhs.shape, \
+        f"Incompatible shapes {lhs.shape} and {rhs.shape} for addition!"
     ldims, rdims = [], []
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
@@ -1445,20 +1463,20 @@ def get_num_adds(lhs: SparseTensor, rhs: SparseTensor) -> int:
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
         if isinstance(ld, DenseDimension) and isinstance(rd, DenseDimension):
             num_adds *= ld.size
-        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
+        elif isinstance(ld, DenseDimension) and isinstance(rd, SparseDimension):
             num_adds *= rd.size
-        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
+        elif isinstance(ld, SparseDimension) and isinstance(rd, DenseDimension):
             num_adds *= ld.size
-        elif type(ld) is SparseDimension and type(rd) is SparseDimension:     
+        elif isinstance(ld, SparseDimension) and isinstance(rd, SparseDimension):     
             if ld.val_dim is not None and rd.val_dim is not None:    
                 num_adds *= ld.size
                 
     for ld, rd in zip(lhs.primal_dims, rhs.primal_dims):
-        if type(ld) is DenseDimension and type(rd) is DenseDimension:
+        if isinstance(ld, DenseDimension) and isinstance(rd, DenseDimension):
             num_adds *= ld.size
-        elif type(ld) is DenseDimension and type(rd) is SparseDimension:
+        elif isinstance(ld, DenseDimension) and isinstance(rd, SparseDimension):
             num_adds *= rd.size
-        elif type(ld) is SparseDimension and type(rd) is DenseDimension:
+        elif isinstance(ld, SparseDimension) and isinstance(rd, DenseDimension):
             num_adds *= ld.size
     return num_adds
     

@@ -57,7 +57,7 @@ class CustomElementalCallPrimitive(core.Primitive):
         tracers = map(top_trace.full_raise, args)
         tracers = list(tracers)
 
-        if type(top_trace) is jax._src.interpreters.partial_eval.DynamicJaxprTrace:
+        if isinstance(top_trace, jax)._src.interpreters.partial_eval.DynamicJaxprTrace:
             outs = dynamic_jaxpr_custom_elemental_call(self, fn, elemental, tracers,
                                                         symbolic_zeros=symbolic_zeros)
         _, env_trace_todo = lu.merge_linear_aux(env_trace_todo1, env_trace_todo2)
