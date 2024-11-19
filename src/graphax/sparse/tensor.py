@@ -72,7 +72,7 @@ class SparseTensor:
     val: ShapedArray
     pre_transforms: Sequence[Callable] 
     post_transforms: Sequence[Callable]
-    # NOTE: Document pre_transforms and post_transforms. what about addition?
+    # TODO: Document pre_transforms and post_transforms. what about addition?
     # NOTE: We always assume that the dimensions are ordered in ascending order
     
     def __init__(self, 
@@ -534,14 +534,16 @@ def _swap_axes(st: SparseTensor) -> SparseTensor:
     
     l = len(st.out_dims)
     for ld in st.out_dims:
-        # NOTE: not sure if this is a good solution to the problem at hand:
+        # NOTE: not sure if this is a good solution to the problem here:
         if transposed_shape == _get_val_shape(st):
                 break
         if type(ld) is SparseDimension and ld.val_dim is not None:
             other_val_dim = _get_other_val_dim(ld, st)
             for d in st.out_dims + st.primal_dims:
                 if d.id != ld.id and d.id != ld.other_id:
-                    if d.val_dim is not None and d.val_dim >= ld.val_dim and d.val_dim <= other_val_dim:
+                    if d.val_dim is not None \
+                        and d.val_dim >= ld.val_dim \
+                        and d.val_dim <= other_val_dim:
                         d.val_dim -= 1
             ld.val_dim = other_val_dim
             st.primal_dims[ld.other_id-l].val_dim = other_val_dim
@@ -676,15 +678,11 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
                     if d.val_dim is not None and d.val_dim >= new_val_dim:
                         d.val_dim += 1    
 
-    # TODO instead of reshape use `jnp.expand_dims here!`
-    ### Needs some serious fixing !#######################################
-    # TODO take care of the batched case!
     # Only do a reshape if the shape differs from the unmodified one
     if lhs_shape != lhs.val.shape:
         lhs.val = lhs.val.reshape(lhs_shape)  
     if rhs_shape != rhs.val.shape: 
         rhs.val = rhs.val.reshape(rhs_shape)   
-    ######################################################################
                     
     return lhs, rhs
 
@@ -840,7 +838,9 @@ def _pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         # Add padding
         lhs, rhs = _pad_tensors(lhs, rhs)
             
-        assert _checkify_broadcast_compatibility(lhs.val, rhs.val), f"Shapes {lhs.val.shape} and {rhs.val.shape} not compatible for broadcast multiplication!"
+        assert _checkify_broadcast_compatibility(lhs.val, rhs.val), \
+                f"Shapes {lhs.val.shape} and {rhs.val.shape} "\
+                "not compatible for broadcast multiplication!"
         new_val = lhs.val * rhs.val
         out = _get_output_tensor(lhs, rhs, new_val)
         res = _swap_back_axes(out)
@@ -1000,8 +1000,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     new_out_dims = lhs.out_dims
     l = len(lhs.out_dims)
     r = len(rhs.out_dims)
-    def _is_none(idx, d):
-        return idx if d.val_dim is not None else None
     
     new_primal_dims = []
     i = 0

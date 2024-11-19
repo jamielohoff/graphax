@@ -330,9 +330,7 @@ def _eliminate_vertex(vertex: int,
     is probably not the best idea. Can we do this somehow more beautifully?
     Maybe have a impure function and add an additional argument instead?
     """
-    # print("vertex:", vertex)
     eqn = jaxpr.eqns[vertex-1]
-    # print(eqn.primitive)
     num_mul, num_add = 0, 0
     for out_edge in graph[eqn.outvars[0]].keys():
         post_val = graph[eqn.outvars[0]][out_edge].copy()
@@ -396,7 +394,7 @@ def _eliminate_vertex(vertex: int,
                         _edge = transform.apply(_edge, iota)
 
                 if len(_edge.pre_transforms) > 0:
-                    for transform in _edge.pre_transforms:
+                    for transform in _edge.pre_transforms[::-1]: # Do we need the [::-1] here?
                         _edge = transform.apply_inverse(_edge, iota)
 
                 _checkify_tensor(edge_outval)

@@ -9,6 +9,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 
 import jax._src.core as core
+from jax._src.pjit import pjit_p
 
 from .sparse.tensor import (SparseTensor, DenseDimension, SparseDimension, 
                             _swap_back_axes, _materialize_dimensions)
@@ -186,7 +187,7 @@ defelemental(lax.sub_p, sub_elemental_rule)
 
     
 def mul_elemental_rule(x, y):
-    return (y, x) # (jnp.sinh(jnp.ones(3)), jnp.cosh(jnp.ones(4))) # NOTE: This is not correct! Reset when commit.
+    return (y, x)
 defelemental(lax.mul_p, mul_elemental_rule)
     
 
@@ -211,7 +212,6 @@ def min_elemental_rule(x, y):
 defelemental(lax.min_p, min_elemental_rule)
 
 
-# TODO This needs the correct gradients
 def eq_elemental_rule(x, y):
     return (jnp.zeros_like(y), jnp.zeros_like(x))
 defelemental(lax.eq_p, eq_elemental_rule)
@@ -569,11 +569,7 @@ def _trace_subjaxpr(jaxpr, args, consts):
 
     return eqn.outvars, graph, transpose_graph, vo_vertices
 
-# TODO: this is a very ugly hack that treats pjit as a normal primitive with a 
-
-# from . import core as cce_core
-from jax._src.pjit import pjit_p
-
+# TODO: this is a very ugly hack that treats pjit as a normal primitive with a stop_grad
 def pjit_elemental_rule(primals, jaxpr, in_shardings, out_shardings, in_layouts, out_layouts,
                         resource_env, donated_invars, name, keep_unused, inline):
     # TODO Jamie: How do we handle the gradients here?
@@ -746,12 +742,13 @@ def slice_elemental_rule(primals, **params):
             counter += 1
 
         zeros = jnp.zeros(new_shape)
-        dims = list(range(zeros.ndim))
-        scatter_dims = lax.ScatterDimensionNumbers(dims, [], dims)
+        dims = tuple(range(zeros.ndim))
+        scatter_dims = lax.ScatterDimensionNumbers(dims, (), dims)
         _scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
         scatter_indices = jnp.concatenate([scatter_zeros, _scatter_indices])
 
         new_val = lax.scatter(zeros, scatter_indices, full_val, scatter_dims)
+        
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
     
     transform = JacobianTransform(slice_transform, inverse_slice_transform)
@@ -974,13 +971,13 @@ def concatenate_elemental_rule(primals, **params):
     dim = params["dimension"]
     
     count = primals[0].shape[dim]
-    slices = {primals[0]: [0, primals[0].shape[dim]]}
+    slices = {0: [0, primals[0].shape[dim]]}
     _count = primals[0].shape[dim]
-    for val in primals[1:]:
+    for i, val in enumerate(primals[1:], start=1):
         count += val.shape[dim]
-        slices[val] = [_count, count]
+        slices[i] = [_count, count]
         _count = count
-        
+    
     def concatenate_transform(primal, pre, iota):
         new_out_dims = list(copy.deepcopy(pre.out_dims))
         new_primal_dims = list(copy.deepcopy(pre.primal_dims))
@@ -988,7 +985,8 @@ def concatenate_elemental_rule(primals, **params):
                 
         d = new_out_dims[dim]
         id = d.id
-        idx, _idx = slices[primal]
+        primal_idx = [idx for idx, p in enumerate(primals) if p is primal][0]
+        idx, _idx = slices[primal_idx]
         
         if type(d) is DenseDimension:
             if d.val_dim is not None:
@@ -1054,13 +1052,13 @@ def concatenate_elemental_rule(primals, **params):
                 scatter_indices[val_dim] = 0
                 
                 # Compute `update_window_dims` which describes
-                update_window_dims = [n for n in range(len(_shape))] # [0 for _ in _shape]
+                update_window_dims = tuple(n for n in range(len(_shape))) # [0 for _ in _shape]
                 
                 # Compute `scatter_dims_to_operand_dims` which relates the
                 # dimensions of `new_val` to the dimensions of `zeros`
-                scatter_dims_to_operand_dims = [n for n in range(len(_shape))]
-                                         
-                scatter_dims = lax.ScatterDimensionNumbers(update_window_dims, [], scatter_dims_to_operand_dims)
+                scatter_dims_to_operand_dims = tuple(n for n in range(len(_shape)))
+                                    
+                scatter_dims = lax.ScatterDimensionNumbers(update_window_dims, (), scatter_dims_to_operand_dims)
                 new_val = lax.scatter(zeros, 
                                     jnp.array(scatter_indices), 
                                     new_val, 
