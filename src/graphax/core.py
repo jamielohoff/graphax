@@ -11,7 +11,7 @@ from jax._src.util import safe_map
 import jax._src.core as core
 
 from .primitives import elemental_rules
-from .sparse.tensor import get_num_muls, get_num_adds, _checkify_tensor
+from .sparse.tensor import get_num_muls, get_num_adds, _assert_sparse_tensor_consistency
 from .sparse.utils import zeros_like, get_largest_tensor
 
 from jax._src import linear_util as lu
@@ -274,7 +274,7 @@ def unload_post_transforms(post, pre, iota):
     new_post = post.copy()
     for transform in pre.post_transforms:
         new_post = transform.apply_inverse(new_post, iota)
-    _checkify_tensor(new_post)
+    _assert_sparse_tensor_consistency(new_post)
     return new_post
 
 
@@ -282,7 +282,7 @@ def unload_pre_transforms(post, pre, iota):
     new_pre = pre.copy()
     for transform in post.pre_transforms:
         new_pre = transform.apply(new_pre, iota)
-    _checkify_tensor(new_pre)
+    _assert_sparse_tensor_consistency(new_pre)
     return new_pre
 
 
@@ -399,11 +399,11 @@ def _eliminate_vertex(vertex: int,
                     for transform in _edge.pre_transforms:
                         _edge = transform.apply_inverse(_edge, iota)
 
-                _checkify_tensor(edge_outval)
+                _assert_sparse_tensor_consistency(edge_outval)
                 edge_outval += _edge
                 num_add += get_num_adds(edge_outval, _edge)
                 
-            _checkify_tensor(edge_outval)
+            _assert_sparse_tensor_consistency(edge_outval)
             # print("Edge_outval:", edge_outval)
             graph[in_edge][out_edge] = edge_outval
             transpose_graph[out_edge][in_edge] = edge_outval
@@ -515,7 +515,7 @@ def _build_graph(jaxpr: core.Jaxpr,
         
     # Writes a new elemental partial to the graph and transpose_graph
     def write_elemental(outvar, invar, val):
-        _checkify_tensor(val)
+        _assert_sparse_tensor_consistency(val)
         if isinstance(invar, core.Var):
             graph[invar][outvar] = val
             transpose_graph[outvar][invar] = val
