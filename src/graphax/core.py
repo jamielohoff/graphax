@@ -16,11 +16,11 @@ from .primitives import elemental_rules
 from .sparse.tensor import get_num_muls, get_num_adds, _assert_sparse_tensor_consistency
 from .sparse.utils import zeros_like, get_largest_tensor
 
-from jax._src import linear_util as lu
-from jax._src.util import unzip2, weakref_lru_cache
-from jax._src.api_util import argnums_partial, lru_cache
-import jax._src.interpreters.partial_eval as pe
-from jax._src import source_info_util
+# from jax._src import linear_util as lu
+# from jax._src.util import unzip2, weakref_lru_cache
+# from jax._src.api_util import argnums_partial, lru_cache
+# import jax._src.interpreters.partial_eval as pe
+# from jax._src import source_info_util
 
 
 from jax.tree_util import tree_flatten

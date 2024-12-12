@@ -35,10 +35,10 @@ transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.Normalize((0.5, 0.5, 0.5), 
                                                     (0.5, 0.5, 0.5))])
 
-trainset = datasets.CIFAR10(root='./data', train=True, transform=transform)
+trainset = datasets.CIFAR10(root="./data", train=True, transform=transform)
 trainloader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
 
-testset = datasets.CIFAR10(root='./data', train=False, transform=transform)
+testset = datasets.CIFAR10(root="./data", train=False, transform=transform)
 testloader = DataLoader(testset, batch_size=batchsize, shuffle=False)
 
 key = jrand.PRNGKey(42)

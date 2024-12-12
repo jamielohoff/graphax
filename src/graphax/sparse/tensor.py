@@ -2,6 +2,7 @@
 Sparse tensor algebra implementation
 """
 import copy
+from dataclasses import dataclass
 from typing import Callable, Sequence, Union, Generator
 import jax
 import jax.lax as lax
@@ -13,7 +14,6 @@ from jax.tree_util import register_pytree_node_class
 from chex import Array
 
 from .utils import eye_like_copy, eye_like
-from dataclasses import dataclass
 
 
 # NOTE: a val_dim of None means that we have a possible replication of the tensor
@@ -91,10 +91,9 @@ class SparseTensor:
         def multiline_seq(s: Sequence, brackets: str) -> str:
             lb, rb, *_ = brackets
             if s:
-                res = f'{lb}\n\t\t' + ',\n\t\t'.join(map_str(s)) + f',\n\t{rb}'
+                return f"{lb}\n\t\t" + ",\n\t\t".join(map_str(s)) + f",\n\t{rb}"
             else:
-                res = lb + rb
-            return res
+                return lb + rb
 
         str_out_shape = ', '.join(map_str(self.out_shape))
         str_primal_shape = ', '.join(map_str(self.primal_shape))
@@ -105,13 +104,13 @@ class SparseTensor:
         multiline_post_transform = multiline_seq(self.post_transforms, '[]')
 
         return f"""SparseTensor(
-                        shape = ({str_out_shape} | {str_primal_shape}),
-                        out_dims = {multiline_out_dims},
-                        primal_dims = {multiline_primal_dims},
-                        val = {self.val},
-                        pre_transforms = {multiline_pre_transform},
-                        post_transforms = {multiline_post_transform}
-                    )"""
+                    shape = ({str_out_shape} | {str_primal_shape}),
+                    out_dims = {multiline_out_dims},
+                    primal_dims = {multiline_primal_dims},
+                    val = {self.val},
+                    pre_transforms = {multiline_pre_transform},
+                    post_transforms = {multiline_post_transform}
+                )"""
                     
     def __add__(self, _tensor):
         return _add(self, _tensor)

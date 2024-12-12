@@ -1,9 +1,12 @@
 from typing import Any, Callable, Sequence, Generator
-from chex import Array
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
-from tensor import SparseTensor
+
+from chex import Array
+
+from .tensor import SparseTensor
 
 # TODO: make parent class, or inherit sparse tensor ??
 
