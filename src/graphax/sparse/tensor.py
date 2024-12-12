@@ -105,13 +105,13 @@ class SparseTensor:
         multiline_post_transform = multiline_seq(self.post_transforms, '[]')
 
         return f"""SparseTensor(
-    shape = ({str_out_shape} | {str_primal_shape}),
-    out_dims = {multiline_out_dims},
-    primal_dims = {multiline_primal_dims},
-    val = {self.val},
-    pre_transforms = {multiline_pre_transform},
-    post_transforms = {multiline_post_transform}
-)"""
+                        shape = ({str_out_shape} | {str_primal_shape}),
+                        out_dims = {multiline_out_dims},
+                        primal_dims = {multiline_primal_dims},
+                        val = {self.val},
+                        pre_transforms = {multiline_pre_transform},
+                        post_transforms = {multiline_post_transform}
+                    )"""
                     
     def __add__(self, _tensor):
         return _add(self, _tensor)
@@ -136,18 +136,19 @@ class SparseTensor:
         # will get multiplied to manifest the sparse dimensions  
         # If tensor contains SparseDimensions, we have to materialize them
         def eye_dim_fn(d: Dimension) -> int:
-            if isinstance(d, DenseDimension):
+            if isinstance(d, SparseDimension):
                 return d.size
             else:
                 return 1
 
         eye_shape = [eye_dim_fn(d) for d in self.out_dims + self.primal_dims]
 
+        eye = eye_like_copy(eye_shape, len(self.out_dims), iota)
         # If tensor consists only out of Kronecker Delta's, we can just reshape
         # the eye matrix to the shape of the tensor and return it
         if self.val is None: 
-            return eye_like_copy(eye_shape, len(self.out_dims), iota)
-        
+            return eye
+
         if self.val.shape == self.shape:
             return self.val
         
@@ -156,6 +157,7 @@ class SparseTensor:
             return self.val
         
         shape = _get_fully_materialized_shape(self)   
+        val = self.val.reshape(shape) * eye
         
         # Get the tiling for DenseDimensions with `val_dim = None`, i.e. replicating
         # dimensions
@@ -166,8 +168,6 @@ class SparseTensor:
                 return 1
 
         tiling = [tile_dim_fn(d) for d in self.out_dims + self.primal_dims]
-
-        val = self.val.reshape(shape)
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
         return jnp.tile(index_map*val, tiling)
         
@@ -1179,7 +1179,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     dimension_numbers = (dimension_numbers, batch_dimensions)
     new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
     
-    permutation =[None]*new_val.ndim
+    permutation = [None]*new_val.ndim
     j = 0
     for i in range(new_val.ndim):
         if i < len(pos):
