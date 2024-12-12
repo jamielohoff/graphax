@@ -72,7 +72,7 @@ def eqx_jacve(fun: Callable,
             order: Union[Sequence[int], str], 
             argnums: Sequence[int] = (0,),
             count_ops: bool = False,
-            dense_representation: bool = True) -> Callable:
+            sparse_representation: bool = False) -> Callable:
     @wraps(fun)
     def wrapped(*args, **kwargs):
         # TODO Make repackaging work properly with one input value only
@@ -94,7 +94,7 @@ def eqx_jacve(fun: Callable,
                                         *_args, 
                                         argnums=argnums,
                                         count_ops=count_ops,
-                                        dense_representation=dense_representation)
+                                        sparse_representation=sparse_representation)
         if count_ops: 
             out, op_counts = out
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
