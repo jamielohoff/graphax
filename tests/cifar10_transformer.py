@@ -144,12 +144,6 @@ one_hot_labels = jnn.one_hot(labels, 10)
 xs = subdivide(batch)
 argnums = range(2, len(weights) + 2)
 
-# print(jax.make_jaxpr(batched_model)(xs, one_hot_labels, *weights))
-
-#print(jax.make_jaxpr(gx.jacve(batched_model, order="rev", argnums=argnums))(xs, one_hot_labels, *weights))
-# bxh
-# print(jax.make_jaxpr(jax.jacrev(batched_model, argnums=argnums))(xs, one_hot_labels, *weights))
-# bfv
 
 ### Training loop
 st = time.time()

@@ -452,6 +452,7 @@ def _checkify_order(order: EliminationOrder,
     else:
         vertex_set = set([i for i, eqn in enumerate(jaxpr.eqns, start=1) 
                     if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices])
+    
         set_from_order = set(order)
         missing_vertices = vertex_set.difference(set_from_order)
         if len(missing_vertices) > 0:
