@@ -74,6 +74,8 @@ extensions = [
     "sphinx.ext.napoleon",
 ]
 
+napoleon_google_docstring = True
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
@@ -158,10 +160,10 @@ html_theme = "sphinx_rtd_theme"
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-html_theme_options = {
-    "sidebar_width": "300px",
-    "page_width": "1200px"
-}
+# html_theme_options = {
+#     "sidebar_width": "300px",
+#     "page_width": "1200px"
+# }
 
 # Add any paths that contain custom themes here, relative to this directory.
 # html_theme_path = []
@@ -230,6 +232,10 @@ html_static_path = ["_static"]
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = "graphax-doc"
+
+
+# Automatically generate API summaries
+autosummary_generate = True
 
 
 # -- Options for LaTeX output ------------------------------------------------
