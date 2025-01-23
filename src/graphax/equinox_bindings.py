@@ -9,8 +9,6 @@ from equinox import is_array
 from equinox._filters import combine, partition, is_inexact_array
 from equinox._module import Module, Partial, module_update_wrapper
 from equinox._custom_types import sentinel
-from equinox._deprecate import deprecated_0_10
-from equinox._doc_utils import doc_remove_args
 from equinox import filter_make_jaxpr
 
 from .core import vertex_elimination_jaxpr
@@ -43,7 +41,6 @@ class _JacveWrapper(Module):
         return Partial(self, instance)
 
 
-@doc_remove_args("gradkwargs")
 def filter_jacve(
     fun=sentinel, **gradkwargs
 ) -> Callable:
@@ -54,8 +51,6 @@ def filter_jacve(
     if fun is sentinel:
         return ft.partial(filter_jacve, **gradkwargs)
 
-    deprecated_0_10(gradkwargs, "arg")
-    deprecated_0_10(gradkwargs, "filter_spec")
     argnums = gradkwargs.pop("argnums", None)
     if argnums is not None:
         raise ValueError(
