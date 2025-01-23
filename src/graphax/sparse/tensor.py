@@ -499,7 +499,7 @@ def _get_permutation_from_tensor(st: SparseTensor,
     return permutation
 
 
-def _get_val_shape(st: SparseTensor) -> list[int]:
+def _get_val_shape(st: SparseTensor) -> Sequence[int]:
     """
     Function that computes the shape of the `val` property of a `SparseTensor`
     from its corresponding `Dimension` objects.
