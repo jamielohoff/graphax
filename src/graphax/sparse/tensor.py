@@ -38,7 +38,7 @@ class SparseDimension:
     val_dim: int
     other_id: int
 
-Dimension = DenseDimension | SparseDimension
+Dimension = Union[DenseDimension, SparseDimension]
         
 
 class SparseTensor:
@@ -399,7 +399,7 @@ def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
 def _get_other_val_dim(d: Dimension, st: SparseTensor) -> Dimension:
     pass
 
-def _get_new_val_dim(d: Dimension, st: SparseTensor) -> int | None:
+def _get_new_val_dim(d: Dimension, st: SparseTensor) -> int:
     """
     Function that computes the new `val_dim` of a `SparseDimension` object
     so that it's position within the `val` property matches the relative position
