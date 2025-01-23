@@ -1,6 +1,6 @@
 import functools as ft
 from functools import wraps
-from typing import Any, Callable, Union, Sequence
+from typing import Any, Callable, Dict, Union, Sequence
 
 import jax
 import jax.tree_util as jtu
@@ -18,7 +18,7 @@ from .core import vertex_elimination_jaxpr
 
 class _JacveWrapper(Module):
     _fun: Callable
-    _gradkwargs: dict[str, Any]
+    _gradkwargs: Dict[str, Any]
     
     @property
     def __wrapped__(self):
