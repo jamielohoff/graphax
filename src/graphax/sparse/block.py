@@ -1,4 +1,4 @@
-from typing import Any, Callable, Sequence, Generator
+from typing import Any, Callable, Sequence, Generator, Union
 from dataclasses import dataclass
 
 import jax
@@ -14,7 +14,7 @@ from .tensor import SparseTensor
 class DenseDimension:
     id: int
     size: int
-    val_dim: int | None
+    val_dim: int
 
 @dataclass
 class SparseDimension:
@@ -23,7 +23,7 @@ class SparseDimension:
     val_dim: int
     other_id: int
 
-Dimension = DenseDimension | SparseDimension
+Dimension = Union[DenseDimension, SparseDimension]
 
 class BlockSparseTensor:
     out_dims: Any
