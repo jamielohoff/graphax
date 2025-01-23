@@ -471,7 +471,7 @@ def _assert_broadcast_compatibility(lhs_val: Array, rhs_val: Array):
 
 
 def _get_permutation_from_tensor(st: SparseTensor,
-                                 shape: Sequence[int] = None) -> list[int]:
+                                 shape: Sequence[int] = None) -> Sequence[int]:
     """
     Function that calculates the permutation of the axes of the `val` property
     so as that `st.val.shape` matches `shape`. This is necessary to enable proper
