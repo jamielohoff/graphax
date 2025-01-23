@@ -25,7 +25,7 @@ from .utils import eye_like_copy, eye_like
 class DenseDimension:
     id: int
     size: int
-    val_dim: int | None
+    val_dim: int
 
 # NOTE: a val_dim of None means that we have a factored Kronecker delta in
 #   our tensor at the respective dimensions.
