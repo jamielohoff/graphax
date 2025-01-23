@@ -3,7 +3,7 @@ Sparse tensor algebra implementation
 """
 import copy
 from dataclasses import dataclass
-from typing import Callable, Sequence, Union, Generator
+from typing import Callable, Generator, Sequence, Union, Tuple
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
@@ -49,9 +49,9 @@ class SparseTensor:
     everything becomes trivial and the `val` field contains the value of the
     singleton partial
     """
-    out_dims: tuple[Dimension]
-    primal_dims: tuple[Dimension] # input dimensions
-    shape: tuple[int] # True shape of the tensor
+    out_dims: Tuple[Dimension]
+    primal_dims: Tuple[Dimension] # input dimensions
+    shape: Tuple[int] # True shape of the tensor
     val: Array
     pre_transforms: Sequence[Callable]
     post_transforms: Sequence[Callable]
@@ -95,13 +95,13 @@ class SparseTensor:
             else:
                 return lb + rb
 
-        str_out_shape = ', '.join(map_str(self.out_shape))
-        str_primal_shape = ', '.join(map_str(self.primal_shape))
+        str_out_shape = ", ".join(map_str(self.out_shape))
+        str_primal_shape = ", ".join(map_str(self.primal_shape))
 
-        multiline_out_dims = multiline_seq(self.out_dims, '()')
-        multiline_primal_dims = multiline_seq(self.primal_dims, '()')
-        multiline_pre_transform = multiline_seq(self.pre_transforms, '[]')
-        multiline_post_transform = multiline_seq(self.post_transforms, '[]')
+        multiline_out_dims = multiline_seq(self.out_dims, "()")
+        multiline_primal_dims = multiline_seq(self.primal_dims, "()")
+        multiline_pre_transform = multiline_seq(self.pre_transforms, "[]")
+        multiline_post_transform = multiline_seq(self.post_transforms, "[]")
 
         return f"""SparseTensor(
                     shape = ({str_out_shape} | {str_primal_shape}),
@@ -260,11 +260,11 @@ def _assert_sparse_tensor_consistency(st: SparseTensor):
     # TODO: check if val is consistent with tensor structure?
 
 
-def _get_fully_materialized_shape(st: SparseTensor) -> tuple[int]:
+def _get_fully_materialized_shape(st: SparseTensor) -> Sequence[int]:
     """
-    Function that returns the shape of a `SparseTensor` object if its 'val' 
+    Function that returns the shape of a `SparseTensor` object if its `val`
     property would be fully materialized. Dimensions of size one are inserted 
-    for one of the two dimensions corresponding to a pair of type `SparseDimension'.
+    for one of the two dimensions corresponding to a pair of type `SparseDimension`.
     If the `SparseDimension` has val == None, then both are set to one.
     This corresponds to a 
 
@@ -427,7 +427,7 @@ def _get_new_val_dim(d: Dimension, st: SparseTensor) -> int:
 
 
 def _get_padding(lhs_out_dims: Sequence[Dimension], 
-                 rhs_primal_dims: Sequence[Dimension]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+                 rhs_primal_dims: Sequence[Dimension]) -> Tuple[Sequence[int], Sequence[int]]:
     """
     Function that calculates how many dimensions have to be prepended/appended
     to the `val` property of a `SparseTensor` to make it compatible for broadcast
@@ -442,8 +442,8 @@ def _get_padding(lhs_out_dims: Sequence[Dimension],
             SparseDimension object whose `val` property we want to multiply with `lhs.val`.
 
     Returns:
-        tuple[tuple[int, ...], tuple[int, ...]]:
-            tuple of integers that tells us how many dimensions we have to
+        Tuple[Sequence[int, ...], Sequence[int, ...]]:
+            A tuple of integers that tells us how many dimensions we have to
             append/prepend to the `val` property of `lhs` and `rhs`.
     """
     # Calculate where we have to add additional dimensions to rhs.val
@@ -966,7 +966,7 @@ def _replicate_along_axis(st: SparseTensor, ids: Sequence[int]) -> SparseTensor:
     return st
 
 
-def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> tuple[Sequence[int], Sequence[int]]:
+def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> Tuple[Sequence[int], Sequence[int]]:
     """
     Function that computes the axes along which the `val` properties of two
     `SparseTensor` objects will get contracted. This is necessary to enable
@@ -980,7 +980,7 @@ def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> tuple[Sequenc
                             replicate along a given axis.
     
     Returns:
-        tuple[Sequence[int], Sequence[int]]: tuple of sequences of integers that
+        Tuple[Sequence[int], Sequence[int]]: A tuple of sequences of integers that
                                             tell us along which axes the `val`
                                             properties of `lhs` and `rhs` will
                                             get contracted.
@@ -1274,7 +1274,7 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     _lshape, _rshape = [], [] 
     count = 0 
                            
-    # Check the dimensionality of the 'out_dims' of both tensors
+    # Check the dimensionality of the `out_dims` of both tensors
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
         if ld.val_dim is None and rd.val_dim is None:
             dim = count
@@ -1315,7 +1315,7 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                 _rshape.append(1)
             new_out_dims.append(DenseDimension(ld.id, ld.size, dim))
             
-    # Check the dimensionality of the 'primal_dims' of both tensors        
+    # Check the dimensionality of the `primal_dims` of both tensors        
     for ld, rd in zip(lhs.primal_dims, rhs.primal_dims):                 
         if isinstance(ld, SparseDimension) and isinstance(rd, SparseDimension) \
             and ld.other_id == rd.other_id:
