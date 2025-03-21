@@ -496,6 +496,10 @@ def _get_permutation_from_tensor(st: SparseTensor,
             if isinstance(d, DenseDimension):
                 permutation[d.val_dim] = i
                 i += 1
+            else:
+                if d.id < d.other_id:
+                    permutation[d.val_dim] = i
+                    i += 1
     return permutation
 
 
@@ -1157,9 +1161,14 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                         val_dim = rd.val_dim \
                                 - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) \
                                 + lhs.val.ndim - sum([1 for lc in lcontracting_axes])
+                        print(rd.val_dim)
+                        print(sum([1 for rc in rcontracting_axes if rc < rd.val_dim]))
+                        print(lhs.val.ndim)
+                        print(sum([1 for lc in lcontracting_axes]))
                     else:
                         val_dim = ld.val_dim \
                                 - sum([1 for lc in lcontracting_axes if lc < ld.val_dim])
+                    print("val dim", val_dim)
                     new_primal_dims.insert(rd.other_id-r, DenseDimension(rd.other_id-r+l, ld.size, val_dim))
                 else:
                     val_dim = None
@@ -1172,22 +1181,28 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                 - sum([1 for lb in lbroadcasting_axes])
                     new_out_dims.insert(ld.other_id, SparseDimension(ld.other_id, ld.size, val_dim, rd.other_id-r+l))
                     new_primal_dims.insert(rd.other_id-r, SparseDimension(rd.other_id-r+l, ld.size, val_dim, ld.other_id))
-                    
-    dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
-    batch_dimensions = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse these guys here to handle the SparseDimensions
-    dimension_numbers = (dimension_numbers, batch_dimensions)
-    new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
-    
-    permutation = [None]*new_val.ndim
-    j = 0
-    for i in range(new_val.ndim):
-        if i < len(pos):
-            permutation[pos[i]] = i
-        else:
-            while permutation[j] is not None:
-                j += 1
-            permutation[j] = i
-    new_val = jnp.transpose(new_val, permutation)
+    if lhs.val is None and rhs.val is None:
+        new_val = None        
+    elif lhs.val is None:
+        new_val = rhs.val
+    elif rhs.val is None:
+        new_val = lhs.val
+    else:      
+        dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
+        batch_dimensions = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse these guys here to handle the SparseDimensions
+        dimension_numbers = (dimension_numbers, batch_dimensions)
+        new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
+
+        permutation = [None]*new_val.ndim
+        j = 0
+        for i in range(new_val.ndim):
+            if i < len(pos):
+                permutation[pos[i]] = i
+            else:
+                while permutation[j] is not None:
+                    j += 1
+                permutation[j] = i
+        new_val = jnp.transpose(new_val, permutation)
     
     # Take care of the old dimensions
     for ld in lhs.out_dims:
@@ -1196,7 +1211,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             if ld.val_dim is not None:
                 val_dim = sum([1 for d in new_out_dims[:ld.id] if d.val_dim is not None])
             new_out_dims.insert(ld.id, DenseDimension(ld.id, ld.size, ld.val_dim))
-    
+
     for rd in rhs.primal_dims:
         if isinstance(rd, DenseDimension):
             val_dim = None
@@ -1214,7 +1229,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                             or rd.val_dim is not None)])
                 val_dim = rd.val_dim + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, val_dim))
-
+    print("st", new_out_dims, new_primal_dims, new_val.shape)
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
 
 

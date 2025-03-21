@@ -152,6 +152,7 @@ defelemental(lax.integer_pow_p, lambda x, y: y*x**(y-1))
 defelemental2(lax.exp_p, lambda out, primal: out)
 defelemental(lax.log_p, lambda x: 1./x)
 defelemental2(lax.sqrt_p, lambda out, primal: .5/out)
+defelemental(lax.square_p, lambda x: 2.*x)
 defelemental2(lax.logistic_p, lambda out, primal: out*(1.-out))
 defelemental(lax.log1p_p, lambda x: 1./(1.+ x))
 

@@ -16,7 +16,7 @@ from torchvision import datasets, transforms
 
 import graphax as gx
 
-from _transformer import (multihead_attention_block, glorot, gelu,
+from tests.examples._transformer import (multihead_attention_block, glorot, gelu,
                         make_positional_encoding, softmax_ce_loss,
                         make_weights)   
 

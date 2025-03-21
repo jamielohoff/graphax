@@ -34,7 +34,8 @@ class MultiOutputTest(unittest.TestCase):
         print(revres[1])
         self.assertTrue(tree_allclose(veres, revres))
         
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
     
     

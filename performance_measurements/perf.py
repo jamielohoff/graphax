@@ -9,7 +9,7 @@ import jax.numpy as jnp
 
 from chex import Array
 
-from .core import jacve
+from graphax import jacve
 
 Order = Union[str, Sequence[int]]
 

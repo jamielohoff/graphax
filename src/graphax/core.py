@@ -1,35 +1,18 @@
 from typing import Callable, Dict, Sequence, Set, Tuple, Union
 from functools import wraps, partial
 from collections import defaultdict
-import contextlib
-import itertools as it
 
 import jax
-import jax.lax as lax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 
-from jax._src.util import safe_map, safe_zip
+from jax._src.util import safe_map
 import jax._src.core as core
 
 from .primitives import elemental_rules
 from .sparse.tensor import get_num_muls, get_num_adds, _assert_sparse_tensor_consistency
 from .sparse.utils import zeros_like, get_largest_tensor
 
-# from jax._src import linear_util as lu
-# from jax._src.util import unzip2, weakref_lru_cache
-# from jax._src.api_util import argnums_partial, lru_cache
-# import jax._src.interpreters.partial_eval as pe
-# from jax._src import source_info_util
-
-
-from jax.tree_util import tree_flatten
-from jax._src.api_util import flatten_fun_nokwargs
-from jax._src import dispatch
-
-# map = safe_map
-# zip = safe_zip
-# elemental_rules = {}
 
 def tree_allclose(tree1, tree2, equal_nan: bool = False) -> bool:
     allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan, atol=1e-5, rtol=1e-4)
@@ -37,144 +20,13 @@ def tree_allclose(tree1, tree2, equal_nan: bool = False) -> bool:
     return jtu.tree_reduce(jnp.logical_and, is_equal)
 
 
-# class CCETracer(core.Tracer):
-#     __slots__ = ["primal", "elemental"]
-#     def __init__(self, trace, primal, elemental):
-#         self._trace = trace
-#         self.primal = primal
-#         self.elemental = elemental
-        
-#     @property
-#     def aval(self):
-#         return core.get_aval(self.primal)
-    
-#     def full_lower(self):
-#         return core.full_lower(self.primal)
-    
-
-# class CCETrace(core.Trace):
-
-#     def pure(self, val):
-#         print("pure:", val)
-#         return CCETracer(self, val, 0.)
-    
-#     def lift(self, val):
-#         print("lift:", val)
-#         return CCETracer(self, val, 0.5)
-    
-#     def sublift(self, val):
-#         print("sublift:", val)
-#         return CCETracer(self, val.primal, val.elemental)
-    
-#     def process_primitive(self, primitive, tracers, params):
-#         print()
-#         print("PPP### primitive:", primitive)
-#         print("### tracers:", tracers)
-#         elemental_rule = elemental_rules.get(primitive)
-#         out_primals, out_elementals = elemental_rule([t.primal for t in tracers], **params)
-
-#         print("### out_elementals:", out_elementals)
-#         if primitive.multiple_results:
-#             out_tracers = [CCETracer(self, p, out_elementals) for p in out_primals]
-#         else:
-#             out_tracers = CCETracer(self, out_primals, out_elementals)
-#         print("### out_tracers:", out_tracers)
-#         return out_tracers # CCETracer(self, out_primals, out_elementals)
-
-
-# def jacve(fun: Callable, order=None, argnums=None) -> Callable:
-#     @wraps(fun)
-#     def jacfun(*args, **kwargs):
-#         f = lu.wrap_init(fun)
-#         f_jac = cce(f)
-#         print("args", args)
-#         return f_jac.call_wrapped(args, (0, 0))
-#     return jacfun
-
-
-# def cce(fun: lu.WrappedFun, transform_stack=True):
-#     jac_fn = ccefun(cce_subtrace(fun), transform_stack)
-#     return jac_fn
-
-# # first arg is always static arg for lu.transformation
-# @lu.transformation
-# def ccefun(transform_stack, primals, elementals):
-#     print("***primals:", primals)
-#     print("***elementals:", elementals)
-#     # NOTE: Do we have to register the `transform_name_stack` somewhere?
-#     ctx = (source_info_util.transform_name_stack("cce") if transform_stack
-#             else contextlib.nullcontext())
-#     with core.new_main(CCETrace) as main, ctx:
-#         out_primals, out_elementals = yield (main, primals, elementals), {}
-#         del main
-#     yield out_primals, out_elementals
-
-
-# @lu.transformation
-# def cce_subtrace(main, primals, elementals):
-#     trace = CCETrace(main, core.cur_sublevel())
-#     for x in list(primals):
-#         if isinstance(x, core.Tracer):
-#             if x._trace.level >= trace.level:
-#                 raise core.escaped_tracer_error(
-#                     x, f"Tracer from a higher level: {x} in trace {trace}")
-#             assert x._trace.level < trace.level
-
-#     print("///primals:", primals)
-#     print("///trace:", trace)
-#     # this is the piece that causes all the trouble
-#     in_tracers = [CCETracer(trace, x, 0) for x in primals]
-#     print("///in_tracers:", list(in_tracers))
-#     ans = yield in_tracers, {}
-#     # ans = [CCETracer(trace, x, 0) for x in ans]
-#     print("///ans:", ans)
-#     # NOTE: at this point somehow the tracer levels are incorrect, so 
-#     # an automatic lift() is applied to the primal values, which kills the 
-#     # derivatives
-#     out_tracers = map(trace.full_raise, ans)
-#     out_tracers = list(out_tracers)
-#     print("///out_tracers:", list(out_tracers))
-#     yield unzip2([(out_tracer.primal, out_tracer.elemental) 
-#                     for out_tracer in out_tracers])
-
-
-# def cce_jaxpr(jaxpr: core.ClosedJaxpr) -> tuple[core.ClosedJaxpr]:
-#     return _cce_jaxpr(jaxpr)
-
-
-# @weakref_lru_cache
-# def _cce_jaxpr(jaxpr):
-#     f = lu.wrap_init(core.jaxpr_as_fun(jaxpr))
-#     f_cce = f_cce_traceable(cce(f, transform_stack=False))
-#     elemental_avals = [aval for aval in jaxpr.in_avals]
-#     avals_in = list(it.chain(jaxpr.in_avals, elemental_avals))
-#     print("avals_in:", avals_in)
-#     jaxpr_out, avals_out, literals_out, () = pe.trace_to_jaxpr_dynamic(f_cce, avals_in)
-#     return core.ClosedJaxpr(jaxpr_out, literals_out)
-
-
-# @lu.transformation
-# def f_cce_traceable(*primals_and_elementals):
-#     print("primals_and_elementals:", primals_and_elementals)
-#     num_primals = len(primals_and_elementals) // 2
-#     primals = primals_and_elementals[:num_primals]
-#     elementals = primals_and_elementals[num_primals:]
-#     out_primals, out_elementals = yield (primals, elementals), {}
-#     print("out_primals:", out_primals)
-#     print("out_elementals:", out_elementals)
-#     yield list(out_primals) + list(out_elementals)
-
-
 EliminationOrder = Union[Sequence[int], str]
 ComputationalGraph = Dict[core.Var, Dict[core.Var, jnp.ndarray]]
 
 
-def jacve(fun: Callable, 
-            order: EliminationOrder, 
-            argnums: Sequence[int] = (0,),
-            has_aux: bool = False,
-            count_ops: bool = False,
-            sparse_representation: bool = False) -> Callable:
+def jacve(fun: Callable, order: EliminationOrder, argnums: Sequence[int] = (0,), 
+          has_aux: bool = False, count_ops: bool = False, 
+          sparse_representation: bool = False) -> Callable:
     """
     Jacobian `fun` with respect to the `argnums` using the vertex elimination method.
     The vertex elimination order can be specified as a sequence of integers or 

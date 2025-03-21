@@ -7,17 +7,18 @@ import jax.numpy as jnp
 import jax.random as jrand
 
 import graphax as gx
+from perf import plot_performance_over_size, plot_performance
 
 
 from graphax.examples import Simple, Helmholtz, RobotArm_6DOF, RoeFlux_1d, g, KerrSenn_metric, CloudSchemes_step, f
-
+# TODO: make this a jupyter notebook
 
 def measure_simple():
     samplesize = 100
     duration = 1000
     shapes = [(5, 5), (10, 10), (20, 20), (30, 30), (40, 40), (50, 50)]
     args = [[jnp.ones(shape)*0.01] for shape in shapes]
-    gx.plot_performance_over_size(Simple, args, "rev", "./simple.png", samplesize=samplesize, loop_duration=duration)
+    plot_performance_over_size(Simple, args, "rev", "./simple.png", samplesize=samplesize, loop_duration=duration)
     
 
 def measure_Helmholtz():
@@ -26,7 +27,7 @@ def measure_Helmholtz():
     
     shapes = [(5,), (20,), (50,), (100,), (200,), (500,), (1000, ), (2000,)]
     args = [[jnp.ones(shape)*0.01] for shape in shapes]
-    gx.plot_performance_over_size(Helmholtz, args,  "./Helmholtz.png", samplesize=samplesize, loop_duration=duration)
+    plot_performance_over_size(Helmholtz, args,  "./Helmholtz.png", samplesize=samplesize, loop_duration=duration)
             
 
 def measure_Perceptron():
@@ -123,7 +124,7 @@ def measure_RobotArm():
                 93, 12, 24]
     
     xs = [jnp.ones(shape)]*6
-    gx.plot_performance(RobotArm_6DOF, xs, order, mM_order, "./6DOF_Robot_Arm.png", samplesize=samplesize, caption="6-DOF Robot Arm")
+    plot_performance(RobotArm_6DOF, xs, order, mM_order, "./6DOF_Robot_Arm.png", samplesize=samplesize, caption="6-DOF Robot Arm")
     
     # shapes = [(), (3, 3), (6, 6), (10, 10), (15, 15), (20, 20), (30, 30)]
     # args = [[jnp.ones(shape)]*6 for shape in shapes]
@@ -150,7 +151,7 @@ def measure_RoeFlux():
     shape = (600,)
     xs = [.01, .02, .02, .01, .03, .03]
     xs = [jnp.ones(shape)*x for x in xs]
-    gx.plot_performance(RoeFlux_1d, xs, order, mM_order, "./RoeFlux.png", samplesize=samplesize, caption="Roe Flux")
+    plot_performance(RoeFlux_1d, xs, order, mM_order, "./RoeFlux.png", samplesize=samplesize, caption="Roe Flux")
     
     # shapes = [(1,), (5,), (10), (25,), (50,), (100,), (250,), (500,)]# , (15, 15), (20, 20), (30, 30)]
     # args = [[jnp.ones(shape)]*6 for shape in shapes]
@@ -161,21 +162,21 @@ def measure_g():
     samplesize = 1000
     shape = (60,)
     xs = [jnp.zeros(shape)*0.01]*15
-    gx.plot_performance(g, xs, "./g.png", samplesize=samplesize, caption="an arbitrary function")
+    plot_performance(g, xs, "./g.png", samplesize=samplesize, caption="an arbitrary function")
 
     
 def measure_KerrSen():    
     samplesize = 1000
     shape = (1000,)
     xs = [jnp.zeros(shape)]*4
-    gx.plot_performance(KerrSenn_metric, xs, "./KerrSen.png", samplesize=samplesize)
+    plot_performance(KerrSenn_metric, xs, "./KerrSen.png", samplesize=samplesize)
     
     
 def measure_CloudSchemes():            
     samplesize = 1000
     shape = (100,)
     xs = [jnp.zeros(shape)]*11
-    gx.plot_performance(CloudSchemes_step, xs, "./CloudSchemes.png", samplesize=samplesize)
+    plot_performance(CloudSchemes_step, xs, "./CloudSchemes.png", samplesize=samplesize)
 
     
 def measure_f():            
@@ -203,7 +204,7 @@ def measure_f():
     grad_f = jax.jit(gx.jacve(f, order=order, argnums=(0, 1, 2, 3)))
     print(jax.make_jaxpr(grad_f)(*xs))
     
-    gx.plot_performance(f, xs, order, mM_order, "./f.png", samplesize=samplesize)
+    plot_performance(f, xs, order, mM_order, "./f.png", samplesize=samplesize)
         
 
 # simple()
