@@ -47,8 +47,8 @@ def eye_like(shape: Sequence[int], out_len: int) -> jnp.ndarray:
     primal_shape = shape[out_len:]
     out_shape = shape[:out_len]
     if any([primal_shape == out_shape]):
-        primal_size = reduce((lambda x, y: x*y), primal_shape)
-        out_size = reduce((lambda x, y: x*y), out_shape)
+        primal_size = reduce((lambda x, y: x*y), primal_shape, 1)
+        out_size = reduce((lambda x, y: x*y), out_shape, 1)
         if out_size == 1:
             return jnp.ones((1,)+tuple(primal_shape))
         elif primal_size == 1:
@@ -56,7 +56,7 @@ def eye_like(shape: Sequence[int], out_len: int) -> jnp.ndarray:
         else:
             return jnp.eye(out_size, primal_size).reshape(*out_shape, *primal_shape)
     else:
-        out_size = reduce((lambda x, y: x*y), out_shape)
+        out_size = reduce((lambda x, y: x*y), out_shape, 1)
         val = jnp.eye(out_size).reshape(*out_shape, *primal_shape)
         return val
 
@@ -81,8 +81,8 @@ def eye_like_copy(shape: Sequence[int], out_len: int, iota: jnp.ndarray) -> jnp.
     primal_shape = shape[out_len:]
     out_shape = shape[:out_len]
     if any([primal_shape == out_shape]):
-        primal_size = reduce((lambda x, y: x*y), primal_shape)
-        out_size = reduce((lambda x, y: x*y), out_shape)
+        primal_size = reduce((lambda x, y: x*y), primal_shape, 1)
+        out_size = reduce((lambda x, y: x*y), out_shape, 1)
         if out_size == 1:
             return jnp.ones((1,)+tuple(primal_shape))
         elif primal_size == 1:

@@ -992,6 +992,7 @@ def _get_contracting_axes(lhs: SparseTensor, rhs: SparseTensor) -> Tuple[Sequenc
     lcontracting_axes, rcontracting_axes = [], []
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
         if isinstance(ld, DenseDimension) and isinstance(rd, DenseDimension):
+            # TODO this causes a bug if both axes are replicating axes
             if ld.val_dim is not None and rd.val_dim is not None:
                 lcontracting_axes.append(ld.val_dim)
                 rcontracting_axes.append(rd.val_dim)
@@ -1160,7 +1161,10 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     if rd.val_dim is not None:
                         val_dim = rd.val_dim \
                                 - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) \
-                                + lhs.val.ndim - sum([1 for lc in lcontracting_axes])
+                                + lhs.val.ndim \
+                                - sum([1 for lc in lcontracting_axes])
+                                
+                        print(rcontracting_axes, lcontracting_axes)
                         print(rd.val_dim)
                         print(sum([1 for rc in rcontracting_axes if rc < rd.val_dim]))
                         print(lhs.val.ndim)
@@ -1229,7 +1233,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                             or rd.val_dim is not None)])
                 val_dim = rd.val_dim + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, val_dim))
-    print("st", new_out_dims, new_primal_dims, new_val.shape)
+
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
 
 

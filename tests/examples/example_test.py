@@ -27,8 +27,6 @@ class ExampleTests(unittest.TestCase):
         veres = jacrev_f(x, y)
                 
         jac_f = jax.jit(jax.jacrev(Simple, argnums=(0, 1)))
-        jaxpr = jax.make_jaxpr(jac_f)(x, y)
-        print(jaxpr)
         revres = jac_f(x, y)
         
         self.assertTrue(tree_allclose(veres, revres))
@@ -38,12 +36,6 @@ class ExampleTests(unittest.TestCase):
 
         jac_cc = jax.jit(jacve(Helmholtz, order=[2, 5, 4, 3, 1], count_ops=True))
         veres, aux = jac_cc(x)
-                
-        jaxpr = jax.make_jaxpr(Helmholtz)(x)
-        deriv_jaxpr = jax.make_jaxpr(jacve(Helmholtz, order=[2, 5, 4, 3, 1], argnums=(0,), dense_representation=False))(x)
-        print(deriv_jaxpr)
-        print("num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
         jax_jac_rev = jax.jit(jax.jacrev(Helmholtz))
         revres = jax_jac_rev(x)
@@ -110,8 +102,6 @@ class ExampleTests(unittest.TestCase):
         w2key, b2key, key = jrand.split(key, 3)
         W2 = jrand.normal(w2key, (4, 8))
         b2 = jrand.normal(b2key, (4,))
-        
-        print(jax.make_jaxpr(f)(x, W1, b1, W2, b2, y))
 
         jac_rev = jax.jit(jacve(f, order="rev", argnums=(1, 2, 3, 4)))
         veres = jac_rev(x, W1, b1, W2, b2, y)
@@ -119,136 +109,6 @@ class ExampleTests(unittest.TestCase):
         jax_jac_rev = jax.jit(jax.jacrev(f, argnums=(1, 2, 3, 4)))
         revres = jax_jac_rev(x, W1, b1, W2, b2, y)
 
-        self.assertTrue(tree_allclose(veres, revres))    
-    
-    def test_slicing(self):
-        def f(x, y):
-            z = x @ y
-            return jnp.sin(z[:, 0:1])
-
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (2, 3))
-        y = jrand.normal(ykey, (3, 4))
-        
-        print(jax.make_jaxpr(f)(x, y))
-
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
-
-        revres = jax.jacrev(f, argnums=(0, 1))(x, y)
-
-        self.assertTrue(tree_allclose(veres, revres)) 
-        
-    def test_squeezing(self):
-        def f(x, y):
-            z = x @ y
-            return jnp.squeeze(z).sum()
-
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (2, 3))
-        y = jrand.normal(ykey, (3, 1))
-        
-        print(jax.make_jaxpr(f)(x, y))
-
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
-
-        revres = jax.jacrev(f, argnums=(0, 1))(x, y)
-        
-        print(veres[1].shape)
-        print(revres[1].shape)
-
-        self.assertTrue(tree_allclose(veres, revres)) 
-        
-    def test_concatenate_1(self):
-        def f(x, y, z):
-            z = jnp.concatenate([y, z], axis=0)
-            w = x @ z
-            return jnp.sin(w)
-
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (2, 3))
-        y = jrand.normal(ykey, (2, 4))
-        z = jrand.normal(ykey, (1, 4))
-        
-        print(jax.make_jaxpr(f)(x, y, z))
-
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2)))
-        veres = deriv_fn(x, y, z)
-
-        revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
-
-        self.assertTrue(tree_allclose(veres, revres)) 
-        
-    def test_concatenate_2(self):
-        def f(x, y, z):
-            x = jnp.sin(x)
-            y = jnp.cos(y)
-            z = jnp.tanh(z)
-            w = jnp.concatenate([x, y, z], axis=0)
-            return jnp.sin(w)
-
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (4,))
-        y = jrand.normal(ykey, (2,))
-        z = jrand.normal(ykey, (3,))
-        
-        print(jax.make_jaxpr(f)(x, y, z))
-
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1, 2)))
-        veres = deriv_fn(x, y, z)
-
-        revres = jax.jit(jax.jacrev(f, argnums=(0, 1, 2)))(x, y, z)
-        
-        print(veres)
-        
-        print(revres)
-
-        self.assertTrue(tree_allclose(veres, revres)) 
-        
-    def test_reshape(self):
-        def f(x, y):
-            x = jnp.reshape(x, (2, 3))
-            return jnp.sin(x @ y)
-
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (6,))
-        y = jrand.normal(ykey, (3,))
-        
-        print(jax.make_jaxpr(f)(x, y))
-        print(jax.make_jaxpr(jacve(f, order="rev", argnums=(0, 1)))(x, y))
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
-
-        revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
-
-        self.assertTrue(tree_allclose(veres, revres)) 
-    
-    def test_large_matmul(self):
-        def f(x, y):
-            return lax.dot_general(x, y, (([2], [0]), ([0], [1])))
-
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        x = jrand.normal(xkey, (3, 1, 4))
-        y = jrand.normal(ykey, (4, 3, 2))
-        
-        print("result", f(x, y).shape)
-        print(jax.make_jaxpr(f)(x, y))
-
-        deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
-        veres = deriv_fn(x, y)
-
-        revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
-        
-        print("err1", jnp.abs(veres[0] - revres[0]).mean())
-        print("err2", jnp.abs(veres[1] - revres[1]).mean())
-        
         self.assertTrue(tree_allclose(veres, revres))    
         
     def test_RoeFlux1d(self):
@@ -264,17 +124,10 @@ class ExampleTests(unittest.TestCase):
         
         jac_cc = jax.jit(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
         veres, aux = jac_cc(*xs)
-                
-        jaxpr = jax.make_jaxpr(RoeFlux_1d)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(RoeFlux_1d, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
-        print(deriv_jaxpr)
-        print("num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
         jax_jac_rev = jax.jit(jax.jacrev(RoeFlux_1d, argnums=(0, 1, 2, 3, 4, 5)))
         revres = jax_jac_rev(*xs)
-        print(veres)
-        print(revres)
+
         self.assertTrue(tree_allclose(veres, revres))          
         
     def test_EncoderDecoder(self):
@@ -312,19 +165,10 @@ class ExampleTests(unittest.TestCase):
         
         # order = [o + 1 for o in order]
         order = "rev"
-        
-        jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
-        print(jaxpr)
 
         argnums = range(len(xs))
         jac_cc = jax.jit(jacve(EncoderDecoder, order=order, argnums=argnums, count_ops=True))
         veres, aux = jac_cc(*xs)
-                
-        jaxpr = jax.make_jaxpr(EncoderDecoder)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(EncoderDecoder, order=order, argnums=argnums))(*xs)
-        # print(deriv_jaxpr)
-        print("num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
         jax_jac_rev = jax.jit(jax.jacrev(EncoderDecoder, argnums=argnums))
         revres = jax_jac_rev(*xs)
@@ -353,31 +197,15 @@ class ExampleTests(unittest.TestCase):
 
         jac_cc = jax.jit(jacve(RobotArm_6DOF, order=order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
         veres, aux = jac_cc(*xs)
-                
-        deriv_jaxpr = jax.make_jaxpr(jacve(RobotArm_6DOF, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
-        # print(deriv_jaxpr)
-        print("CC num_muls", aux["num_muls"])
-        
         
         jac_mM = jax.jit(jacve(RobotArm_6DOF, order=mM_order, argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
         _, aux = jac_mM(*xs)
         
-        print("mM num_muls", aux["num_muls"])
-        
         jac_rev = jax.jit(jacve(RobotArm_6DOF, order="rev", argnums=(0, 1, 2, 3, 4, 5), count_ops=True))
         _, aux = jac_rev(*xs)
-        
-        print("rev num_muls", aux["num_muls"])
-                
-        jaxpr = jax.make_jaxpr(RobotArm_6DOF)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(RobotArm_6DOF, order=order, argnums=(0, 1, 2, 3, 4, 5)))(*xs)
-        # print(deriv_jaxpr)
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
         jax_jac_rev = jax.jit(jax.jacrev(RobotArm_6DOF, argnums=(0, 1, 2, 3, 4, 5)))
         revres = jax_jac_rev(*xs)
-        print(veres)
-        print(revres)
         self.assertTrue(tree_allclose(veres, revres))    
         
     def test_Lighthouse(self):
@@ -388,20 +216,10 @@ class ExampleTests(unittest.TestCase):
 
         jac_cc = jax.jit(jacve(Lighthouse, order=order, argnums=(0, 1, 2, 3), count_ops=True))
         veres, aux = jac_cc(*xs)
-                
-        deriv_jaxpr = jax.make_jaxpr(jacve(Lighthouse, order=order, argnums=(0, 1, 2, 3)))(*xs)
-        print(deriv_jaxpr)
-        print("CC num_muls", aux["num_muls"])
-                        
-        jaxpr = jax.make_jaxpr(Lighthouse)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(Lighthouse, order=order, argnums=(0, 1, 2, 3)))(*xs)
-        print(deriv_jaxpr)
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
 
         jax_jac_rev = jax.jit(jax.jacrev(Lighthouse, argnums=(0, 1, 2, 3)))
         revres = jax_jac_rev(*xs)
-        print(veres)
-        print(revres)
+
         self.assertTrue(tree_allclose(veres, revres))  
         
     def test_f(self):
@@ -416,11 +234,6 @@ class ExampleTests(unittest.TestCase):
         deriv_fn = jax.jit(jacve(f, order="rev", argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
         
-        jaxpr = jax.make_jaxpr(f)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(f, order="rev", argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
-        
         # TODO this order is outdated as the function has changed slightly
         order = [33, 8, 16, 77, 15, 62, 40, 58, 14, 76, 42, 60, 54, 34, 61, 72, 
                 37, 55, 18, 75, 36, 74, 65, 26, 35, 25, 66, 38, 64, 59, 53, 20, 
@@ -430,11 +243,6 @@ class ExampleTests(unittest.TestCase):
 
         jac_mM = jax.jit(jacve(f, order=order, argnums=argnums, count_ops=True))
         veres, aux = jac_mM(*xs)
-        
-        deriv_jaxpr = jax.make_jaxpr(jacve(f, order=order, argnums=argnums))(*xs)
-        # print(deriv_jaxpr)
-        print("mM num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
         
         revres = jax.jacrev(f, argnums=argnums)(*xs)
         
@@ -452,11 +260,6 @@ class ExampleTests(unittest.TestCase):
         
         deriv_fn = jax.jit(jacve(g, order="rev", argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
-        
-        jaxpr = jax.make_jaxpr(g)(*xs)
-        deriv_jaxpr = jax.make_jaxpr(jacve(g, order="rev", argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
         revres = jax.jacrev(g, argnums=argnums)(*xs)
         
@@ -492,17 +295,10 @@ class ExampleTests(unittest.TestCase):
          7, 81, 97, 63, 44, 2, 33, 82, 26, 15, 17, 145] 
         
         vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
-        jaxpr = jax.make_jaxpr(vmap_RoeFlux_3d)(*xs)
-        print(jaxpr)
-        print(len(jaxpr.jaxpr.eqns))
-        
+
         deriv_fn = jax.jit(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
         
-        deriv_jaxpr = jax.make_jaxpr(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums))(*xs)
-        print("fwd num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
-                
         revres = jax.jacrev(vmap_RoeFlux_3d, argnums=argnums)(*xs)
         
         for i in range(3):
@@ -546,11 +342,9 @@ class ExampleTests(unittest.TestCase):
         argnums = (0, 1, 2, 3, 4, 5)
         
         jac_rev = jacve(f, order="rev", argnums=argnums)
-        deriv_jaxpr = jax.make_jaxpr(jac_rev)(x, W1, b1, W2, b2, y)
-        # print(deriv_jaxpr)
+
         hessian_fn = jacve(jac_rev, order="fwd", argnums=argnums)
-        hessian_jaxpr = jax.make_jaxpr(hessian_fn)(x, W1, b1, W2, b2, y)
-        # print(hessian_jaxpr)
+
         veres = jax.jit(hessian_fn)(x, W1, b1, W2, b2, y)
         hess_fn = jax.jit(hessian_fn)
 
@@ -575,27 +369,7 @@ class ExampleTests(unittest.TestCase):
             hess = jax_hessian_fn(x, W1, b1, W2, b2, y)
             jax.block_until_ready(hess)
         print("jax time", time.time() - start)
-        
-        print(len(hessian_jaxpr.jaxpr.eqns), len(jax_hessian_jaxpr.eqns))
 
-        self.assertTrue(tree_allclose(veres, revres))
-    
-    def test_eq(self):
-        def f(x, y):
-            w = jnp.sin(x)
-            z = jnp.sin(y)
-            return (w == z) - 1.
-        x = jnp.array([[1., 0., 1.]])
-        y = jnp.array([[1.], [0.], [0.]])
-        jaxpr = jax.make_jaxpr(f)(x, y)
-        print(jaxpr)
-        
-        deriv_fn = jacve(f, order="rev", argnums=(0, 1))
-        veres = deriv_fn(x, y)
-        
-        jax_deriv_fn = jax.jacrev(f, argnums=(0, 1))
-        revres = jax_deriv_fn(x, y)
-        
         self.assertTrue(tree_allclose(veres, revres))
     
     def test_Perceptron(self):
@@ -616,16 +390,8 @@ class ExampleTests(unittest.TestCase):
         
         argnums = list(range(len(xs)))
         
-        jaxpr = jax.make_jaxpr(Perceptron)(*xs)
-        print(jaxpr)
-        print(len(jaxpr.jaxpr.eqns))
-        
         deriv_fn = jax.jit(jacve(Perceptron, order="rev", argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
-        
-        deriv_jaxpr = jax.make_jaxpr(jacve(Perceptron, order="rev", argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
         revres = jax.jacrev(Perceptron, argnums=argnums)(*xs)
         
@@ -657,33 +423,14 @@ class ExampleTests(unittest.TestCase):
         
         argnums = list(range(len(xs)))
         
-        order = [60, 81, 8, 59, 58, 41, 69, 85, 1, 46, 25, 51, 37, 17, 56, 22, 
-                 12, 75, 78, 82, 7, 66, 47, 64, 20, 88, 65, 31, 38, 6, 63, 71, 
-                 87, 19, 90, 24, 80, 83, 27, 48, 77, 49, 29, 23, 76, 9, 79, 67, 
-                 61, 26, 89, 86, 18, 34, 39, 84, 74, 70, 30, 36, 35, 72, 50, 73, 
-                 68, 62, 57, 28, 5, 55, 13, 11, 54, 53, 43, 52, 45, 44, 42, 40, 
-                 33, 32, 21, 16, 15, 14, 3, 10, 4, 2]
-        
-        # order = [7, 6, 8, 47, 46, 48, 81, 80, 82, 11, 16, 20, 21, 22, 25, 29, 
-        #         31, 36, 51, 56, 60, 61, 62, 65, 69, 71, 75, 85, 88, 90, 89, 
-        #         9, 12, 10, 26, 37, 38, 39, 49, 52, 50, 66, 76, 77, 78, 79, 
-        #         83, 86, 84, 87, 24, 35, 64, 15, 55, 33, 74, 73, 4, 13, 17, 
-        #         27, 34, 44, 53, 57, 67, 19, 59, 1, 2, 3, 18, 23, 41, 42, 43, 
-        #         58, 63, 30, 70, 28, 68, 5, 45, 32, 14, 54, 72, 40]
-        # order = "fwd"
-        jaxpr = jax.make_jaxpr(Encoder)(*xs)
+        order = "rev"
         
         deriv_fn = jax.jit(jacve(Encoder, order=order, argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
-        
-        deriv_jaxpr = jax.make_jaxpr(jacve(Encoder, order=order, argnums=argnums))(*xs)
-        print("fwd num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
         revres = jax.jacrev(Encoder, argnums=argnums)(*xs)
         
         self.assertTrue(tree_allclose(veres, revres)) 
-        
         
     # vmap and batching tests
     def test_vmap_Perceptron(self):
@@ -704,15 +451,8 @@ class ExampleTests(unittest.TestCase):
         vmap_Perceptron = jax.vmap(Perceptron, in_axes=(0, 0, None, None, None, None, None, None))
         argnums = list(range(len(xs)))
         
-        jaxpr = jax.make_jaxpr(vmap_Perceptron)(*xs)
-        print(jaxpr)
-        
         deriv_fn = jax.jit(jacve(vmap_Perceptron, order="rev", argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
-        
-        deriv_jaxpr = jax.make_jaxpr(jacve(vmap_Perceptron, order="rev", argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
         revres = jax.jacrev(vmap_Perceptron, argnums=argnums)(*xs)
         
@@ -740,15 +480,9 @@ class ExampleTests(unittest.TestCase):
         24, 134, 136, 138, 139, 140, 141, 143, 145] 
         
         vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
-        jaxpr = jax.make_jaxpr(vmap_RoeFlux_3d)(*xs)
-        print(jaxpr)
 
         deriv_fn = jax.jit(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
-        
-        deriv_jaxpr = jax.make_jaxpr(jacve(vmap_RoeFlux_3d, order=order, argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
         revres = jax.jacrev(vmap_RoeFlux_3d, argnums=argnums)(*xs)
         
@@ -759,7 +493,6 @@ class ExampleTests(unittest.TestCase):
             print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
             print("err5", jnp.abs(veres[i][4] - revres[i][4]).mean())
             print("err6", jnp.abs(veres[i][5] - revres[i][5]).mean())
-        print("ddpat", len(jaxpr.jaxpr.eqns))
 
         self.assertTrue(tree_allclose(veres, revres)) 
         
@@ -767,27 +500,12 @@ class ExampleTests(unittest.TestCase):
         xs = [jnp.ones((1,)) for _ in range(5)]
         argnums = list(range(len(xs)))
         
-        order = [16, 15, 31, 33, 36, 37, 38, 40, 42, 43, 41, 49, 50, 54, 55, 57,
-                 58, 59, 61, 63, 64, 62, 70, 71, 75, 76, 79, 80, 89, 96, 5, 6, 
-                 7, 9, 10, 11, 12, 13, 20, 23, 24, 25, 28, 44, 45, 46, 47, 48, 
-                 51, 52, 65, 66, 67, 68, 69, 72, 73, 85, 86, 92, 93, 95, 100, 
-                 101, 115, 120, 1, 8, 14, 17, 26, 29, 32, 34, 39, 53, 56, 60, 
-                 74, 77, 81, 82, 83, 84, 88, 90, 91, 98, 99, 103, 104, 105, 110, 
-                 112, 114, 116, 117, 118, 124, 128, 131, 133, 19, 27, 94, 106, 
-                 111, 113, 121, 126, 4, 78, 107, 2, 21, 123, 119, 18, 102, 130, 
-                 30, 35, 97, 109, 87, 125, 3, 22, 108]
+        order = "rev"
 
         vmap_BSJ = jax.vmap(BlackScholes_Jacobian)
-        jaxpr = jax.make_jaxpr(vmap_BSJ)(*xs)
-        print(jaxpr)
-        print("ddpat", len(jaxpr.jaxpr.eqns), len(order))
 
         deriv_fn = jax.jit(jacve(vmap_BSJ, order=order, argnums=argnums, count_ops=True))
         veres, aux = deriv_fn(*xs)
-        
-        deriv_jaxpr = jax.make_jaxpr(jacve(vmap_BSJ, order=order, argnums=argnums))(*xs)
-        print("rev num_muls", aux["num_muls"])
-        print(count_muls_jaxpr(deriv_jaxpr) - count_muls_jaxpr(jaxpr))
                 
         revres = jax.jacrev(vmap_BSJ, argnums=argnums)(*xs)
         
@@ -797,7 +515,6 @@ class ExampleTests(unittest.TestCase):
             print("err3", jnp.abs(veres[i][2] - revres[i][2]).mean())
             print("err4", jnp.abs(veres[i][3] - revres[i][3]).mean())
             print("err5", jnp.abs(veres[i][4] - revres[i][4]).mean())
-        print("ddpat", len(jaxpr.jaxpr.eqns))
 
         self.assertTrue(tree_allclose(veres, revres)) 
         

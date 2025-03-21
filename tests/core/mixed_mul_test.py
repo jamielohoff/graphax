@@ -304,9 +304,9 @@ class TestMixedMul(unittest.TestCase):
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
         stx = SparseTensor([SparseDimension(0, 4, 0, 3), DenseDimension(1, 3, 1)], 
-                        [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
+                           [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
         sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+                           [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -337,8 +337,57 @@ class TestMixedMul(unittest.TestCase):
         iota = jnp.eye(5)
             
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
+        
+    def test_4d_softmax_sparse_single_contraction_2(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        
+        x = jrand.normal(xkey, (4, 3, 5))
+        d = jnp.eye(4)
+        _x = jnp.einsum("ijk,il->ijlk", x, d)
+        
+        y = jrand.normal(ykey, (4, 5, 2))
+        d = jnp.eye(5)
+        _y = jnp.einsum("ijk,jl->ijkl", y, d)
+
+        res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
+            
+        stx = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1)], 
+                           [SparseDimension(2, 4, 0, 0), DenseDimension(3, 5, 2)], x)
+        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 3)], 
+                           [DenseDimension(2, 2, 2), SparseDimension(3, 5, 1, 1)], y)
+        
+        stres = stx * sty
+        
+        iota = jnp.eye(5)
+            
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
     def test_4d_softmax_sparse_single_contraction_with_Nones(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        
+        x = jrand.normal(xkey, (3, 5))
+        d = jnp.eye(4)
+        _x = jnp.einsum("ij,kl->ikjl", x, d)
+        
+        y = jrand.normal(ykey, (5, 4, 2))
+        d = jnp.eye(5)
+        _y = jnp.einsum("ijk,il->ijkl", y, d)
+
+        res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
+            
+        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, None, 3)], 
+                        [DenseDimension(2, 5, 1), SparseDimension(3, 4, None, 1)], x)
+        sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
+                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+        stres = stx * sty
+                
+        iota = jnp.eye(5)
+            
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
+        
+    def test_4d_softmax_sparse_single_contraction_with_Nones_2(self):
         key = jrand.PRNGKey(42)
         xkey, ykey = jrand.split(key, 2)
         
@@ -432,7 +481,7 @@ class TestMixedMul(unittest.TestCase):
             
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
-    def test_4d_sparse_cross_single_contraction(self):
+    def test_4d_sparse_cross_single_contraction_2(self):
         key = jrand.PRNGKey(42)
         xkey, ykey = jrand.split(key, 2)
         
@@ -447,67 +496,15 @@ class TestMixedMul(unittest.TestCase):
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
         stx = SparseTensor([SparseDimension(0, 4, 0, 3), DenseDimension(1, 3, 1)], 
-                        [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
+                           [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
         sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(3, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+                           [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
             
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
-    def test_4d_softmax_sparse_single_contraction(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        
-        x = jrand.normal(xkey, (4, 3, 5))
-        d = jnp.eye(4)
-        _x = jnp.einsum("ijk,il->ijlk", x, d)
-        
-        y = jrand.normal(ykey, (4, 5, 2))
-        d = jnp.eye(5)
-        _y = jnp.einsum("ijk,jl->ijkl", y, d)
-
-        res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
-            
-        stx = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1), ], 
-                        [SparseDimension(2, 4, 0, 0), DenseDimension(3, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 3), ], 
-                        [DenseDimension(3, 2, 2), SparseDimension(3, 5, 1, 1)], y)
-        
-        stres = stx * sty
-        
-        iota = jnp.eye(5)
-            
-        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
-
-    def test_4d_softmax_sparse_single_contraction_with_Nones(self):
-        key = jrand.PRNGKey(42)
-        xkey, ykey = jrand.split(key, 2)
-        
-        x = jrand.normal(xkey, (3, 5))
-        d = jnp.eye(4)
-        _x = jnp.einsum("ij,kl->ikjl", x, d)
-        
-        y = jrand.normal(ykey, (5, 4, 2))
-        d = jnp.eye(5)
-        _y = jnp.einsum("ijk,il->ijkl", y, d)
-
-        res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
-            
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, None, 3)], 
-                        [DenseDimension(2, 5, 1), SparseDimension(3, 4, None, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
-        stres = stx * sty
-                
-        iota = jnp.eye(5)
-            
-        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
-        
-    
-        
-    
     def test_4d_dense_double_contraction(self):
         key = jrand.PRNGKey(42)
         xkey, ykey = jrand.split(key, 2)
@@ -796,7 +793,6 @@ class TestMixedMul(unittest.TestCase):
         iota = jnp.eye(5)
             
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
-        
    
     def test_3d_4d_sparse(self):
         key = jrand.PRNGKey(42)

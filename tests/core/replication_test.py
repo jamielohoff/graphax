@@ -15,7 +15,6 @@ class TestReplicationMul(unittest.TestCase):
         x = jrand.normal(xkey, (4,))
         _x = jnp.expand_dims(x, 1)
         _x = jnp.tile(_x, (1, 3))
-        print(_x.shape)
         y = jrand.normal(ykey, (3, 2))
         res = _x @ y
         
@@ -35,7 +34,6 @@ class TestReplicationMul(unittest.TestCase):
         y = jrand.normal(ykey, (2,))
         _y = jnp.expand_dims(y, 0)
         _y = jnp.tile(_y, (3, 1))
-        print(_x.shape, _y.shape)
         res = _x @ _y
         
         stx = SparseTensor([DenseDimension(0, 4, 0)], [DenseDimension(1, 3, None)], x)
@@ -43,6 +41,7 @@ class TestReplicationMul(unittest.TestCase):
         stres = stx * sty
         
         self.assertTrue(jnp.allclose(res, stres.val))
+        
     def test_replication_2d(self):
         key = jrand.PRNGKey(42)
         xkey, ykey = jrand.split(key, 2)
