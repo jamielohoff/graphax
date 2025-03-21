@@ -91,7 +91,7 @@ class SparseTensor:
         def multiline_seq(s: Sequence, brackets: str) -> str:
             lb, rb, *_ = brackets
             if s:
-                return f"{lb}\n\t\t" + ",\n\t\t".join(map_str(s)) + f",\n\t{rb}"
+                return f"{lb}\n    " + ",\n    ".join(map_str(s)) + f",\n  {rb}"
             else:
                 return lb + rb
 
@@ -103,14 +103,14 @@ class SparseTensor:
         multiline_pre_transform = multiline_seq(self.pre_transforms, "[]")
         multiline_post_transform = multiline_seq(self.post_transforms, "[]")
 
-        return f"""SparseTensor(
-                    shape = ({str_out_shape} | {str_primal_shape}),
-                    out_dims = {multiline_out_dims},
-                    primal_dims = {multiline_primal_dims},
-                    val = {self.val},
-                    pre_transforms = {multiline_pre_transform},
-                    post_transforms = {multiline_post_transform}
-                )"""
+        return f"SparseTensor(\n" \
+               f"  shape = ({str_out_shape} | {str_primal_shape}),\n"\
+               f"  out_dims = {multiline_out_dims},\n"\
+               f"  primal_dims = {multiline_primal_dims},\n"\
+               f"  val = {self.val},\n"\
+               f"  pre_transforms = {multiline_pre_transform},\n"\
+               f"  post_transforms = {multiline_post_transform}\n"\
+               f")"\
                     
     def __add__(self, _tensor):
         return _add(self, _tensor)
@@ -746,7 +746,7 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
                 if d.id < d.other_id:
                     permutation[i] = d.val_dim
                     i += 1
-                    
+     
     st.val = jnp.transpose(st.val, permutation)
     
     i = 0
@@ -1083,6 +1083,8 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the mixed multiplication of `lhs.val` and `rhs.val`.
     """
+    print("lhs", lhs)
+    print("rhs", rhs)
     new_out_dims, new_primal_dims = [], []
     l, r = len(lhs.out_dims), len(rhs.out_dims)
     lcontracting_axes, rcontracting_axes = [], []
@@ -1152,13 +1154,15 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     else:
                         val_dim = rd.val_dim \
                                 - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) \
-                                + lhs.val.ndim - sum([1 for lc in lcontracting_axes]) \
+                                + lhs.val.ndim \
+                                - sum([1 for lc in lcontracting_axes]) \
                                 - sum([1 for lb in lbroadcasting_axes])
                     new_out_dims.insert(ld.id, DenseDimension(ld.other_id, ld.size, val_dim))
                 elif isinstance(ld, DenseDimension):
                     # rd sparse
                     val_dim = None
                     if rd.val_dim is not None:
+                        # TODO This thing fails in many cases!
                         val_dim = rd.val_dim \
                                 - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) \
                                 + lhs.val.ndim \
@@ -1233,7 +1237,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                             or rd.val_dim is not None)])
                 val_dim = rd.val_dim + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, val_dim))
-
+    print(new_out_dims, new_primal_dims, new_val.shape)
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
 
 
