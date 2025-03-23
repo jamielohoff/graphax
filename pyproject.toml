@@ -1,11 +1,23 @@
 [build-system]
 # AVOID CHANGING REQUIRES: IT WILL BE UPDATED BY PYSCAFFOLD!
-requires = ["setuptools>=46.1.0", "setuptools_scm[toml]>=5", "wheel"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "graphax"
 version = "0.0.1"
+description = "Graphax is an Automatic Differentiation interpreter written in JAX."
+authors = [
+    { name = "Jamie Lohoff", email = "jamie.lohoff@gmail.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+license = { text = "MIT" } # Or other license information
+readme = "README.rst" # Path to your README file
+requires-python = ">=3.12" # Minimum Python version
 dependencies = [
     "numpy",
     "jax>=0.5.0",
