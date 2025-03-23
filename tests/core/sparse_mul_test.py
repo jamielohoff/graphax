@@ -39,8 +39,6 @@ class TestSparseMul(unittest.TestCase):
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
         
     ### Tests for 4d tensors
-    
-        
     def test_4d_sparse_double_contraction(self):
         key = jrand.PRNGKey(42)
         xkey, ykey = jrand.split(key, 2)

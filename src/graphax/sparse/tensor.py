@@ -29,7 +29,7 @@ class DenseDimension:
 
 # NOTE: a val_dim of None means that we have a factored Kronecker delta in
 #   our tensor at the respective dimensions.
-#   Also we can have unmatching size and val.shape[d.val_dim] for SparseDimensions
+#   Also we can have unmatching `size` and `val.shape[d.val_dim]` for SparseDimensions
 #   if the size is 1. This is necessary to enable broadcasting operations.
 @dataclass
 class SparseDimension:
@@ -216,7 +216,7 @@ def _assert_sparse_tensor_consistency(st: SparseTensor):
     # Check if d.size matches val.shape[d.val_dim] for all d
     matching_sparse_sizes = all(
         d.size == st.val.shape[d.val_dim]
-        or d.size == 1
+        or d.size == 1 # NOTE: required to enable broadcasting operations
         if isinstance(d, SparseDimension)
         and d.val_dim is not None else True
         for d in st.out_dims + st.primal_dims
@@ -327,8 +327,8 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     Returns:
         bool: Are the tensors compatible for multiplication?
     """
-    return all(True if isinstance(r, SparseDimension) or isinstance(r, SparseDimension)
-               else False for r, l in zip(lhs.primal_dims, rhs.out_dims))
+    return all(True if isinstance(l, SparseDimension) or isinstance(r, SparseDimension)
+               else False for l, r in zip(lhs.primal_dims, rhs.out_dims))
 
     
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
@@ -395,9 +395,6 @@ def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     _assert_sparse_tensor_consistency(res)
     return res
-
-def _get_other_val_dim(d: Dimension, st: SparseTensor) -> Dimension:
-    pass
 
 def _get_new_val_dim(d: Dimension, st: SparseTensor) -> int:
     """
@@ -1083,8 +1080,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the mixed multiplication of `lhs.val` and `rhs.val`.
     """
-    print("lhs", lhs)
-    print("rhs", rhs)
     new_out_dims, new_primal_dims = [], []
     l, r = len(lhs.out_dims), len(rhs.out_dims)
     lcontracting_axes, rcontracting_axes = [], []
@@ -1125,6 +1120,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             if ld.val_dim is not None and rd.val_dim is not None \
                 and lhs.val.shape[ld.val_dim] == ld.size \
                 and rhs.val.shape[rd.val_dim] == rd.size:
+                    
                 lval_dim = ld.val_dim - sum([1 for lc in lcontracting_axes if lc < ld.val_dim])
                 pos.append(lval_dim)
                 
@@ -1165,20 +1161,14 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                         # TODO This thing fails in many cases!
                         val_dim = rd.val_dim \
                                 - sum([1 for rc in rcontracting_axes if rc < rd.val_dim]) \
-                                + lhs.val.ndim \
+                                + sum([1 for ld in lhs.primal_dims if ld.val_dim]) \
                                 - sum([1 for lc in lcontracting_axes])
-                                
-                        print(rcontracting_axes, lcontracting_axes)
-                        print(rd.val_dim)
-                        print(sum([1 for rc in rcontracting_axes if rc < rd.val_dim]))
-                        print(lhs.val.ndim)
-                        print(sum([1 for lc in lcontracting_axes]))
                     else:
                         val_dim = ld.val_dim \
                                 - sum([1 for lc in lcontracting_axes if lc < ld.val_dim])
-                    print("val dim", val_dim)
                     new_primal_dims.insert(rd.other_id-r, DenseDimension(rd.other_id-r+l, ld.size, val_dim))
                 else:
+                    # Sparse-Sparse case where either ld.val_dim is None or rd.val_dim is None
                     val_dim = None
                     if ld.val_dim is not None:
                         val_dim = ld.val_dim
@@ -1189,6 +1179,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                 - sum([1 for lb in lbroadcasting_axes])
                     new_out_dims.insert(ld.other_id, SparseDimension(ld.other_id, ld.size, val_dim, rd.other_id-r+l))
                     new_primal_dims.insert(rd.other_id-r, SparseDimension(rd.other_id-r+l, ld.size, val_dim, ld.other_id))
+                    
     if lhs.val is None and rhs.val is None:
         new_val = None        
     elif lhs.val is None:
@@ -1196,9 +1187,9 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     elif rhs.val is None:
         new_val = lhs.val
     else:      
-        dimension_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
+        dim_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
         batch_dimensions = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse these guys here to handle the SparseDimensions
-        dimension_numbers = (dimension_numbers, batch_dimensions)
+        dimension_numbers = (dim_numbers, batch_dimensions)
         new_val = lax.dot_general(lhs.val, rhs.val, dimension_numbers)
 
         permutation = [None]*new_val.ndim
@@ -1237,7 +1228,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                             or rd.val_dim is not None)])
                 val_dim = rd.val_dim + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseDimension(rd.id-r+l, rd.size, val_dim))
-    print(new_out_dims, new_primal_dims, new_val.shape)
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
 
 

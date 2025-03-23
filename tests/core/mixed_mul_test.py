@@ -815,6 +815,30 @@ class TestMixedMul(unittest.TestCase):
         iota = jnp.eye(5)
             
         self.assertTrue(jnp.allclose(res, stres.dense(iota)))
+        
+    def test_3d_4d_sparse_broadcast(self):
+        key = jrand.PRNGKey(42)
+        xkey, ykey = jrand.split(key, 2)
+        
+        x = jrand.normal(xkey, (2, 4))
+        _x = jnp.einsum("ik,ij->ijk", x, jnp.eye(2))
+        
+        y = jrand.normal(ykey, (2, 1))
+        _y = jnp.tile(y, (1, 4))
+        _y = jnp.einsum("ij,ik->ijk", _y, jnp.eye(2))
+        _y = jnp.einsum("ijk,jl->ijkl", _y, jnp.eye(4))
+
+        res = jnp.einsum("ijk,jklm->ilm", _x, _y)
+        
+        stx = SparseTensor([SparseDimension(0, 2, 0, 1)], 
+                        [SparseDimension(1, 2, 0, 0), DenseDimension(2, 4, 1)], x)
+        sty = SparseTensor([SparseDimension(0, 2, 0, 2), SparseDimension(1, 4, 1, 3)], 
+                        [SparseDimension(2, 2, 0, 0), SparseDimension(3, 4, 1, 1)], y)
+        stres = stx * sty
+                
+        iota = jnp.eye(6)
+            
+        self.assertTrue(jnp.allclose(res, stres.dense(iota)))
 
 
 if __name__ == "__main__":
