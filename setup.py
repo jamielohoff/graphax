@@ -6,12 +6,13 @@
     PyScaffold helps you to put up the scaffold of your new Python project.
     Learn more under: https://pyscaffold.org/
 """
-from setuptools import setup
+from setuptools import setup, find_packages
 
 if __name__ == "__main__":
     try:
-        setup(use_scm_version={"version_scheme": "no-guess-dev"})
-    except:  # noqa
+        setup(name="graphax", version="0.0.1", packages=find_packages(),
+            install_requires=["numpy", "jax>=0.5.0", "jaxlib>=0.5.0"])
+    except:
         print(
             "\n\nAn error occurred while building the project, "
             "please ensure you have the most updated version of setuptools, "
