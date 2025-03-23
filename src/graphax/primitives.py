@@ -972,15 +972,17 @@ def concatenate_elemental_rule(primals, **params):
     # This gradient transformation is designed to take an post edge and
     # decompose it into the pre edges. This is done by densifying the post along
     # the respective axes and then use jnp.split to split the tensor.
+    # TODO DynamicJaxprTracer is now a unhashable type, so we can no longer use 
+    # it as a key in the dict. We need to find another way of doing this.
     val_out = lax.concatenate_p.bind(*primals, **params)
     dim = params["dimension"]
     
-    count = primals[0].shape[dim]
-    slices = {primals[0]: [0, primals[0].shape[dim]]}
-    _count = primals[0].shape[dim]
-    for primal, val in enumerate(primals[1:], start=1):
-        count += val.shape[dim]
-        slices[primal] = [_count, count]
+    count = _count = primals[0].shape[dim]
+    slices = {0: [0, primals[0].shape[dim]]}
+
+    for idx, primal in enumerate(primals[1:], start=1):
+        count += primal.shape[dim]
+        slices[idx] = [_count, count]
         _count = count
     
     def concatenate_transform(primal, pre, iota):
@@ -1130,13 +1132,15 @@ def concatenate_elemental_rule(primals, **params):
     def inverse_concatenate_transform(primal, post, iota):
         new_out_dims = list(copy.deepcopy(post.out_dims))
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
+
+        primal_idx = [idx for idx, p in enumerate(primals) if p is primal][0]
         
         d = None
         if len(new_primal_dims) > 0:
             d = new_primal_dims[dim]
         if isinstance(d, DenseDimension):
             if d.val_dim is not None:
-                new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
+                new_val = lax.slice_in_dim(post.val, *slices[primal_idx], axis=d.val_dim)
                 d.size = new_val.shape[d.val_dim]
             else:
                 raise NotImplementedError("DenseDimension without `val_dim` not yet supported!")
@@ -1144,7 +1148,7 @@ def concatenate_elemental_rule(primals, **params):
             _d = new_out_dims[d.other_id]
             if d.val_dim is not None:
                 new_out_dims[d.other_id] = DenseDimension(_d.id, _d.size, _d.val_dim)
-                size = slices[primal][1] - slices[primal][0]
+                size = slices[primal_idx][1] - slices[primal_idx][0]
                 
                 # Calculate the new val_dim of the primal dimension
                 val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
@@ -1174,7 +1178,7 @@ def concatenate_elemental_rule(primals, **params):
                                 
                 new_val = new_val * sub_iota
                 
-                new_val = lax.slice_in_dim(new_val, *slices[primal], axis=val_dim)
+                new_val = lax.slice_in_dim(new_val, *slices[primal_idx], axis=val_dim)
                 d.size = new_val.shape[d.val_dim]
                 _d.size = new_val.shape[d.val_dim]
             else:
