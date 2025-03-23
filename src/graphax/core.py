@@ -71,21 +71,23 @@ def jacve(fun: Callable, order: EliminationOrder, argnums: Sequence[int] = (0,),
                                         argnums=argnums,
                                         count_ops=count_ops,
                                         sparse_representation=sparse_representation)
+
+        # TODO does not support aux and count_opt simultaneously
         if count_ops: 
             out, op_counts = out
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
-            if len(closed_jaxpr.jaxpr.outvars) == 1:
+            if len(closed_jaxpr.jaxpr.outvars) == 1 and len(closed_jaxpr.jaxpr.invars) > 1:
                 return out[0], op_counts
             return jtu.tree_unflatten(out_tree, out), op_counts
         elif has_aux:
             primal_out, grads = out
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
-            if len(closed_jaxpr.jaxpr.outvars) == 1:
+            if len(closed_jaxpr.jaxpr.outvars) == 1 and len(closed_jaxpr.jaxpr.invars) > 1:
                 return primal_out[0], grads[0]
             return jtu.tree_unflatten(out_tree, primal_out), jtu.tree_unflatten(out_tree, grads)
         else:
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
-            if len(closed_jaxpr.jaxpr.outvars) == 1:
+            if len(closed_jaxpr.jaxpr.outvars) == 1 and len(closed_jaxpr.jaxpr.invars) > 1:
                 return out[0]
             return jtu.tree_unflatten(out_tree, out)
     return jacfun
@@ -150,12 +152,9 @@ def append_pre_transforms(pre, out, iota):
     return out
         
     
-def _eliminate_vertex(vertex: int, 
-                        jaxpr: core.Jaxpr, 
-                        graph: ComputationalGraph, 
-                        transpose_graph: ComputationalGraph, 
-                        iota: jnp.ndarray, 
-                        vo_vertices: Set[core.Var]) -> Tuple[int, int]:
+def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph, 
+                      transpose_graph: ComputationalGraph, iota: jnp.ndarray, 
+                      vo_vertices: Set[core.Var]) -> Tuple[int, int]:
     """
     Function that eliminates a vertex from the computational graph.
     everything that has a _val in its name is a `SparseTensor` object

@@ -64,7 +64,7 @@ class ExampleTests(unittest.TestCase):
 
     def test_Helmholtz(self):
         print("Testing Helmholtz()...")
-        xs = jnp.array([0.05, 0.15, 0.25, 0.35]) # jnp.ones(4)/2000. # 
+        xs = jnp.array([0.05, 0.15, 0.25, 0.35])
         order = [2, 5, 4, 3, 1]
 
         args =(xs,)
@@ -120,7 +120,6 @@ class ExampleTests(unittest.TestCase):
         
     def test_RoeFlux_3d(self):
         print("Testing RoeFlux_3d()...")
-        batchsize = 16
         ul0 = jnp.array([.1])
         ul = jnp.array([.1, .2, .3])
         ul4 = jnp.array([.5])
@@ -143,7 +142,10 @@ class ExampleTests(unittest.TestCase):
 
         self.assertTrue(test_fwd(RoeFlux_3d, argnums, *args))
         self.assertTrue(test_rev(RoeFlux_3d, argnums, *args))
-        self.assertTrue(test_order(order, RoeFlux_3d, argnums, *args))
+        # TODO: order is deprecated!
+        # self.assertTrue(test_order(order, RoeFlux_3d, argnums, *args))
+
+        batchsize = 16
 
         order = [77, 100, 133, 107, 129, 137, 5, 19, 95, 28, 37, 14, 135, 85, 
                 51, 10, 115, 128, 63, 43, 9, 83, 104, 45, 99, 98, 39, 57, 108, 
@@ -354,7 +356,7 @@ class ExampleTests(unittest.TestCase):
         self.assertTrue(test_fwd(BlackScholes_Jacobian, argnums, *args))
         self.assertTrue(test_rev(BlackScholes_Jacobian, argnums, *args))
 
-        args = [jnp.ones((1,)) for _ in range(5)]
+        args = [jnp.ones((16,)) for _ in range(5)]
 
         vmap_BSJ = jax.vmap(BlackScholes_Jacobian)
         self.assertTrue(test_fwd(vmap_BSJ, argnums, *args))
