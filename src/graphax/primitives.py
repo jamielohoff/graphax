@@ -2,6 +2,8 @@ from typing import Callable
 from functools import partial
 import copy
 
+import mmh3
+
 import numpy as np
 
 import jax
@@ -16,21 +18,21 @@ from .sparse.tensor import (SparseTensor, DenseDimension, SparseDimension,
 
 
 def get_ndim(arr):
-    if type(arr) is float or type(arr) is int:
+    if isinstance(arr, (float, int)):
         return 0
     else:
         return arr.ndim
     
     
 def get_shape(arr):
-    if type(arr) is float or type(arr) is int:
+    if isinstance(arr, (float, int)):
         return ()
     else:
         return arr.shape
     
     
 def get_aval_shape(val):
-    if type(val) is np.ndarray:
+    if isinstance(val, np.ndarray):
         return val.shape
     else:
         return val.aval.shape
@@ -82,13 +84,13 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
                     primal_dims.append(SparseDimension(out_size+primal_size+1, os, val_dim, i))
                 for d in primal_dims[:-1]:
                     d.id += 1
-                    if type(d) is SparseDimension:
+                    if isinstance(d, SparseDimension):
                         _d = out_dims[d.other_id]
                         _d.other_id += 1
             return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
         
-        elif type(elemental) is float or elemental.size == 1:
-            if type(elemental) is not float:
+        elif isinstance(elemental, float) or elemental.size == 1:
+            if not isinstance(elemental, float):
                 elemental = jnp.squeeze(elemental) # TODO dirty quick fix that needs to be properly addressed
             out_dims = [SparseDimension(i, e, None, out_size+i)
                         for i, e in enumerate(primal.aval.shape)]
@@ -118,11 +120,11 @@ def standard_elemental(elementalrule, primitive, primals, **params):
     assert elementalrule is not None
     val_out = primitive.bind(*primals, **params)
     elementals = elementalrule(*primals, **params)
-    elementals = elementals if type(elementals) is tuple else (elementals,)
+    elementals = elementals if isinstance(elementals, tuple) else (elementals,)
 
     elementals_out = [make_parallel_jacobian(i, primals, val_out, elemental) 
                         for i, elemental in enumerate(elementals) 
-                        if not type(primals[i]) in (float, np.ndarray, np.float32)]
+                        if not isinstance(primals[i], (float, np.ndarray, np.float32))]
     return val_out, elementals_out
 
 
@@ -137,10 +139,10 @@ def standard_elemental2(elementalrule, primitive, primals, **params):
     assert elementalrule is not None
     val_out = primitive.bind(*primals, **params)
     elementals = elementalrule(val_out, *primals, **params)
-    elementals = elementals if type(elementals) is tuple else (elementals,)
+    elementals = elementals if isinstance(elementals, tuple) else (elementals,)
     elementals_out = [make_parallel_jacobian(i, primals, val_out, elemental)
                         for i, elemental in enumerate(elementals) 
-                        if not type(primals[i]) in (float, np.ndarray, np.float32)]
+                        if not isinstance(primals[i], (float, np.ndarray, np.float32))]
     return val_out, elementals_out
     
     
@@ -246,7 +248,7 @@ def reduce_sum_elemental_rule(primals, **params):
     if axes is None:
         axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0))
-    elif type(axes) is int:
+    elif isinstance(axes, int):
         axes = (axes,)
     new_out_dims, new_primal_dims, shape = [], [], []
                 
@@ -280,7 +282,7 @@ def reduce_max_elemental_rule(primals, **params):
     if axes is None:
         axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0, True))
-    elif type(axes) is int:
+    elif isinstance(axes, int):
         axes = (axes,)
     new_out_dims, new_primal_dims, _shape = [], [], []
     
@@ -317,7 +319,7 @@ def reduce_min_elemental_rule(primals, **params):
     if axes is None:
         axes = tuple(range(primal.ndim))
         new_out_dims.append(DenseDimension(0, 1, 0, True))
-    elif type(axes) is int:
+    elif isinstance(axes, int):
         axes = (axes,)
     new_out_dims, new_primal_dims, _shape = [], [], []
     
@@ -389,7 +391,7 @@ def dot_general_elemental_rule(primals, **params):
                 batch_dim_counter += 1
                 for d in lhs_out_dims[batch_dim_counter:]:
                     d.id += 1
-                    if type(d) is SparseDimension:
+                    if isinstance(d, SparseDimension):
                         _d = lhs_primal_dims[d.other_id-num_out_dims]
                         _d.other_id += 1
             else:
@@ -398,7 +400,7 @@ def dot_general_elemental_rule(primals, **params):
                 lhs_out_dims.append(SparseDimension(_lid, ld, None, other_lid))
                 lhs_primal_dims.append(SparseDimension(other_lid, ld, None, _lid))
                 rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid))
-          
+
     j, jj = 0, 0   
     batch_dim_counter = 0
     for rid, rd in enumerate(rhs_shape):
@@ -419,7 +421,7 @@ def dot_general_elemental_rule(primals, **params):
                 batch_dim_counter += 1
                 for d in rhs_out_dims[batch_dim_counter:]:
                     d.id += 1
-                    if type(d) is SparseDimension:
+                    if isinstance(d, SparseDimension):
                         _d = rhs_primal_dims[d.other_id-num_out_dims]
                         _d.other_id += 1
             else:
@@ -514,7 +516,7 @@ def _trace_subjaxpr(jaxpr, args, consts):
 
     # Reads variable and corresponding traced shaped array
     def read(var):
-        if type(var) is core.Literal:
+        if isinstance(var, core.Literal):
             return var.val
         return env[var]
 
@@ -539,7 +541,7 @@ def _trace_subjaxpr(jaxpr, args, consts):
     for eqn in jaxpr.eqns:
         # Treatment of intermediate variables that are also output variables
         for outvar in eqn.outvars:
-            if type(outvar) is core.Var and outvar not in var_id.keys():
+            if isinstance(outvar, core.Var) and outvar not in var_id.keys():
                 var_id[outvar] = counter
                 counter += 1
                     
@@ -561,7 +563,7 @@ def _trace_subjaxpr(jaxpr, args, consts):
             safe_map(write, eqn.outvars, primal_outvals)
         else:
             safe_map(write, eqn.outvars, [primal_outvals])
-        invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        invars = [invar for invar in eqn.invars if isinstance(invar, core.Var)]
         # NOTE: Currently only able to treat one output variable
 
         _write_elemental = partial(write_elemental, eqn.outvars[0])
@@ -616,7 +618,7 @@ def transpose_elemental_rule(primals, **params):
         for p in permutation:
             new_out_dims.append(pre.out_dims[p])
             new_out_dims[-1].id = counter
-            if type(new_out_dims[-1]) is SparseDimension:
+            if isinstance(new_out_dims[-1], SparseDimension):
                 other_id = new_out_dims[-1].other_id
                 new_primal_dims[other_id-l].other_id = counter
             counter += 1   
@@ -633,7 +635,7 @@ def transpose_elemental_rule(primals, **params):
         for p in inv_permutation:
             new_primal_dims.append(post.primal_dims[p])
             new_primal_dims[-1].id = counter
-            if type(new_primal_dims[-1]) is SparseDimension:
+            if isinstance(new_primal_dims[-1], SparseDimension):
                 other_id = new_primal_dims[-1].other_id
                 new_out_dims[other_id].other_id = counter
             counter += 1   
@@ -781,7 +783,7 @@ def broadcast_elemental_rule(primals, **params):
                 d.id += 1
                 if d.val_dim is not None:
                     d.val_dim += 1
-                if type(d) is SparseDimension:
+                if isinstance(d, SparseDimension):
                     _d = new_primal_dims[d.other_id-l]
                     # _d.id += 1
                     d.other_id += 1
@@ -791,7 +793,7 @@ def broadcast_elemental_rule(primals, **params):
                     
             for d in new_primal_dims:
                 d.id += 1
-                if type(d) is DenseDimension:
+                if isinstance(d, DenseDimension):
                     if d.val_dim is not None:
                         d.val_dim += 1
                 else:
@@ -804,11 +806,11 @@ def broadcast_elemental_rule(primals, **params):
                     
         broadcast_shape = [d.size for d in new_out_dims if d.val_dim is not None]
         broadcast_shape += [d.size for d in new_primal_dims 
-                            if d.val_dim is not None and type(d) is DenseDimension]
+                            if d.val_dim is not None and isinstance(d, DenseDimension)]
                                                 
         broadcast_dims = [d.val_dim for d in new_out_dims if d.val_dim not in non_broadcast_dims]
         broadcast_dims += [d.val_dim for d in new_primal_dims 
-                            if d.val_dim not in non_broadcast_dims and type(d) is DenseDimension]
+                            if d.val_dim not in non_broadcast_dims and isinstance(d, DenseDimension)]
 
         broadcast_dims = [d for d in broadcast_dims if d is not None]
 
@@ -831,7 +833,7 @@ def broadcast_elemental_rule(primals, **params):
         for dim in rm_dims:
             if new_primal_dims[dim-counter].val_dim is not None:
                 _rm_dims.append(new_primal_dims[dim-counter].val_dim)
-            if type(new_primal_dims[dim-counter]) is DenseDimension:
+            if isinstance(new_primal_dims[dim-counter], DenseDimension):
                 has_smaller_dims = sum([1 for d in new_primal_dims[:dim+1] if d.val_dim is not None]) > 0
                 old_val_dim = new_primal_dims[dim-counter].val_dim
                 del new_primal_dims[dim-counter]
@@ -839,7 +841,7 @@ def broadcast_elemental_rule(primals, **params):
                     d.id -= 1
                     if d.val_dim is not None and old_val_dim is not None:
                         d.val_dim -= 1
-                    if type(d) is SparseDimension:
+                    if isinstance(d, SparseDimension):
                         _d = new_out_dims[d.other_id]
                         _d.other_id -= 1
                     
@@ -853,7 +855,7 @@ def broadcast_elemental_rule(primals, **params):
                 for d in new_out_dims + new_primal_dims:
                     if d.id > id:
                         d.id -= 1
-                        if type(d) is SparseDimension:
+                        if isinstance(d, SparseDimension):
                             _d = new_out_dims[d.other_id]
                             _d.other_id -= 1
                             if d.val_dim is not None and has_smaller_dims:
@@ -898,9 +900,9 @@ def squeeze_elemental_rule(primals, **params):
             val_dim = new_out_dims[idx].val_dim
             squeeze_dims.append(val_dim)
             
-            if type(new_out_dims[idx]) is SparseDimension:
+            if isinstance(new_out_dims[idx], SparseDimension):
                 def _check(d, id):
-                    if type(d) is SparseDimension:
+                    if isinstance(d, SparseDimension):
                         return d.other_id == id
                     else:
                         return False
@@ -914,20 +916,21 @@ def squeeze_elemental_rule(primals, **params):
         out_ids = [d.id for d in new_out_dims]
         primal_ids = [d.id for d in new_primal_dims]    
         new_val_dims = [d.val_dim for d in new_out_dims if d.val_dim is not None]
-        new_val_dims += [d.val_dim for d in new_primal_dims if type(d) is DenseDimension and d.val_dim is not None]
+        new_val_dims += [d.val_dim for d in new_primal_dims 
+                        if isinstance(d, DenseDimension) and d.val_dim is not None]
 
         for d in new_out_dims:
             d.id = out_ids.index(d.id)
             if d.val_dim is not None:
                 d.val_dim = new_val_dims.index(d.val_dim)
-            if type(d) is SparseDimension:
+            if isinstance(d, SparseDimension):
                 d.other_id = len(new_out_dims) + new_primal_dims.index(d.other_id)
                     
         for d in new_primal_dims:
             d.id = len(new_out_dims) + primal_ids.index(d.id)
             if d.val_dim is not None:
                 d.val_dim = new_val_dims.index(d.val_dim)
-            if type(d) is SparseDimension:
+            if isinstance(d, SparseDimension):
                 d.other_id = new_out_dims.index(d.other_id)
                     
         squeeze_dims = [d for d in squeeze_dims if d is not None]
@@ -943,13 +946,14 @@ def squeeze_elemental_rule(primals, **params):
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
         for dim in new_dims:
             val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
-            val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
+            val_dim += sum([1 for d in new_primal_dims[:dim] 
+                            if d.val_dim is not None and isinstance(d, DenseDimension)])
             new_primal_dims.insert(dim, DenseDimension(dim, 1, val_dim))
             for d in new_primal_dims[dim:]:
                 d.id += 1
                 if d.val_dim is not None:
                     d.val_dim += 1
-                if type(d) is SparseDimension:
+                if isinstance(d, SparseDimension):
                     _d = new_out_dims[d.other_id]
                     _d.other_id += 1
                     if _d.val_dim is not None:
@@ -972,11 +976,11 @@ def concatenate_elemental_rule(primals, **params):
     dim = params["dimension"]
     
     count = primals[0].shape[dim]
-    slices = {0: [0, primals[0].shape[dim]]}
+    slices = {primals[0]: [0, primals[0].shape[dim]]}
     _count = primals[0].shape[dim]
-    for i, val in enumerate(primals[1:], start=1):
+    for primal, val in enumerate(primals[1:], start=1):
         count += val.shape[dim]
-        slices[i] = [_count, count]
+        slices[primal] = [_count, count]
         _count = count
     
     def concatenate_transform(primal, pre, iota):
@@ -989,7 +993,7 @@ def concatenate_elemental_rule(primals, **params):
         primal_idx = [idx for idx, p in enumerate(primals) if p is primal][0]
         idx, _idx = slices[primal_idx]
         
-        if type(d) is DenseDimension:
+        if isinstance(d, DenseDimension):
             if d.val_dim is not None:
 
                 # Check computation of _size here!
@@ -1014,11 +1018,12 @@ def concatenate_elemental_rule(primals, **params):
                         
                 # Calculate the new val_dim of the primal dimension
                 val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
-                val_dim += sum([1 for d in new_primal_dims[:other_id-l] if d.val_dim is not None and type(d) is DenseDimension])
+                val_dim += sum([1 for d in new_primal_dims[:other_id-l] 
+                                if d.val_dim is not None and isinstance(d, DenseDimension)])
                 
                 # Update the val_dim of all following dimensions
                 for d in new_primal_dims[dim+1:]:
-                    if type(d) is DenseDimension:
+                    if isinstance(d, DenseDimension):
                         if d.val_dim is not None:
                             d.val_dim += 1
                 
@@ -1072,18 +1077,19 @@ def concatenate_elemental_rule(primals, **params):
             else:
                 _d = new_primal_dims[d.other_id-l]
                 _size = val_out.shape[dim]
- 
+
                 # Calculate the new val_dim of the out dimension
                 out_val_dim = sum([1 for d in new_out_dims[:dim] if d.val_dim is not None])
                         
                 # Calculate the new val_dim of the primal dimension
                 primal_val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
-                primal_val_dim += sum([1 for d in new_primal_dims[:other_id-l] if d.val_dim is not None and type(d) is DenseDimension])
+                primal_val_dim += sum([1 for d in new_primal_dims[:other_id-l] 
+                                    if d.val_dim is not None and isinstance(d, DenseDimension)])
                 primal_val_dim = max(1, primal_val_dim)
                 
                 # Update the val_dim of all following dimensions
                 for d in new_primal_dims[dim+1:]:
-                    if type(d) is DenseDimension:
+                    if isinstance(d, DenseDimension):
                         if d.val_dim is not None:
                             d.val_dim += 1
                 
@@ -1110,13 +1116,10 @@ def concatenate_elemental_rule(primals, **params):
                 _shape.insert(out_val_dim, _size)
                 _shape.insert(primal_val_dim, _d.size)
                 zeros = jnp.zeros(_shape, dtype=jnp.float32) 
-                           
+
                 scatter_dims = lax.ScatterDimensionNumbers([out_val_dim, primal_val_dim], [], [out_val_dim, primal_val_dim])
-                new_val = lax.scatter(zeros, 
-                                    jnp.array([idx, 0]), 
-                                    new_val, 
-                                    scatter_dims, 
-                                    indices_are_sorted=True,
+                new_val = lax.scatter(zeros, jnp.array([idx, 0]), new_val, 
+                                    scatter_dims, indices_are_sorted=True,
                                     unique_indices=True)
                 
                 new_out_dims[id] = DenseDimension(id, val_out.shape[dim], out_val_dim)
@@ -1131,7 +1134,7 @@ def concatenate_elemental_rule(primals, **params):
         d = None
         if len(new_primal_dims) > 0:
             d = new_primal_dims[dim]
-        if type(d) is DenseDimension:
+        if isinstance(d, DenseDimension):
             if d.val_dim is not None:
                 new_val = lax.slice_in_dim(post.val, *slices[primal], axis=d.val_dim)
                 d.size = new_val.shape[d.val_dim]
@@ -1145,12 +1148,13 @@ def concatenate_elemental_rule(primals, **params):
                 
                 # Calculate the new val_dim of the primal dimension
                 val_dim = sum([1 for d in new_out_dims if d.val_dim is not None])
-                val_dim += sum([1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension])
+                val_dim += sum([1 for d in new_primal_dims[:dim] 
+                                if d.val_dim is not None and isinstance(d, DenseDimension)])
                 new_primal_dims[dim] = DenseDimension(_d.other_id, size, val_dim)
                 
                 # Update the val_dim of all following dimensions
                 for d in new_primal_dims[dim+1:]:
-                    if type(d) is DenseDimension:
+                    if isinstance(d, DenseDimension):
                         if d.val_dim is not None:
                             d.val_dim += 1
                 
@@ -1226,7 +1230,6 @@ elemental_rules[lax.concatenate_p] = concatenate_elemental_rule
 
 
 def convert_element_type_rule(primals, **params):
-    # TODO check if this is actually correct
     val_out = lax.convert_element_type_p.bind(*primals, **params)
     new_dtype = params["new_dtype"]
 
