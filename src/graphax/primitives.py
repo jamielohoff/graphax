@@ -1,35 +1,27 @@
-from typing import Callable
-from functools import partial
 import copy
-
-import mmh3
-
-import numpy as np
-
-import jax
-import jax.lax as lax
-import jax.numpy as jnp
+from functools import partial
+from typing import Callable
 
 import jax._src.core as core
-from jax._src.pjit import pjit_p
+import jax.lax as lax
+import jax.numpy as jnp
+import numpy as np
+from jax import Array
+from jax._src.pjit import jit_p
+from jax.typing import ArrayLike
 
 from .sparse.tensor import (
-    SparseTensor,
     DenseDimension,
     SparseDimension,
-    _swap_back_axes,
+    SparseTensor,
     _materialize_dimensions,
+    _swap_back_axes,
 )
 
 
-def get_ndim(arr):
-    if isinstance(arr, (float, int)):
-        return 0
-
-
-def get_shape(val: ArrayLike) -> tuple[int, ...]:
+def get_ndim(val: ArrayLike) -> int:
     """
-    Safely get the shape.
+    Safely get the ndim of an Array.
 
     Args:
         val (ArrayLike): Array with or without abstract value attribute, or scalar.
@@ -37,9 +29,27 @@ def get_shape(val: ArrayLike) -> tuple[int, ...]:
     Returns:
         int: The shape of the input value.
     """
-    if hasattr(val, "aval"):
+    if isinstance(val, Array):
+        return get_ndim(val.aval)
+    elif not isinstance(val, (float, int, complex)):
+        return val.ndim
+    else:
+        return 0
+
+
+def get_shape(val: ArrayLike) -> tuple[int, ...]:
+    """
+    Safely get the shape of an Array.
+
+    Args:
+        val (ArrayLike): Array with or without abstract value attribute, or scalar.
+
+    Returns:
+        int: The shape of the input value.
+    """
+    if isinstance(val, Array):
         return get_shape(val.aval)
-    elif hasattr(val, "shape"):
+    elif not isinstance(val, (float, int, complex)):
         return val.shape
     else:
         return ()
@@ -50,6 +60,7 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
     primal = primals[i]
     primal_size = get_ndim(primal)
     out_size = get_ndim(val_out)
+    out_shape = get_shape(val_out)
 
     if len(primals) == 1:
         if primal_size == 0 and out_size == 0:
@@ -656,6 +667,7 @@ def _inverse_permutation(permutation):
 
 
 from collections import defaultdict
+
 from jax._src.util import safe_map
 
 # Proper pjit and custom grad implementation only possible with a proper tracing system
@@ -758,7 +770,7 @@ def pjit_elemental_rule(
     # print("### pjit outs", outs)
     # print("### pjit elementals", elementals)
     # print("### pjit jaxpr", jaxpr)
-    outputs = pjit_p.bind(
+    outputs = jit_p.bind(
         *primals,
         jaxpr=jaxpr,
         in_shardings=(*in_shardings,),
@@ -776,7 +788,7 @@ def pjit_elemental_rule(
     return out_primals, []
 
 
-elemental_rules[pjit_p] = pjit_elemental_rule
+elemental_rules[jit_p] = pjit_elemental_rule
 
 
 # Should work for high-dimensional stuff
