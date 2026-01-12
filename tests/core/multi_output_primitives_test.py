@@ -1,15 +1,12 @@
 import unittest
 
 import jax
-import jax.lax as lax
 import jax.numpy as jnp
-import jax.random as jrand
-from jax.tree_util import tree_map
 
 from graphax import jacve, tree_allclose
-from graphax.sparse.utils import count_muls, count_muls_jaxpr
 
-class MultiOutputTest(unittest.TestCase): 
+
+class MultiOutputTest(unittest.TestCase):
     # jnp.split is not a true multi-output primitive, but instead a chain of
     # slicing operations
     def test_split(self):
@@ -33,9 +30,7 @@ class MultiOutputTest(unittest.TestCase):
         print(veres[1])
         print(revres[1])
         self.assertTrue(tree_allclose(veres, revres))
-        
+
 
 if __name__ == "__main__":
     unittest.main()
-    
-    
