@@ -1,8 +1,6 @@
 from typing import Sequence, Set
 
-import jax
 import jax.core as core
-import jax.numpy as jnp
 
 
 def get_output_vertices(jaxpr: core.Jaxpr) -> Set[int]:
