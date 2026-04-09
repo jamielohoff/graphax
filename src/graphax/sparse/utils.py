@@ -6,7 +6,7 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
-from jax.core import JaxprEqn, ClosedJaxpr, ShapedArray
+from jax._src.core import JaxprEqn, ClosedJaxpr, ShapedArray
 
 
 def zeros_like(invar: ShapedArray, outvar: ShapedArray) -> jnp.ndarray:

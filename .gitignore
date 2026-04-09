@@ -59,3 +59,5 @@ MANIFEST
 
 **/samples/
 **/data/
+
+LAZY_EVAL_PLAN.md

@@ -51,6 +51,7 @@ class SparseTensor:
     """
     out_dims: Tuple[Dimension]
     primal_dims: Tuple[Dimension] # input dimensions
+    dims: Tuple[Dimension]
     shape: Tuple[int] # True shape of the tensor
     val: Array
     pre_transforms: Sequence[Callable]
@@ -72,6 +73,7 @@ class SparseTensor:
 
         self.out_dims = out_dims if isinstance(out_dims, tuple) else tuple(out_dims)
         self.primal_dims = primal_dims if isinstance(primal_dims, tuple) else tuple(primal_dims)
+        self.dims = self.out_dims + self.primal_dims
 
         self.out_shape = [d.size for d in out_dims]
         self.primal_shape = [d.size for d in primal_dims]
@@ -140,7 +142,7 @@ class SparseTensor:
             else:
                 return 1
 
-        eye_shape = [eye_dim_fn(d) for d in self.out_dims + self.primal_dims]
+        eye_shape = [eye_dim_fn(d) for d in self.dims]
 
         eye = eye_like_copy(eye_shape, len(self.out_dims), iota)
         # If tensor consists only out of Kronecker Delta's, we can just reshape
@@ -166,7 +168,7 @@ class SparseTensor:
             else:
                 return 1
 
-        tiling = [tile_dim_fn(d) for d in self.out_dims + self.primal_dims]
+        tiling = [tile_dim_fn(d) for d in self.dims]
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
         return jnp.tile(index_map*val, tiling)
         
@@ -219,14 +221,14 @@ def _assert_sparse_tensor_consistency(st: SparseTensor):
         or d.size == 1 # NOTE: required to enable broadcasting operations
         if isinstance(d, SparseDimension)
         and d.val_dim is not None else True
-        for d in st.out_dims + st.primal_dims
+        for d in st.dims
     )
 
     matching_dense_sizes = all(
         d.size == st.val.shape[d.val_dim]
         if isinstance(d, DenseDimension)
         and d.val_dim is not None else True
-        for d in st.out_dims + st.primal_dims
+        for d in st.dims
     )
 
     matching_sizes = matching_sparse_sizes or matching_dense_sizes
@@ -311,8 +313,8 @@ def _is_pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     Returns:
         bool: Are the tensors compatible for multiplication?
     """
-    return all(True if isinstance(r, DenseDimension) and isinstance(l, DenseDimension)
-               else False for r, l in zip(lhs.primal_dims, rhs.out_dims))
+    return all(isinstance(r, DenseDimension) and isinstance(l, DenseDimension)
+               for r, l in zip(lhs.primal_dims, rhs.out_dims))
 
 
 def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
@@ -327,8 +329,8 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     Returns:
         bool: Are the tensors compatible for multiplication?
     """
-    return all(True if isinstance(l, SparseDimension) or isinstance(r, SparseDimension)
-               else False for l, r in zip(lhs.primal_dims, rhs.out_dims))
+    return all(isinstance(l, SparseDimension) or isinstance(r, SparseDimension)
+               for l, r in zip(lhs.primal_dims, rhs.out_dims))
 
     
 def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
@@ -347,25 +349,23 @@ def _mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     Returns:
         SparseTensor: The resulting `SparseTensor` object.
     """
-    _assert_sparse_tensor_consistency(lhs)
-    _assert_sparse_tensor_consistency(rhs)
-
     l = len(lhs.out_dims)
     r = len(rhs.out_dims)
     assert lhs.shape[l:] == rhs.shape[:r], \
         f"{lhs.shape} and {rhs.shape} not compatible for multiplication!"
 
-    _lhs = lhs.copy()
-    _rhs = rhs.copy()
     if lhs.shape == () and rhs.shape == ():
         # If both tensors are scalars, we can just multiply them directly
         res = SparseTensor((), (), lhs.val*rhs.val)
-    elif _is_pure_dot_product_mul(_lhs, _rhs):
-        res = _pure_dot_product_mul(_lhs, _rhs)
-    elif _is_pure_broadcast_mul(_lhs, _rhs):
-        res = _pure_broadcast_mul(_lhs, _rhs)
     else:
-        res = _mixed_mul(_lhs, _rhs)
+        _lhs = lhs.copy()
+        _rhs = rhs.copy()
+        if _is_pure_dot_product_mul(_lhs, _rhs):
+            res = _pure_dot_product_mul(_lhs, _rhs)
+        elif _is_pure_broadcast_mul(_lhs, _rhs):
+            res = _pure_broadcast_mul(_lhs, _rhs)
+        else:
+            res = _mixed_mul(_lhs, _rhs)
 
     _assert_sparse_tensor_consistency(res)
     return res
@@ -385,14 +385,11 @@ def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     Returns:
         SparseTensor: The resulting `SparseTensor` object.
     """
-    _assert_sparse_tensor_consistency(lhs)
-    _assert_sparse_tensor_consistency(rhs)
-
     assert lhs.shape == rhs.shape, \
         f"{lhs.shape} and {rhs.shape} not compatible for addition!"
-    
+
     res = _sparse_add(lhs, rhs)
-    
+
     _assert_sparse_tensor_consistency(res)
     return res
 
@@ -409,11 +406,10 @@ def _get_new_val_dim(d: Dimension, st: SparseTensor) -> int:
     Returns:
         int: The new `val_dim` of the `d` object.
     """
-    l = len(st.out_dims)
     if d.id < d.other_id:
-        dims = st.out_dims + st.primal_dims[:d.other_id-l]
+        dims = st.dims[:d.other_id]
     else:
-        dims = st.out_dims + st.primal_dims[:d.id-l]
+        dims = st.dims[:d.id]
 
     other_val_dims = [_d.val_dim for _d in dims if _d.val_dim is not None]
     
@@ -488,15 +484,10 @@ def _get_permutation_from_tensor(st: SparseTensor,
     permutation = [0]*len(st.val.shape)
     
     i = 0
-    for d in st.out_dims + st.primal_dims:
-        if d.val_dim is not None:
-            if isinstance(d, DenseDimension):
-                permutation[d.val_dim] = i
-                i += 1
-            else:
-                if d.id < d.other_id:
-                    permutation[d.val_dim] = i
-                    i += 1
+    for d in st.dims:
+        if d.val_dim is not None and (isinstance(d, DenseDimension) or d.id < d.other_id):
+            permutation[d.val_dim] = i
+            i += 1
     return permutation
 
 
@@ -553,7 +544,7 @@ def _swap_axes(st: SparseTensor) -> SparseTensor:
             break
         if isinstance(ld, SparseDimension) and ld.val_dim is not None:
             new_val_dim = _get_new_val_dim(ld, st)
-            for d in st.out_dims + st.primal_dims:
+            for d in st.dims:
                 if (d.id != ld.id
                     and d.id != ld.other_id
                     and d.val_dim is not None
@@ -617,7 +608,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
     lhs_pad, rhs_pad = _get_padding(lhs.out_dims, rhs.primal_dims)
     
     ### Update dimension numbers
-    for rd in rhs.out_dims + rhs.primal_dims:
+    for rd in rhs.dims:
         if rd.val_dim is not None:
             if isinstance(rd, DenseDimension):
                 rd.val_dim += len(rhs_pad)
@@ -645,7 +636,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             ld.val_dim = other_val_dim
             lhs.out_dims[ld.other_id].val_dim = other_val_dim
 
-            for d in lhs.out_dims + lhs.primal_dims:
+            for d in lhs.dims:
                 if (d.id != ld.id
                     and d.id != ld.other_id
                     and d.val_dim is not None
@@ -663,7 +654,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             rd.val_dim = new_val_dim
             rhs.primal_dims[rd.other_id-r].val_dim = new_val_dim
 
-            for d in rhs.out_dims + rhs.primal_dims:
+            for d in rhs.dims:
                 if (d.id != rd.id
                     and d.id != rd.other_id
                     and d.val_dim is not None
@@ -677,7 +668,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             lhs_shape.insert(new_val_dim, 1)
             ld.val_dim = new_val_dim
 
-            for d in lhs.out_dims + lhs.primal_dims:
+            for d in lhs.dims:
                 if d.id != ld.id:
                     if d.val_dim is not None and d.val_dim >= new_val_dim:
                         d.val_dim += 1
@@ -692,7 +683,7 @@ def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
             rhs_shape.insert(new_val_dim, 1)
             rd.val_dim = new_val_dim
 
-            for d in rhs.out_dims + rhs.primal_dims:
+            for d in rhs.dims:
                 if (d.id != rd.id
                     and d.val_dim is not None
                     and d.val_dim >= new_val_dim):
@@ -734,20 +725,15 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
     l = len(st.out_dims)
     i = 0
     permutation = [0]*len(st.val.shape)
-    for d in st.out_dims + st.primal_dims:
-        if d.val_dim is not None:
-            if isinstance(d, DenseDimension):
-                permutation[i] = d.val_dim
-                i += 1
-            else:
-                if d.id < d.other_id:
-                    permutation[i] = d.val_dim
-                    i += 1
+    for d in st.dims:
+        if d.val_dim is not None and (isinstance(d, DenseDimension) or d.id < d.other_id):
+            permutation[i] = d.val_dim
+            i += 1
      
     st.val = jnp.transpose(st.val, permutation)
     
     i = 0
-    for d in st.out_dims + st.primal_dims:
+    for d in st.dims:
         if d.val_dim is not None:
             if isinstance(d, DenseDimension):
                 d.val_dim = i
@@ -879,7 +865,7 @@ def _get_val_dim(st: SparseTensor, id: int) -> int:
         int: The `val_dim` of the `SparseDimension` object with id `id`.
     
     """
-    dims = st.out_dims + st.primal_dims
+    dims = st.dims
     i = 0
     for d in dims[:id]:
         if d.val_dim is not None:
@@ -903,7 +889,7 @@ def _get_val_dim_when_swapped(st: SparseTensor, id: int) -> int:
     Returns:
         int: The `val_dim` of the `SparseDimension` object with id `id`.
     """
-    dims = st.out_dims + st.primal_dims
+    dims = st.dims
     i = 0
     for d in dims[:id]:
         if d.val_dim is not None:
@@ -932,7 +918,7 @@ def _replicate_along_axis(st: SparseTensor, ids: Sequence[int]) -> SparseTensor:
                         replication of `st.val` along `axis`.
     """
     # Expand the dimensions
-    dims = st.out_dims + st.primal_dims
+    dims = st.dims
     new_dims = []
     for id in ids:
         d = dims[id]
@@ -1381,8 +1367,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     ltiling = [1]*len(lhs_val.shape)
     rtiling = [1]*len(rhs_val.shape)
     
-    _ldims = lhs.out_dims + lhs.primal_dims
-    _rdims = rhs.out_dims + rhs.primal_dims
+    _ldims = lhs.dims
+    _rdims = rhs.dims
     i = 0
     for ld, rd in zip(_ldims, _rdims):
         if isinstance(ld, DenseDimension) \

@@ -10,7 +10,7 @@ from jax.tree_util import tree_map
 from graphax import jacve, tree_allclose
 
 
-class PrimitveTest(unittest.TestCase): 
+class PrimitiveTest(unittest.TestCase): 
     def test_broadcast_add(self):
         def broadcast_add(x, y):
             return jnp.tanh(x + y)
@@ -156,8 +156,6 @@ class PrimitveTest(unittest.TestCase):
         xkey, ykey = jrand.split(key, 2)
         x = jrand.normal(xkey, (2, 3))
         y = jrand.normal(ykey, (3, 1))
-        
-        print(jax.make_jaxpr(f)(x, y))
 
         deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
         veres = deriv_fn(x, y)
@@ -231,17 +229,11 @@ class PrimitveTest(unittest.TestCase):
         xkey, ykey = jrand.split(key, 2)
         x = jrand.normal(xkey, (3, 1, 4))
         y = jrand.normal(ykey, (4, 3, 2))
-        
-        print("result", f(x, y).shape)
-        print(jax.make_jaxpr(f)(x, y))
 
         deriv_fn = jax.jit(jacve(f, order="rev", argnums=(0, 1)))
         veres = deriv_fn(x, y)
 
         revres = jax.jit(jax.jacrev(f, argnums=(0, 1)))(x, y)
-        
-        print("err1", jnp.abs(veres[0] - revres[0]).mean())
-        print("err2", jnp.abs(veres[1] - revres[1]).mean())
         
         self.assertTrue(tree_allclose(veres, revres))   
         
@@ -260,5 +252,9 @@ class PrimitveTest(unittest.TestCase):
         revres = jax_deriv_fn(x, y)
         
         self.assertTrue(tree_allclose(veres, revres)) 
+
+
+if __name__ == "__main__":
+    unittest.main()
         
         
