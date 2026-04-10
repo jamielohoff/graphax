@@ -1,7 +1,6 @@
 import sys
 from .core import jacve, set_pjit_elimination_order
 from .utils import tree_allclose
-from .equinox_bindings import filter_jacve
 from .sparse import sparse_tensor_zeros_like # custom_elemental,
 
 if sys.version_info[:2] >= (3, 8):

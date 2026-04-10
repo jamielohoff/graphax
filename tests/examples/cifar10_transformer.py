@@ -3,7 +3,6 @@ import time
 import tqdm
 
 import jax
-import jax.lax as lax
 import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jrand

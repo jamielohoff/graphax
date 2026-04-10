@@ -204,91 +204,96 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
     """
     eqn = jaxpr.eqns[vertex-1]
     num_mul, num_add = 0, 0
-    for out_edge in graph[eqn.outvars[0]].keys():
-        post_val = _force(graph[eqn.outvars[0]][out_edge]).copy()
-        for in_edge in transpose_graph[eqn.outvars[0]].keys():
-            pre_val = _force(transpose_graph[eqn.outvars[0]][in_edge]).copy()
-            
-            # TODO implement a process that discards unnecessary edges from the computation
-            
-            # Handle stuff like reshape, squeeze etc.            
-            # Apply Jacobian transforms where applicable
-            _pre_val = pre_val.copy()
-            _post_val = post_val.copy()
 
-            # print(in_edge.count, "->", eqn.outvars[0].count, "->", out_edge.count)
-            # print("Post:", _post_val)
-            # print("Pre:", _pre_val) 
-            
-            if len(pre_val.post_transforms) > 0 and post_val.val is not None:
-                _post_val = unload_post_transforms(post_val, pre_val, iota)
-                
-            if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
-                _pre_val = unload_pre_transforms(post_val, pre_val, iota)
-                                
-            # Multiply the two values of the edges if applicable
-            if pre_val.val is not None and post_val.val is not None:     
-                edge_outval = _post_val * _pre_val
-                num_mul += get_num_muls(_post_val, _pre_val)
-                    
-            elif pre_val.val is not None:
-                edge_outval = _pre_val  
-            else:
-                edge_outval = _post_val
-                
-            # print("Edge_outval:", edge_outval)
-            # Offload the remain Jacobian transforms to the output tensor
-            if len(post_val.post_transforms) > 0:
-                edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
+    for central_var in eqn.outvars:
+        if central_var not in graph:
+            continue  # dead or already-eliminated vertex
 
-            if len(pre_val.pre_transforms) > 0:
-                edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
-                                                
-            # If there is already an edge between the two vertices, add the new
-            # edge to the existing one
-            if graph.get(in_edge).get(out_edge) is not None:
-                _edge = _force(transpose_graph[out_edge][in_edge])
-                # print("Edge_outval:", edge_outval)      
-                # print("Edge:", _edge)  
-  
-                # Offload the remaining Jacobian transforms to the output tensor
-                if len(edge_outval.post_transforms) > 0:
-                    for transform in edge_outval.post_transforms:
-                        edge_outval = transform.apply(edge_outval, iota)
+        for out_edge in graph[central_var].keys():
+            post_val = _force(graph[central_var][out_edge]).copy()
+            for in_edge in transpose_graph[central_var].keys():
+                pre_val = _force(transpose_graph[central_var][in_edge]).copy()
 
-                if len(edge_outval.pre_transforms) > 0:
-                    for transform in edge_outval.pre_transforms[::-1]: # Do we need the [::-1] here?
-                        edge_outval = transform.apply_inverse(edge_outval, iota)
-                
+                # TODO implement a process that discards unnecessary edges from the computation
+
+                # Handle stuff like reshape, squeeze etc.
+                # Apply Jacobian transforms where applicable
+                _pre_val = pre_val.copy()
+                _post_val = post_val.copy()
+
+                # print(in_edge.count, "->", central_var.count, "->", out_edge.count)
+                # print("Post:", _post_val)
+                # print("Pre:", _pre_val)
+
+                if len(pre_val.post_transforms) > 0 and post_val.val is not None:
+                    _post_val = unload_post_transforms(post_val, pre_val, iota)
+
+                if len(post_val.pre_transforms) > 0 and pre_val.val is not None:
+                    _pre_val = unload_pre_transforms(post_val, pre_val, iota)
+
+                # Multiply the two values of the edges if applicable
+                if pre_val.val is not None and post_val.val is not None:
+                    edge_outval = _post_val * _pre_val
+                    num_mul += get_num_muls(_post_val, _pre_val)
+
+                elif pre_val.val is not None:
+                    edge_outval = _pre_val
+                else:
+                    edge_outval = _post_val
+
+                # print("Edge_outval:", edge_outval)
                 # Offload the remain Jacobian transforms to the output tensor
-                if len(_edge.post_transforms) > 0:
-                    for transform in _edge.post_transforms:
-                        _edge = transform.apply(_edge, iota)
+                if len(post_val.post_transforms) > 0:
+                    edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
 
-                if len(_edge.pre_transforms) > 0:
-                    for transform in _edge.pre_transforms[::-1]: # Do we need the [::-1] here?
-                        _edge = transform.apply_inverse(_edge, iota)
+                if len(pre_val.pre_transforms) > 0:
+                    edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
+
+                # If there is already an edge between the two vertices, add the new
+                # edge to the existing one
+                if graph.get(in_edge).get(out_edge) is not None:
+                    _edge = _force(transpose_graph[out_edge][in_edge])
+                    # print("Edge_outval:", edge_outval)
+                    # print("Edge:", _edge)
+
+                    # Offload the remaining Jacobian transforms to the output tensor
+                    if len(edge_outval.post_transforms) > 0:
+                        for transform in edge_outval.post_transforms:
+                            edge_outval = transform.apply(edge_outval, iota)
+
+                    if len(edge_outval.pre_transforms) > 0:
+                        for transform in edge_outval.pre_transforms[::-1]: # Do we need the [::-1] here?
+                            edge_outval = transform.apply_inverse(edge_outval, iota)
+
+                    # Offload the remain Jacobian transforms to the output tensor
+                    if len(_edge.post_transforms) > 0:
+                        for transform in _edge.post_transforms:
+                            _edge = transform.apply(_edge, iota)
+
+                    if len(_edge.pre_transforms) > 0:
+                        for transform in _edge.pre_transforms[::-1]: # Do we need the [::-1] here?
+                            _edge = transform.apply_inverse(_edge, iota)
+
+                    _assert_sparse_tensor_consistency(edge_outval)
+                    edge_outval += _edge
+                    num_add += get_num_adds(edge_outval, _edge)
 
                 _assert_sparse_tensor_consistency(edge_outval)
-                edge_outval += _edge
-                num_add += get_num_adds(edge_outval, _edge)
-                
-            _assert_sparse_tensor_consistency(edge_outval)
-            # print("Edge_outval:", edge_outval)
-            graph[in_edge][out_edge] = edge_outval
-            transpose_graph[out_edge][in_edge] = edge_outval
-                
-    # Cleanup of input and output edges
-    if vertex not in vo_vertices:
-        for in_vertex in transpose_graph[eqn.outvars[0]].keys():
-            del graph[in_vertex][eqn.outvars[0]]
-    for out_vertex in graph[eqn.outvars[0]].keys():    
-        del transpose_graph[out_vertex][eqn.outvars[0]]
-    
-    # Cleanup the eliminated vertex
-    del graph[eqn.outvars[0]]
-    if vertex not in vo_vertices:
-        del transpose_graph[eqn.outvars[0]]
+                # print("Edge_outval:", edge_outval)
+                graph[in_edge][out_edge] = edge_outval
+                transpose_graph[out_edge][in_edge] = edge_outval
+
+        # Cleanup of input and output edges for this output variable
+        if central_var not in vo_vertices:
+            for in_vertex in list(transpose_graph[central_var].keys()):
+                del graph[in_vertex][central_var]
+        for out_vertex in list(graph[central_var].keys()):
+            del transpose_graph[out_vertex][central_var]
+
+        # Cleanup the eliminated vertex
+        del graph[central_var]
+        if central_var not in vo_vertices:
+            del transpose_graph[central_var]
 
     return num_mul, num_add
 
@@ -312,19 +317,27 @@ def _checkify_order(order: EliminationOrder,
     Returns:
         EliminationOrder: A valid elimination order.
     """
+    def _should_eliminate(eqn):
+        """Include equation in the order if any of its outvars needs elimination."""
+        return any(
+            ov not in jaxpr.outvars or ov in vo_vertices
+            for ov in eqn.outvars
+            if type(ov) is core.Var
+        )
+
     if type(order) is str:
         if order == "forward" or order == "fwd":
-            return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
-                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices]
+            return [i for i, eqn in enumerate(jaxpr.eqns, start=1)
+                    if _should_eliminate(eqn)]
         elif order == "reverse" or order == "rev":
-            return [i for i, eqn in enumerate(jaxpr.eqns, start=1) 
-                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices][::-1]
+            return [i for i, eqn in enumerate(jaxpr.eqns, start=1)
+                    if _should_eliminate(eqn)][::-1]
         else:
             raise ValueError(f"{order} is not a valid order identifier!")
     else:
-        vertex_set = set([i for i, eqn in enumerate(jaxpr.eqns, start=1) 
-                    if eqn.outvars[0] not in jaxpr.outvars or i in vo_vertices])
-    
+        vertex_set = set([i for i, eqn in enumerate(jaxpr.eqns, start=1)
+                    if _should_eliminate(eqn)])
+
         set_from_order = set(order)
         missing_vertices = vertex_set.difference(set_from_order)
         if len(missing_vertices) > 0:
@@ -365,14 +378,9 @@ def _build_graph(jaxpr: core.Jaxpr,
     env = {} # env stores the primal value associated with the core.Var object
 
     graph = defaultdict(lambda: defaultdict()) # Input connectivity
-    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity  
-        
-    vo_vertices = set() # contains all intermediate and output vertices
-    counter = 1 # vertex id counter
-    var_id = {} # associates every application of a JaxprEqn with a unique integer
-    # identifier that is later used when using the vertex elimination order.
-    # NOTE: This only works well if the output is a single value.
-    # It is ill-defined when having functions with more than one output!.
+    transpose_graph = defaultdict(lambda: defaultdict()) # Output connectivity
+
+    vo_vertices = set() # Set[core.Var]: outvars that are both intermediate and final outputs
 
     # Reads variable and corresponding traced shaped array
     def read(var):
@@ -383,14 +391,7 @@ def _build_graph(jaxpr: core.Jaxpr,
     # Adds new variable and corresponding traced shaped array
     def write(var, val):
         env[var] = val
-        
-    # Writes a new elemental partial to the graph and transpose_graph
-    def write_elemental(outvar, invar, val):
-        _assert_sparse_tensor_consistency(val)
-        if isinstance(invar, core.Var):
-            graph[invar][outvar] = val
-            transpose_graph[outvar][invar] = val
-                            
+
     safe_map(write, jaxpr.invars, args)
     safe_map(write, jaxpr.constvars, consts)
 
@@ -399,33 +400,45 @@ def _build_graph(jaxpr: core.Jaxpr,
     # Loop though elemental partials and create an abstract representation of
     # the computational graph
     for eqn in jaxpr.eqns:
-        # Treatment of intermediate variables that are also output variables
-        for outvar in eqn.outvars:
-            if type(outvar) is core.Var and outvar not in var_id.keys():
-                var_id[outvar] = counter
-                counter += 1
-                    
+        # Detect intermediate variables that are also final outputs
         for invar in eqn.invars:
             if invar in jaxpr._outvars:
-                vertex = var_id[invar]
-                vo_vertices.add(vertex)
-                
+                vo_vertices.add(invar)
+
         # print("eqn:", eqn)
         # print("invars", eqn.invars)
         # print("outvars", eqn.outvars)
         invals = safe_map(read, eqn.invars)
 
-        if eqn.primitive not in elemental_rules and eqn.primitive not in elemental_only_rules:
+        if (eqn.primitive not in elemental_rules
+                and eqn.primitive not in elemental_only_rules
+                and eqn.primitive not in multi_output_elemental_only_rules):
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
 
         invals_snapshot = list(invals)
         invars = [invar for invar in eqn.invars if type(invar) is core.Var]
-        # NOTE: Currently only able to treat one output variable
-        outvar = eqn.outvars[0]
 
-        if eqn.primitive in elemental_only_rules:
+        if eqn.primitive in multi_output_elemental_only_rules:
+            # Multi-output path: primitive produces multiple output variables.
+            # The rule returns elementals[outvar_idx][invar_idx].
+            primal_outvals = eqn.primitive.bind(*invals_snapshot, **eqn.params)
+            safe_map(write, eqn.outvars, primal_outvals)
+
+            fn = multi_output_elemental_only_rules[eqn.primitive]
+            elementals_per_output = fn(primal_outvals, invals_snapshot, **eqn.params)
+
+            for outvar, elementals_for_outvar in zip(eqn.outvars, elementals_per_output):
+                for invar, elemental in zip(invars, elementals_for_outvar):
+                    if elemental is None:
+                        continue  # no dependency: zero Jacobian, omit edge
+                    _assert_sparse_tensor_consistency(elemental)
+                    graph[invar][outvar] = elemental
+                    transpose_graph[outvar][invar] = elemental
+
+        elif eqn.primitive in elemental_only_rules:
             # Deferred dispatch path: bind primal eagerly, defer all elemental
             # JAX ops to lazy thunks that fire only when the edge is consumed.
+            outvar = eqn.outvars[0]
             primal_outvals = eqn.primitive.bind(*invals_snapshot, **eqn.params)
             if eqn.primitive.multiple_results:
                 safe_map(write, eqn.outvars, primal_outvals)
@@ -443,16 +456,20 @@ def _build_graph(jaxpr: core.Jaxpr,
                 return _cache[0]
 
             for k, invar in enumerate(invars):
-                def _make_thunk(k=k, _get=_get_elementals):
-                    def thunk():
-                        return _get()[k]
-                    return thunk
-                edge = LazyEdge(_make_thunk())
-                graph[invar][outvar] = edge
-                transpose_graph[outvar][invar] = edge
+                g = _get_elementals()
+                if k < len(g) and g[k] is not None:
+                    def _make_thunk(k=k, _get=_get_elementals):
+                        def thunk():
+                            res = _get()
+                            return res[k] if len(res) > 0 else None
+                        return thunk
+                    edge = LazyEdge(_make_thunk())
+                    graph[invar][outvar] = edge
+                    transpose_graph[outvar][invar] = edge
         else:
             # Fallback path for custom rules not yet split into elemental_only_rules.
             # Call cce once and store elementals directly — no double-dispatch.
+            outvar = eqn.outvars[0]
             cce = elemental_rules[eqn.primitive]
             primal_outvals, elemental_outvals = cce(invals_snapshot, **eqn.params)
             if eqn.primitive.multiple_results:
@@ -465,7 +482,7 @@ def _build_graph(jaxpr: core.Jaxpr,
                     _assert_sparse_tensor_consistency(elemental)
                     graph[invar][outvar] = elemental
                     transpose_graph[outvar][invar] = elemental
-        
+
     return env, graph, transpose_graph, vo_vertices
 
 
@@ -505,10 +522,12 @@ def _prune_graph(graph: ComputationalGraph,
     while has_dead_vertices:
         to_delete = []
         for eqn in jaxpr.eqns:
-            ov = eqn.outvars[0]
-            if ov not in outvars_set and ov not in already_deleted:
-                if len(graph[ov]) == 0 or len(transpose_graph[ov]) == 0:
-                    to_delete.append(ov)
+            for ov in eqn.outvars:
+                if (type(ov) is core.Var
+                        and ov not in outvars_set
+                        and ov not in already_deleted):
+                    if len(graph[ov]) == 0 or len(transpose_graph[ov]) == 0:
+                        to_delete.append(ov)
 
         if to_delete:
             for ov in to_delete:
@@ -646,8 +665,8 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
 # set_pjit_elimination_order().  Default: "reverse" (reverse-mode-like).
 # ---------------------------------------------------------------------------
 
-def _make_pjit_elemental_only(order):
-    def pjit_elemental_only(primal_out, primals, **params):
+def _make_pjit_multi_output_elemental_only(order):
+    def pjit_multi_output_elemental_only(primal_outs, primals, **params):
         inner_closed = params["jaxpr"]
         inner_jaxpr  = inner_closed.jaxpr
         consts       = inner_closed.literals
@@ -660,15 +679,19 @@ def _make_pjit_elemental_only(order):
             sparse_representation=True,
         )
 
-        # vertex_elimination_jaxpr restructures for n > 1:
-        #   n == 1, 1 output -> [jac_0]
-        #   n >  1, 1 output -> [(jac_0, ..., jac_{n-1})]
-        # We need a flat list [jac_0, ..., jac_{n-1}].
-        if n > 1:
-            return list(jac_vals[0])
-        return jac_vals
+        # vertex_elimination_jaxpr output layout (sparse_representation=True):
+        #   n=1, M outputs -> [J(out0,in0), J(out1,in0), ..., J(outM,in0)]
+        #   n>1, M outputs -> [(J(out0,in0),...,J(out0,inN)), ..., (J(outM,in0),...)]
+        #
+        # We must return result[outvar_idx][invar_idx] for multi_output_elemental_only_rules.
+        if n == 1:
+            # Each entry is a single SparseTensor for one output; wrap in a list.
+            return [[jac] for jac in jac_vals]
+        else:
+            # Each entry is a tuple of N SparseTensors (one per input) for one output.
+            return [list(jac_tuple) for jac_tuple in jac_vals]
 
-    return pjit_elemental_only
+    return pjit_multi_output_elemental_only
 
 
 def set_pjit_elimination_order(order: str = "reverse") -> None:
@@ -679,7 +702,8 @@ def set_pjit_elimination_order(order: str = "reverse") -> None:
                ``"reverse"``, ``"rev"``, or an explicit integer sequence.
                Defaults to ``"reverse"``.
     """
-    elemental_only_rules[jit_p] = _make_pjit_elemental_only(order)
+    elemental_only_rules.pop(jit_p, None)  # remove any prior single-output registration
+    multi_output_elemental_only_rules[jit_p] = _make_pjit_multi_output_elemental_only(order)
 
 
 # Register with the default order at import time.

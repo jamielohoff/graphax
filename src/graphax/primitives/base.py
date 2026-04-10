@@ -82,7 +82,7 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
         if type(elemental) is not float:
             # TODO dirty quick fix that needs to be properly addressed
             elemental = jnp.squeeze(elemental)
-        val_dim_fn = lambda _j: None
+        val_dim_fn = lambda _: None
     else:
         val_dim_fn = lambda j: j
 

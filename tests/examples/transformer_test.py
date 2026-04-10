@@ -4,7 +4,6 @@ from functools import partial
 
 import jax
 import jax.nn as jnn
-import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
 from jax.tree_util import tree_map

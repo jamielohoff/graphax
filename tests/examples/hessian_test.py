@@ -1,10 +1,7 @@
 import unittest
 from functools import partial
-from typing import Callable, Sequence
 
 import jax
-import jax.nn as jnn
-import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
 
