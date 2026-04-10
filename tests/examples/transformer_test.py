@@ -11,13 +11,14 @@ from jax.tree_util import tree_map
 
 from graphax import jacve, tree_allclose
 
-from tests.examples._transformer import (make_weights, glorot, 
+from _transformer import (make_weights, glorot, 
                         make_positional_encoding, softmax_ce_loss, gelu,
-                        multihead_attention_block)
+                        multihead_attention_block, MLP,
+                        efficient_multihead_softmax_attention)
 
 
 class TransformerTest(unittest.TestCase): 
-    ### Test of the utility building blocks
+    ## Test of the utility building blocks
     def test_cross_entropy(self):            
 
         key = jrand.PRNGKey(42)
@@ -25,15 +26,13 @@ class TransformerTest(unittest.TestCase):
         x = jrand.normal(xkey, (32, 10))
         y = jrand.normal(ykey, (32, 10))
         
-        print(jax.make_jaxpr(softmax_ce_loss)(x, y))
-        
         deriv_fn = jax.jit(jacve(softmax_ce_loss, order="rev", argnums=(0, 1)))
         veres = deriv_fn(x, y)
 
         revres = jax.jacrev(softmax_ce_loss, argnums=(0, 1))(x, y)
         
-        print(veres)
-        print(revres)
+        # print(veres)
+        # print(revres)
 
         self.assertTrue(tree_allclose(veres, revres))
         
@@ -373,6 +372,7 @@ class TransformerTest(unittest.TestCase):
             q = WQ @ X
             k = WK @ X
             v = WV @ X
+            dk = float(k.shape[-1])
             a = q @ k.T / jnp.sqrt(dk)
             return jnn.softmax(a, axis=0) @ v
         
@@ -453,14 +453,14 @@ class TransformerTest(unittest.TestCase):
         WV = glorot(vkey, (dk*num_heads, embedding_dim))
         WO = glorot(okey, (embedding_dim, dk*num_heads))
 
-        print(jax.make_jaxpr(multihead_softmax_attention)(x, WQ, WK, WV, WO))
+        print(jax.make_jaxpr(efficient_multihead_softmax_attention)(x, WQ, WK, WV, WO))
 
         # print("jax jaxpr", jax.make_jaxpr(jax.jacrev(softmax_attention, argnums=(1, 2, 3)))(x, WQ, WK, WV))
-        jax_jac_rev = jax.jit(jax.jacrev(multihead_softmax_attention, argnums=(1, 2, 3, 4)))
+        jax_jac_rev = jax.jit(jax.jacrev(efficient_multihead_softmax_attention, argnums=(1, 2, 3, 4)))
         revres = jax_jac_rev(x, WQ, WK, WV, WO)
 
         # print("ve jaxpr", jax.make_jaxpr(jacve(softmax_attention, order="rev", argnums=(1, 2, 3)))(x, WQ, WK, WV))
-        jac_rev = jax.jit(jacve(multihead_softmax_attention, order="rev", argnums=(1, 2, 3, 4)))
+        jac_rev = jax.jit(jacve(efficient_multihead_softmax_attention, order="rev", argnums=(1, 2, 3, 4)))
         veres = jac_rev(x, WQ, WK, WV, WO)
         
         print("err1", jnp.abs(veres[0] - revres[0]).sum())

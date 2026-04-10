@@ -195,9 +195,9 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
             _pre_val = pre_val.copy()
             _post_val = post_val.copy()
 
-            # print(in_edge.count, "->", eqn.outvars[0].count, "->", out_edge.count)
-            # print("Post:", _post_val)
-            # print("Pre:", _pre_val) 
+            print(in_edge.count, "->", eqn.outvars[0].count, "->", out_edge.count)
+            print("Post:", _post_val)
+            print("Pre:", _pre_val) 
             
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
@@ -215,7 +215,7 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
             else:
                 edge_outval = _post_val
                 
-            # print("Edge_outval:", edge_outval)
+            print("Edge_outval:", edge_outval)
             # Offload the remain Jacobian transforms to the output tensor
             if len(post_val.post_transforms) > 0:
                 edge_outval = prepend_post_transforms(post_val, edge_outval, iota)

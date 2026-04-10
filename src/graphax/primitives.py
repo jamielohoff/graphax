@@ -130,7 +130,8 @@ def defelemental(primitive, elementalrule):
 def standard_elemental(elementalrule, primitive, primals, **params):
     assert elementalrule is not None, f"Elemental rule does exist for {primitive}!"
     val_out = primitive.bind(*primals, **params)
-    elementals = elementalrule(*primals, **params)
+    print(primitive, params)
+    elementals = elementalrule(*primals, **_filter_params(elementalrule, params))
     elementals = elementals if isinstance(elementals, tuple) else (elementals,)
 
     elementals_out = [
@@ -150,8 +151,11 @@ def defelemental2(primitive, elementalrule):
 
 def standard_elemental2(elementalrule, primitive, primals, **params):
     assert elementalrule is not None
+    print(primitive, params)
     val_out = primitive.bind(*primals, **params)
-    elementals = elementalrule(val_out, *primals, **params)
+    _filtered_params = _filter_params(elementalrule, params)
+
+    elementals = elementalrule(val_out, *primals, **_filtered_params)
     elementals = elementals if isinstance(elementals, tuple) else (elementals,)
     elementals_out = [
         make_parallel_jacobian(i, primals, val_out, elemental)
@@ -166,10 +170,10 @@ defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
 defelemental2(
     lax.abs_p, lambda out, primal: primal / out
 )  # NOTE: not differentiable here!
-defelemental(lax.integer_pow_p, lambda x, y: y * x ** (y - 1))
+defelemental(lax.integer_pow_p, lambda x, n: n * lax.pow(x, n - 1))
 
-defelemental2(lax.exp_p, lambda out, primal, accuracy: out)
-defelemental(lax.log_p, lambda x: 1.0 / x)
+defelemental2(lax.exp_p, lambda out, primal: out)
+defelemental(lax.log_p, lambda x, accuracy: 1.0 / x)
 defelemental2(lax.sqrt_p, lambda out, primal: 0.5 / out)
 defelemental(lax.square_p, lambda x: 2.0 * x)
 defelemental2(lax.logistic_p, lambda out, primal: out * (1.0 - out))
@@ -177,7 +181,7 @@ defelemental(lax.log1p_p, lambda x: 1.0 / (1.0 + x))
 
 defelemental(lax.sin_p, lax.cos)
 defelemental(lax.asin_p, lambda x, accuracy: 1.0 / lax.sqrt(1.0 - x**2, accuracy))
-defelemental(lax.cos_p, lambda x, accuracy: -lax.sin(x, accuracy))
+defelemental(lax.cos_p, lambda x, accuracy: -lax.sin(x))
 defelemental(lax.acos_p, lambda x, accuracy: -1.0 / lax.sqrt(1.0 - x**2, accuracy))
 defelemental2(lax.tan_p, lambda out, primal: 1.0 + out**2)
 defelemental(lax.atan_p, lambda x: 1.0 / (1.0 + x**2))
@@ -189,10 +193,7 @@ defelemental(lax.acosh_p, lambda x, accuracy: 1.0 / lax.sqrt(x**2 - 1.0, accurac
 defelemental2(lax.tanh_p, lambda out, primal, accuracy: 1.0 - out**2)
 defelemental(lax.atanh_p, lambda x: 1.0 / (1.0 - x**2))
 
-defelemental(
-    lax.erf_p,
-    lambda x, accuracy: 2.0 * lax.exp(-(x**2), accuracy) / lax.sqrt(jnp.pi, accuracy),
-)
+defelemental(lax.erf_p, lambda x: 2.0 * lax.exp(-(x**2)) / lax.sqrt(jnp.pi))
 
 
 def with_type_promotion(fn: Callable) -> Callable:
@@ -543,11 +544,7 @@ def dot_general_elemental_rule(primals, **params):
                 jj += 1
                 rhs_out_dims.insert(
                     batch_dim_counter,
-<<<<<<< HEAD
                     SparseDimension(batch_dim_counter, rd, dim, other_rid)
-=======
-                    SparseDimension(batch_dim_counter, rd, dim, other_rid),
->>>>>>> 6422338f839e887e6762138216197b3bfe1a5f59
                 )
                 rhs_primal_dims.append(
                     SparseDimension(other_rid, rd, dim, batch_dim_counter)
