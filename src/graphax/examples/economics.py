@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
 

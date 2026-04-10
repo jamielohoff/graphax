@@ -2,7 +2,6 @@ import functools as ft
 from functools import wraps
 from typing import Any, Callable, Dict, Union, Sequence
 
-import jax
 import jax.tree_util as jtu
 
 from equinox import is_array

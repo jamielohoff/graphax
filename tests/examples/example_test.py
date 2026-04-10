@@ -1,10 +1,9 @@
+# Debugging accuracy parameter presence
 import unittest
 from functools import partial
 from typing import Callable, Sequence
 
 import jax
-import jax.nn as jnn
-import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrand
 
@@ -28,13 +27,15 @@ def test_order(order: str | Sequence[int], fn: Callable, argnums: Sequence[int],
 
 test_rev = partial(test_order, "rev")
 
-def test_fwd(fn: Callable, argnums: Sequence[int],*args) -> bool:
+def test_fwd(fn: Callable, argnums: Sequence[int], *args) -> bool:
     jacve_f = jax.jit(jacve(fn, order="fwd", argnums=argnums, count_ops=True))
     veres, aux = jacve_f(*args)
     print("num muls:", aux["num_muls"])
 
     jacfwd_f = jax.jit(jax.jacrev(fn, argnums=argnums))
     fwdres = jacfwd_f(*args)
+
+    print('jaxpr:', jax.make_jaxpr(jacve_f)(*args))
 
     return tree_allclose(veres, fwdres)
 
@@ -362,34 +363,34 @@ class ExampleTests(unittest.TestCase):
         self.assertTrue(test_fwd(vmap_BSJ, argnums, *args))
         self.assertTrue(test_rev(vmap_BSJ, argnums, *args))
 
-    # def test_f(self):
-    #     print("Testing f()...")
-    #     key = jrand.PRNGKey(42)
-    #     a = jrand.uniform(key, (4,))
-    #     b = jrand.uniform(key, (2, 3))
-    #     c = jrand.uniform(key, (4, 4))
-    #     d = jrand.uniform(key, (4, 1))
-    #     args = [a, b, c, d]
-    #     argnums = list(range(len(args)))
+    def test_f(self):
+        print("Testing f()...")
+        key = jrand.PRNGKey(42)
+        a = jrand.uniform(key, (4,))
+        b = jrand.uniform(key, (2, 3))
+        c = jrand.uniform(key, (4, 4))
+        d = jrand.uniform(key, (4, 1))
+        args = [a, b, c, d]
+        argnums = list(range(len(args)))
         
-    #     # TODO this order is outdated as the function has changed slightly
-    #     order = [33, 8, 16, 77, 15, 62, 40, 58, 14, 76, 42, 60, 54, 34, 61, 72, 
-    #             37, 55, 18, 75, 36, 74, 65, 26, 35, 25, 66, 38, 64, 59, 53, 20, 
-    #             27, 47, 10, 69, 23, 11, 41, 79, 9, 7, 12, 63, 71, 24, 67, 51, 4, 
-    #             1, 21, 3, 6, 2, 49, 13, 44, 46, 56, 17, 39, 57, 43, 32, 52, 30, 
-    #             48, 31, 5, 22, 45, 19, 50, 28, 29] 
+        # TODO this order is outdated as the function has changed slightly
+        order = [33, 8, 16, 77, 15, 62, 40, 58, 14, 76, 42, 60, 54, 34, 61, 72, 
+                37, 55, 18, 75, 36, 74, 65, 26, 35, 25, 66, 38, 64, 59, 53, 20, 
+                27, 47, 10, 69, 23, 11, 41, 79, 9, 7, 12, 63, 71, 24, 67, 51, 4, 
+                1, 21, 3, 6, 2, 49, 13, 44, 46, 56, 17, 39, 57, 43, 32, 52, 30, 
+                48, 31, 5, 22, 45, 19, 50, 28, 29] 
 
-    #     self.assertTrue(test_fwd(f, argnums, *args))
-    #     self.assertTrue(test_rev(f, argnums, *args))
-    #     # self.assertTrue(test_order(order, f, argnums, *args))
+        self.assertTrue(test_fwd(f, argnums, *args))
+        self.assertTrue(test_rev(f, argnums, *args))
+        # self.assertTrue(test_order(order, f, argnums, *args))
     
-    # def test_g(self):
-    #     print("Testing g()...")
-    #     xs = [.15]*15
-    #     argnums = list(range(len(xs)))
+    def test_g(self):
+        print("Testing g()...")
+        xs = [.15]*15
+        argnums = list(range(len(xs)))
         
-    #     self.assertTrue(test_fwd(g, argnums, *xs))
-    #     self.assertTrue(test_rev(g, argnums, *xs))
+        self.assertTrue(test_fwd(g, argnums, *xs))
+        self.assertTrue(test_rev(g, argnums, *xs))
         
 
 if __name__ == "__main__":

@@ -1,6 +1,14 @@
 from typing import Sequence, Set
 
 import jax.core as core
+import jax.numpy as jnp
+import jax.tree_util as jtu
+
+
+def tree_allclose(tree1, tree2, equal_nan: bool = False) -> bool:
+    allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan, atol=1e-5, rtol=1e-4)
+    is_equal = jtu.tree_map(allclose, tree1, tree2)
+    return jtu.tree_reduce(jnp.logical_and, is_equal)
 
 
 def get_output_vertices(jaxpr: core.Jaxpr) -> Set[int]:

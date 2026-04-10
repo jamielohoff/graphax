@@ -1,5 +1,5 @@
 from typing import Callable, Dict, Sequence, Set, Tuple, Union
-from functools import wraps, partial
+from functools import wraps
 from collections import defaultdict
 
 import jax
@@ -9,19 +9,40 @@ import jax.tree_util as jtu
 from jax._src.util import safe_map
 import jax._src.core as core
 
-from .primitives import elemental_rules
+from jax._src.pjit import jit_p
+
+from .primitives import elemental_rules, elemental_only_rules, multi_output_elemental_only_rules
 from .sparse.tensor import get_num_muls, get_num_adds, _assert_sparse_tensor_consistency
 from .sparse.utils import zeros_like, get_largest_tensor
 
 
-def tree_allclose(tree1, tree2, equal_nan: bool = False) -> bool:
-    allclose = lambda a, b: jnp.allclose(a, b, equal_nan=equal_nan, atol=1e-5, rtol=1e-4)
-    is_equal = jtu.tree_map(allclose, tree1, tree2)
-    return jtu.tree_reduce(jnp.logical_and, is_equal)
-
-
 EliminationOrder = Union[Sequence[int], str]
 ComputationalGraph = Dict[core.Var, Dict[core.Var, jnp.ndarray]]
+
+
+class LazyEdge:
+    """Deferred SparseTensor — evaluated on first read.
+
+    Both ``graph[u][v]`` and ``transpose_graph[v][u]`` store the *same*
+    ``LazyEdge`` object for a given edge, so the underlying thunk fires at
+    most once regardless of which direction reads it first.
+    """
+    __slots__ = ("_thunk", "_value")
+
+    def __init__(self, thunk):
+        self._thunk = thunk
+        self._value = None  # cached after first evaluation
+
+    @property
+    def value(self):
+        if self._value is None:
+            self._value = self._thunk()
+        return self._value
+
+
+def _force(edge):
+    """Return the concrete SparseTensor, evaluating a LazyEdge if necessary."""
+    return edge.value if isinstance(edge, LazyEdge) else edge
 
 
 def jacve(fun: Callable, order: EliminationOrder, argnums: Sequence[int] = (0,), 
@@ -184,9 +205,9 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
     eqn = jaxpr.eqns[vertex-1]
     num_mul, num_add = 0, 0
     for out_edge in graph[eqn.outvars[0]].keys():
-        post_val = graph[eqn.outvars[0]][out_edge].copy()
+        post_val = _force(graph[eqn.outvars[0]][out_edge]).copy()
         for in_edge in transpose_graph[eqn.outvars[0]].keys():
-            pre_val = transpose_graph[eqn.outvars[0]][in_edge].copy()
+            pre_val = _force(transpose_graph[eqn.outvars[0]][in_edge]).copy()
             
             # TODO implement a process that discards unnecessary edges from the computation
             
@@ -195,9 +216,9 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
             _pre_val = pre_val.copy()
             _post_val = post_val.copy()
 
-            print(in_edge.count, "->", eqn.outvars[0].count, "->", out_edge.count)
-            print("Post:", _post_val)
-            print("Pre:", _pre_val) 
+            # print(in_edge.count, "->", eqn.outvars[0].count, "->", out_edge.count)
+            # print("Post:", _post_val)
+            # print("Pre:", _pre_val) 
             
             if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                 _post_val = unload_post_transforms(post_val, pre_val, iota)
@@ -215,7 +236,7 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
             else:
                 edge_outval = _post_val
                 
-            print("Edge_outval:", edge_outval)
+            # print("Edge_outval:", edge_outval)
             # Offload the remain Jacobian transforms to the output tensor
             if len(post_val.post_transforms) > 0:
                 edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
@@ -226,7 +247,7 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
             # If there is already an edge between the two vertices, add the new
             # edge to the existing one
             if graph.get(in_edge).get(out_edge) is not None:
-                _edge = transpose_graph[out_edge][in_edge]  
+                _edge = _force(transpose_graph[out_edge][in_edge])
                 # print("Edge_outval:", edge_outval)      
                 # print("Edge:", _edge)  
   
@@ -392,22 +413,58 @@ def _build_graph(jaxpr: core.Jaxpr,
         # print("eqn:", eqn)
         # print("invars", eqn.invars)
         # print("outvars", eqn.outvars)
-        invals = safe_map(read, eqn.invars)      
+        invals = safe_map(read, eqn.invars)
 
-        if eqn.primitive not in elemental_rules:
+        if eqn.primitive not in elemental_rules and eqn.primitive not in elemental_only_rules:
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
-        cce = elemental_rules.get(eqn.primitive)
-        primal_outvals, elemental_outvals = cce(invals, **eqn.params)
-        if eqn.primitive.multiple_results:
-            safe_map(write, eqn.outvars, primal_outvals)
-        else:
-            safe_map(write, eqn.outvars, [primal_outvals])
+
+        invals_snapshot = list(invals)
         invars = [invar for invar in eqn.invars if type(invar) is core.Var]
         # NOTE: Currently only able to treat one output variable
+        outvar = eqn.outvars[0]
 
-        _write_elemental = partial(write_elemental, eqn.outvars[0])
-        if len(invars) == len(elemental_outvals):
-            safe_map(_write_elemental, invars, elemental_outvals)
+        if eqn.primitive in elemental_only_rules:
+            # Deferred dispatch path: bind primal eagerly, defer all elemental
+            # JAX ops to lazy thunks that fire only when the edge is consumed.
+            primal_outvals = eqn.primitive.bind(*invals_snapshot, **eqn.params)
+            if eqn.primitive.multiple_results:
+                safe_map(write, eqn.outvars, primal_outvals)
+            else:
+                safe_map(write, eqn.outvars, [primal_outvals])
+
+            elemental_only_fn = elemental_only_rules[eqn.primitive]
+            _elemental_cache = []
+
+            def _get_elementals(_fn=elemental_only_fn, _pout=primal_outvals,
+                                 _snap=invals_snapshot, _params=eqn.params,
+                                 _cache=_elemental_cache):
+                if not _cache:
+                    _cache.append(_fn(_pout, _snap, **_params))
+                return _cache[0]
+
+            for k, invar in enumerate(invars):
+                def _make_thunk(k=k, _get=_get_elementals):
+                    def thunk():
+                        return _get()[k]
+                    return thunk
+                edge = LazyEdge(_make_thunk())
+                graph[invar][outvar] = edge
+                transpose_graph[outvar][invar] = edge
+        else:
+            # Fallback path for custom rules not yet split into elemental_only_rules.
+            # Call cce once and store elementals directly — no double-dispatch.
+            cce = elemental_rules[eqn.primitive]
+            primal_outvals, elemental_outvals = cce(invals_snapshot, **eqn.params)
+            if eqn.primitive.multiple_results:
+                safe_map(write, eqn.outvars, primal_outvals)
+            else:
+                safe_map(write, eqn.outvars, [primal_outvals])
+
+            if len(invars) == len(elemental_outvals):
+                for invar, elemental in zip(invars, elemental_outvals):
+                    _assert_sparse_tensor_consistency(elemental)
+                    graph[invar][outvar] = elemental
+                    transpose_graph[outvar][invar] = elemental
         
     return env, graph, transpose_graph, vo_vertices
 
@@ -436,38 +493,32 @@ def _prune_graph(graph: ComputationalGraph,
 
     TODO: Implement some unit tests for pruning. Maybe disable it for now?
     """
-    has_dead_vertices = True
     for i, invar in enumerate(jaxpr.invars):
         if i not in argnums:
-            for in_edge in transpose_graph[invar].keys():
-                del graph[in_edge][invar]
-            for out_edge in graph[invar].keys():   
-                del transpose_graph[out_edge][invar]   
-                
+            for out_edge in graph[invar].keys():
+                del transpose_graph[out_edge][invar]
             del graph[invar]
-            del transpose_graph[invar]
-            # print("Pruned input variable:", invar)
-        
-    already_deleted = []
+
+    outvars_set = set(jaxpr.outvars)
+    already_deleted = set()
+    has_dead_vertices = True
     while has_dead_vertices:
         to_delete = []
         for eqn in jaxpr.eqns:
             ov = eqn.outvars[0]
-            if ov not in jaxpr.outvars and ov not in already_deleted:
+            if ov not in outvars_set and ov not in already_deleted:
                 if len(graph[ov]) == 0 or len(transpose_graph[ov]) == 0:
-                    to_delete.append(ov) 
-                    
-        if len(to_delete) > 0:
+                    to_delete.append(ov)
+
+        if to_delete:
             for ov in to_delete:
                 for in_edge in transpose_graph[ov].keys():
                     del graph[in_edge][ov]
-                for out_edge in graph[ov].keys():   
-                    del transpose_graph[out_edge][ov]   
-                    
+                for out_edge in graph[ov].keys():
+                    del transpose_graph[out_edge][ov]
                 del graph[ov]
-                del transpose_graph[ov] 
-                # print("Pruned output variable:", ov)
-            already_deleted.extend(to_delete)
+                del transpose_graph[ov]
+            already_deleted.update(to_delete)
         else:
             has_dead_vertices = False
 
@@ -521,7 +572,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
     
     jaxpr_invars = [invar for i, invar in enumerate(jaxpr.invars) if i in argnums]
     env, graph, transpose_graph, vo_vertices = _build_graph(jaxpr, args, consts)
-    # _prune_graph(graph, transpose_graph, jaxpr, argnums) NOTE graph pruning is disabled for now
+    _prune_graph(graph, transpose_graph, jaxpr, argnums)
     
     iota = _iota_shape(jaxpr, argnums)
         
@@ -542,7 +593,7 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         for outvar in jaxpr.outvars:
             if graph.get(invar) is not None:
                 if graph.get(invar).get(outvar) is not None:
-                    tensor = graph[invar][outvar].copy()
+                    tensor = _force(graph[invar][outvar]).copy()
                     if len(tensor.pre_transforms) > 0:
                         for transform in tensor.pre_transforms[::-1]: # Do we need the [::-1] here?
                             tensor = transform.apply_inverse(tensor, iota)
@@ -552,12 +603,12 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                     graph[invar][outvar] = tensor
     
     # Collect outputs  
-    if sparse_representation:   
-        jac_vals = [graph[invar][outvar]
+    if sparse_representation:
+        jac_vals = [_force(graph[invar][outvar])
                     if outvar in list(graph[invar].keys()) else None
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
     else:
-        jac_vals = [graph[invar][outvar].dense(iota) 
+        jac_vals = [_force(graph[invar][outvar]).dense(iota)
                     if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
         
@@ -580,3 +631,56 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
 
     return jac_vals
 
+
+# ---------------------------------------------------------------------------
+# jit_p (pjit) elemental-only rule
+#
+# jit_p is a macro vertex: its params["jaxpr"] contains the full sub-computation
+# as a closed jaxpr.  The correct elemental is the Jacobian of that inner
+# function, which we compute by recursively applying vertex_elimination_jaxpr.
+#
+# Registered here (not in primitives/pjit.py) to avoid a circular import:
+# pjit.py -> core.py -> primitives -> pjit.py.
+#
+# The elimination order for the inner jaxpr is configurable via
+# set_pjit_elimination_order().  Default: "reverse" (reverse-mode-like).
+# ---------------------------------------------------------------------------
+
+def _make_pjit_elemental_only(order):
+    def pjit_elemental_only(primal_out, primals, **params):
+        inner_closed = params["jaxpr"]
+        inner_jaxpr  = inner_closed.jaxpr
+        consts       = inner_closed.literals
+        n            = len(primals)
+        argnums      = tuple(range(n))
+
+        jac_vals = vertex_elimination_jaxpr(
+            inner_jaxpr, order, consts, *primals,
+            argnums=argnums,
+            sparse_representation=True,
+        )
+
+        # vertex_elimination_jaxpr restructures for n > 1:
+        #   n == 1, 1 output -> [jac_0]
+        #   n >  1, 1 output -> [(jac_0, ..., jac_{n-1})]
+        # We need a flat list [jac_0, ..., jac_{n-1}].
+        if n > 1:
+            return list(jac_vals[0])
+        return jac_vals
+
+    return pjit_elemental_only
+
+
+def set_pjit_elimination_order(order: str = "reverse") -> None:
+    """Set the vertex elimination order used when differentiating through jax.jit.
+
+    Args:
+        order: Any elimination order accepted by jacve — ``"forward"``, ``"fwd"``,
+               ``"reverse"``, ``"rev"``, or an explicit integer sequence.
+               Defaults to ``"reverse"``.
+    """
+    elemental_only_rules[jit_p] = _make_pjit_elemental_only(order)
+
+
+# Register with the default order at import time.
+set_pjit_elimination_order()

@@ -1,4 +1,3 @@
-import jax
 import jax.nn as jnn
 import jax.numpy as jnp
 

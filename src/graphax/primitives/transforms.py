@@ -1,603 +1,19 @@
 import copy
-import inspect
 
 from typing import Callable
-from collections import defaultdict
 from functools import partial
-from jax._src.util import safe_map
 
-import numpy as np
-
-import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
-import jax._src.core as core
-from jax._src.pjit import jit_p
-
-from .sparse.tensor import (
+from .base import elemental_rules, elemental_only_rules
+from ..sparse.tensor import (
     DenseDimension,
     SparseDimension,
     SparseTensor,
     _materialize_dimensions,
     _swap_back_axes,
 )
-
-Array = jax.Array
-
-
-def get_ndim(arr):
-    if isinstance(arr, (float, int, jax._src.literals.TypedFloat)):
-        return 0
-    else:
-        return arr.ndim
-    
-    
-def get_shape(arr):
-    if isinstance(arr, (float, int, jax._src.literals.TypedFloat)):
-        return ()
-    else:
-        return arr.shape
-    
-    
-def get_aval_shape(val):
-    if isinstance(val, np.ndarray):
-        return val.shape
-    else:
-        return ()
-
-
-def make_parallel_jacobian(i, primals, val_out, elemental):
-    if len(primals) > 2:
-        raise NotImplementedError(f"Parallel Jacobians with {len(primals)} inputs not yet supported!")
-
-    primal = primals[i]
-    primal_size = get_ndim(primal)
-    out_size = get_ndim(val_out)
-    out_shape = get_shape(val_out)
-
-    if primal_size == 0 and out_size == 0:
-        # Singletons
-        return SparseTensor([], [], elemental)
-
-    if primal_size == 0:
-        # Broadcast singleton
-        out_dims = [DenseDimension(j, e, j) for j, e in enumerate(val_out.aval.shape)]
-        return SparseTensor(out_dims, [], elemental)
-
-    if len(primals) == 2 and get_shape(primal) != get_shape(val_out):
-        # Broadcasting case
-        out_dims, primal_dims = [], []
-        for j, (os, ps) in enumerate(zip(val_out.aval.shape, primal.aval.shape)):
-            n_out, n_primal = len(out_dims), len(primal_dims)
-            if ps != os:
-                val_dim = sum(1 for d in out_dims if d.val_dim is not None)
-                out_dims.append(DenseDimension(j, os, val_dim))
-                primal_dims.append(
-                    DenseDimension(n_out + n_primal + 1, ps, None)
-                )
-            else:
-                val_dim = sum(1 for d in out_dims if d.size is not None)
-                out_dims.append(
-                    SparseDimension(j, os, val_dim, n_out + n_primal + 1)
-                )
-                primal_dims.append(
-                    SparseDimension(n_out + n_primal + 1, os, val_dim, j)
-                )
-            for d in primal_dims[:-1]:
-                d.id += 1
-                if isinstance(d, SparseDimension):
-                    out_dims[d.other_id].other_id += 1
-        return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
-
-    if len(primals) == 2 and (type(elemental) is float or elemental.size == 1):
-        if type(elemental) is not float:
-            # TODO dirty quick fix that needs to be properly addressed
-            elemental = jnp.squeeze(elemental) 
-        val_dim_fn = lambda _j: None
-    else:
-        val_dim_fn = lambda j: j
-
-    shape = primal.aval.shape
-    out_dims = [SparseDimension(j, e, val_dim_fn(j), out_size + j) 
-                for j, e in enumerate(shape)]
-    primal_dims = [SparseDimension(out_size + j, e, val_dim_fn(j), j) 
-                   for j, e in enumerate(shape)]
-    return SparseTensor(out_dims, primal_dims, elemental)
-
-
-elemental_rules = {}
-
-
-def _filter_params(fn, params):
-    """Filter params to only those accepted by fn, to handle new JAX params gracefully."""
-    try:
-        sig = inspect.signature(fn)
-        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-            return params
-        valid = set(sig.parameters.keys())
-        return {k: v for k, v in params.items() if k in valid}
-    except (ValueError, TypeError):
-        return params
-
-
-def defelemental(primitive, elementalrule):
-    assert isinstance(primitive, core.Primitive)
-    assert not primitive.multiple_results
-    elemental_rules[primitive] = partial(standard_elemental, elementalrule, primitive)
-
-
-def standard_elemental(elementalrule, primitive, primals, **params):
-    assert elementalrule is not None, f"Elemental rule does exist for {primitive}!"
-    val_out = primitive.bind(*primals, **params)
-    print(primitive, params)
-    elementals = elementalrule(*primals, **_filter_params(elementalrule, params))
-    elementals = elementals if isinstance(elementals, tuple) else (elementals,)
-
-    elementals_out = [
-        make_parallel_jacobian(i, primals, val_out, elemental)
-        for i, elemental in enumerate(elementals)
-        if not isinstance(primals[i], (float, np.ndarray, np.float32))
-    ]
-    return val_out, elementals_out
-
-
-# NOTE: Useful for stuff such as exp_p
-def defelemental2(primitive, elementalrule):
-    assert isinstance(primitive, core.Primitive)
-    assert not primitive.multiple_results
-    elemental_rules[primitive] = partial(standard_elemental2, elementalrule, primitive)
-
-
-def standard_elemental2(elementalrule, primitive, primals, **params):
-    assert elementalrule is not None
-    print(primitive, params)
-    val_out = primitive.bind(*primals, **params)
-    _filtered_params = _filter_params(elementalrule, params)
-
-    elementals = elementalrule(val_out, *primals, **_filtered_params)
-    elementals = elementals if isinstance(elementals, tuple) else (elementals,)
-    elementals_out = [
-        make_parallel_jacobian(i, primals, val_out, elemental)
-        for i, elemental in enumerate(elementals)
-        if not isinstance(primals[i], (float, np.ndarray, np.float32))
-    ]
-    return val_out, elementals_out
-
-
-# Define elemental partials
-defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
-defelemental2(
-    lax.abs_p, lambda out, primal: primal / out
-)  # NOTE: not differentiable here!
-defelemental(lax.integer_pow_p, lambda x, n: n * lax.pow(x, n - 1))
-
-defelemental2(lax.exp_p, lambda out, primal: out)
-defelemental(lax.log_p, lambda x, accuracy: 1.0 / x)
-defelemental2(lax.sqrt_p, lambda out, primal: 0.5 / out)
-defelemental(lax.square_p, lambda x: 2.0 * x)
-defelemental2(lax.logistic_p, lambda out, primal: out * (1.0 - out))
-defelemental(lax.log1p_p, lambda x: 1.0 / (1.0 + x))
-
-defelemental(lax.sin_p, lax.cos)
-defelemental(lax.asin_p, lambda x, accuracy: 1.0 / lax.sqrt(1.0 - x**2, accuracy))
-defelemental(lax.cos_p, lambda x, accuracy: -lax.sin(x))
-defelemental(lax.acos_p, lambda x, accuracy: -1.0 / lax.sqrt(1.0 - x**2, accuracy))
-defelemental2(lax.tan_p, lambda out, primal: 1.0 + out**2)
-defelemental(lax.atan_p, lambda x: 1.0 / (1.0 + x**2))
-
-defelemental(lax.sinh_p, lax.cosh)
-defelemental(lax.asinh_p, lambda x, accuracy: lax.sqrt(1.0 + x**2, accuracy))
-defelemental(lax.cosh_p, lax.sinh)
-defelemental(lax.acosh_p, lambda x, accuracy: 1.0 / lax.sqrt(x**2 - 1.0, accuracy))
-defelemental2(lax.tanh_p, lambda out, primal, accuracy: 1.0 - out**2)
-defelemental(lax.atanh_p, lambda x: 1.0 / (1.0 - x**2))
-
-defelemental(lax.erf_p, lambda x: 2.0 * lax.exp(-(x**2)) / lax.sqrt(jnp.pi))
-
-
-def with_type_promotion(fn: Callable) -> Callable:
-    def promoted_fn(*operands, **params) -> tuple[Array, ...]:
-        res = fn(*operands, **params)
-        type = jnp.promote_types(*(op.dtype for op in operands))
-        return tuple(lax.convert_element_type(el, type) for el in res)
-
-    return promoted_fn
-
-
-# TODO this can be significantly optimized
-# Currently we are creating a new array of ones everytime. Not smart!
-@with_type_promotion
-def add_elemental_rule(x, y):
-    return (jnp.ones_like(y), jnp.ones_like(x))
-
-
-defelemental(lax.add_p, add_elemental_rule)
-
-
-# TODO this can also be optimized significantly
-@with_type_promotion
-def sub_elemental_rule(x, y):
-    return (jnp.ones_like(y), -jnp.ones_like(x))
-
-
-defelemental(lax.sub_p, sub_elemental_rule)
-
-
-@with_type_promotion
-def mul_elemental_rule(x, y):
-    return (y, x)
-
-
-defelemental(lax.mul_p, mul_elemental_rule)
-
-
-@with_type_promotion
-def div_elemental_rule(x, y):
-    return (1.0 / y, -x / y**2)
-
-
-defelemental(lax.div_p, div_elemental_rule)
-
-
-@with_type_promotion
-def atan2_elemental_rule(x, y):
-    abs2 = x**2 + y**2
-    return (y / abs2, -x / abs2)
-
-
-defelemental(lax.atan2_p, atan2_elemental_rule)
-
-
-@with_type_promotion
-def max_elemental_rule(x, y):
-    return (x < y, x >= y)
-
-
-defelemental(lax.max_p, max_elemental_rule)
-
-
-@with_type_promotion
-def min_elemental_rule(x, y):
-    return (jnp.where(x < y, 1, 0), jnp.where(x < y, 0, 1))
-
-
-defelemental(lax.min_p, min_elemental_rule)
-
-
-@with_type_promotion
-def eq_elemental_rule(x, y):
-    return (jnp.zeros_like(y), jnp.zeros_like(x))
-
-
-defelemental(lax.eq_p, eq_elemental_rule)
-defelemental(lax.gt_p, eq_elemental_rule)
-defelemental(lax.lt_p, eq_elemental_rule)
-
-
-def select_elemental_rule(primals, **params):
-    val_out = lax.select_n_p.bind(*primals, **params)
-    size = primals[0].size
-    jacsize = (size, size)
-    num_cases = len(primals) - 1
-    new_out_dims = [SparseDimension(0, 1, size, 1)]
-    new_primal_dims = [SparseDimension(1, 1, size, 0)]
-    jacval = jnp.zeros(jacsize)
-    return val_out, [
-        SparseTensor(new_out_dims, new_primal_dims, jacval) for _ in range(num_cases)
-    ]
-
-
-elemental_rules[lax.select_n_p] = select_elemental_rule
-
-
-@with_type_promotion
-def pow_elemental_rule(out, x, y):
-    return (y * x ** (y - 1), jnp.log(x) * out)
-
-
-defelemental2(lax.pow_p, pow_elemental_rule)
-
-
-# TODO Create a general reduce rule with a custom derivative!
-def reduce_sum_elemental_rule(primals, **params):
-    val_out = lax.reduce_sum_p.bind(*primals, **params)
-
-    primal = primals[0]
-    axes = params["axes"]
-    if axes is None:
-        axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0))
-    elif isinstance(axes, int):
-        axes = (axes,)
-
-    new_out_dims, new_primal_dims, shape = [], [], []
-    l = get_ndim(val_out)  # TODO rename l, bad name...
-    count = 0
-    for i, size in enumerate(get_shape(primal)):
-        if i in axes:
-            # idx = len(new_out_dims) + len(new_primal_dims)
-            # idx = max(idx, 1) if val_out.ndim > 0 else idx
-            new_primal_dims.append(DenseDimension(l + i, size, count))
-            shape.append(size)
-            count += 1
-        else:
-            ll = len(new_out_dims)
-            new_out_dims.append(SparseDimension(ll, size, None, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, None, ll))
-
-    val = jnp.ones(shape, dtype=jnp.float32)
-    return val_out, [SparseTensor(new_out_dims, new_primal_dims, val)]
-
-
-elemental_rules[lax.reduce_sum_p] = reduce_sum_elemental_rule
-
-
-def reduce_max_elemental_rule(primals, **params):
-    val_out = lax.reduce_max_p.bind(*primals, **params)
-
-    primal = primals[0]
-    axes = params["axes"]
-    shape = list(get_shape(val_out))
-
-    new_out_dims, new_primal_dims, _shape = [], [], []
-    if axes is None:
-        axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0, True))
-    elif isinstance(axes, int):
-        axes = (axes,)
-
-    l = get_ndim(val_out)  # TODO rename l, bad name ...
-    for i, size in enumerate(get_shape(primal)):
-        if i in axes:
-            shape.insert(i, 1)
-            idx = len(new_out_dims) + len(new_primal_dims)
-            idx = max(idx, 1) if val_out.ndim > 0 else idx
-            new_primal_dims.append(DenseDimension(idx, size, i))
-            _shape.append(size)
-        else:
-            ll = len(new_out_dims)
-            new_out_dims.append(SparseDimension(ll, size, i, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, i, ll))
-
-    _val_out = val_out.reshape(shape)
-    new_val = jnp.where(primal == _val_out, 1, 0)
-    # NOTE: Normalization is important if the maximum is not unique
-    norm = jnp.sum(new_val, axis=axes, keepdims=True)
-    new_val = new_val / norm
-
-    return val_out, [
-        _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
-    ]
-
-
-elemental_rules[lax.reduce_max_p] = reduce_max_elemental_rule
-
-
-def reduce_min_elemental_rule(primals, **params):
-    val_out = lax.reduce_min_p.bind(*primals, **params)
-
-    primal = primals[0]
-    axes = params["axes"]
-
-    new_out_dims, new_primal_dims, _shape = [], [], []
-    if axes is None:
-        axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0, True))
-    elif isinstance(axes, int):
-        axes = (axes,)
-
-    l = get_ndim(val_out)
-    count = 0
-    for i, size in enumerate(get_shape(primal)):
-        if i in axes:
-            idx = len(new_out_dims) + len(new_primal_dims)
-            idx = max(idx, 1) if val_out.ndim > 0 else idx
-            new_primal_dims.append(DenseDimension(idx, size, i))
-            _shape.append(size)
-            count += 1
-        else:
-            ll = len(new_out_dims)
-            new_out_dims.append(SparseDimension(ll, size, i, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, i, ll))
-
-    new_val = jnp.where(primal == val_out, 1, 0)
-    # NOTE: Normalization is important if the minimum is not unique
-    norm = jnp.sum(new_val, axis=axes, keepdims=True)
-    new_val = new_val / norm
-    return val_out, [
-        _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
-    ]
-
-
-elemental_rules[lax.reduce_min_p] = reduce_min_elemental_rule
-
-
-# first draft unified reduce, TODO: test!
-def reduce_elemental_rule(primals, agg, **params):
-    assert agg in {"sum", "min", "max"}, (
-        f"{agg} is not one of the valid aggregate functions `sum`, `min`, `max`"
-    )
-    val_out = getattr(lax, f"reduce_{agg}_p").bind(*primals, **params)
-
-    shape = list(get_shape(val_out))
-    primal = primals[0]
-    axes = params["axes"]
-
-    new_out_dims, new_primal_dims, _shape = [], [], []
-    if axes is None:
-        axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0))
-    elif isinstance(axes, int):
-        axes = (axes,)
-
-    l = get_ndim(val_out)
-    for i, size in enumerate(get_shape(primal)):
-        if i in axes:
-            if agg == "sum":
-                idx = l + i
-            else:
-                shape.insert(i, 1)
-                idx = len(new_out_dims) + len(new_primal_dims)
-                idx = max(idx, 1) if val_out.ndim > 0 else idx
-
-            new_primal_dims.append(DenseDimension(idx, size, i))
-            _shape.append(size)
-        else:
-            ll = len(new_out_dims)
-            val = None if "sum" else i
-            new_out_dims.append(SparseDimension(ll, size, val, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, val, ll))
-
-    if agg == "sum":
-        new_val = jnp.ones(_shape, dtype=jnp.float32)
-    else:
-        _val_out = val_out.reshape(shape)
-        new_val = jnp.where(primal == _val_out, 1, 0)
-        norm = jnp.sum(new_val, axis=axes, keepdims=True)
-        new_val /= norm
-
-    return val_out, [
-        _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
-    ]
-
-
-# elemental_rules[lax.reduce_sum_p] = partial(reduce_elemental_rule, agg="sum")
-# elemental_rules[lax.reduce_min_p] = partial(reduce_elemental_rule, agg="min")
-# elemental_rules[lax.reduce_max_p] = partial(reduce_elemental_rule, agg="max")
-
-
-def dot_general_elemental_rule(primals, **params):
-    val_out = lax.dot_general_p.bind(*primals, **params)
-    lhs, rhs = primals
-
-    # Which dimensions of the tensors are contracted
-    dimension_numbers = params["dimension_numbers"][0]
-    batch_dims = params["dimension_numbers"][1]
-    # NOTE: Batch dimensions are just treated as SparseDimensions.
-
-    lhs_contracting_dims = dimension_numbers[0]
-    rhs_contracting_dims = dimension_numbers[1]
-
-    lhs_batch_dims = batch_dims[0]
-    rhs_batch_dims = batch_dims[1]
-
-    lhs_shape = list(get_shape(lhs))
-    rhs_shape = list(get_shape(rhs))
-    out_shape = list(get_shape(val_out))
-
-    lhs_out_dims, rhs_out_dims = [], []
-    lhs_primal_dims, rhs_primal_dims = [], []
-
-    num_out_dims = len(out_shape)
-
-    i, ii = 0, 0
-    batch_dim_counter = 0
-    for lid, ld in enumerate(lhs_shape):
-        other_lid = lid + len(out_shape)
-        if lid in lhs_contracting_dims:
-            # Contracting dimension
-            dim = rhs_contracting_dims[i]
-            lhs_primal_dims.append(DenseDimension(other_lid, rhs_shape[dim], dim))
-            i += 1
-        else:
-            if lid in lhs_batch_dims:
-                # If it is a batch dimension, we need to treat it as a SparseDimension
-                # with a valid `val_dim`
-                dim = rhs_batch_dims[ii]
-                ii += 1
-
-                lhs_out_dims.insert(
-                    batch_dim_counter,
-                    SparseDimension(batch_dim_counter, ld, dim, other_lid)
-                )
-                lhs_primal_dims.append(
-                    SparseDimension(other_lid, ld, dim, batch_dim_counter)
-                )
-                batch_dim_counter += 1
-                for d in lhs_out_dims[batch_dim_counter:]:
-                    d.id += 1
-                    if isinstance(d, SparseDimension):
-                        _d = lhs_primal_dims[d.other_id - num_out_dims]
-                        _d.other_id += 1
-            else:
-                # Otherwise, we can just set `val_dim` to None
-                _lid = len(lhs_out_dims)
-                lhs_out_dims.append(SparseDimension(_lid, ld, None, other_lid))
-                lhs_primal_dims.append(SparseDimension(other_lid, ld, None, _lid))
-                rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid))
-
-    j, jj = 0, 0
-    batch_dim_counter = 0
-    for rid, rd in enumerate(rhs_shape):
-        other_rid = rid + len(out_shape)
-        if rid in rhs_contracting_dims:
-            # Contracting dimension
-            dim = lhs_contracting_dims[j]
-            rhs_primal_dims.append(DenseDimension(other_rid, lhs_shape[dim], dim))
-            j += 1
-        else:
-            if rid in rhs_batch_dims:
-                # If it is a batch dimension, we need to treat it as a
-                # SparseDimension with a valid `val_dim`
-                dim = lhs_batch_dims[jj]
-                jj += 1
-                rhs_out_dims.insert(
-                    batch_dim_counter,
-                    SparseDimension(batch_dim_counter, rd, dim, other_rid)
-                )
-                rhs_primal_dims.append(
-                    SparseDimension(other_rid, rd, dim, batch_dim_counter)
-                )
-                batch_dim_counter += 1
-                for d in rhs_out_dims[batch_dim_counter:]:
-                    d.id += 1
-                    if isinstance(d, SparseDimension):
-                        _d = rhs_primal_dims[d.other_id - num_out_dims]
-                        _d.other_id += 1
-            else:
-                # Otherwise, we can just set `val_dim` to None
-                _rid = len(rhs_out_dims)
-                rhs_out_dims.append(SparseDimension(_rid, rd, None, other_rid))
-                rhs_primal_dims.append(SparseDimension(other_rid, rd, None, _rid))
-                lhs_out_dims.append(DenseDimension(len(lhs_out_dims), rd, rid))
-
-    lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, rhs)
-    rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)
-
-    lhs_tensor = _swap_back_axes(lhs_tensor)
-    rhs_tensor = _swap_back_axes(rhs_tensor)
-    return val_out, [lhs_tensor, rhs_tensor]
-
-
-elemental_rules[lax.dot_general_p] = dot_general_elemental_rule
-
-
-def iota_elemental_rule(primals, **params):
-    val_out = lax.iota_p.bind(*primals, **params)
-    return val_out, []
-
-
-elemental_rules[lax.iota_p] = iota_elemental_rule
-
-
-def device_put_elemental_rule(primals, **params):
-    val_out = lax.device_put_p.bind(*primals, **params)
-    return val_out, []
-
-
-elemental_rules[lax.device_put_p] = device_put_elemental_rule
-
-
-def stop_gradient_elemental_rule(primals, **params):
-    val_out = lax.stop_gradient_p.bind(*primals, **params)
-    return val_out, []
-
-
-elemental_rules[lax.stop_gradient_p] = stop_gradient_elemental_rule
-
-
-### Transforms
 
 Transform = Callable[[SparseTensor, SparseTensor, jnp.ndarray], SparseTensor]
 
@@ -636,127 +52,9 @@ def _inverse_permutation(permutation):
     return inverse
 
 
+# ---------- transpose ----------
 
-# NOTE: Proper pjit and custom grad implementation only possible with a proper tracing system
-def _trace_subjaxpr(jaxpr, args, consts):
-    env = {}  # env stores the primal value associated with the core.Var object
-
-    graph = defaultdict(lambda: defaultdict())  # Input connectivity
-    transpose_graph = defaultdict(lambda: defaultdict())  # Output connectivity
-
-    vo_vertices = set()  # contains all intermediate and output vertices
-    counter = 1  # vertex id counter
-    var_id = {}  # associates every application of a JaxprEqn with a unique integer
-    # identifier that is later used when using the vertex elimination order.
-    # NOTE: This only works well if the output is a single value.
-    # It is ill-defined when having functions with more than one output!.
-
-    # Reads variable and corresponding traced shaped array
-    def read(var):
-        if isinstance(var, core.Literal):
-            return var.val
-        return env[var]
-
-    # Adds new variable and corresponding traced shaped array
-    def write(var, val):
-        env[var] = val
-
-    # Writes a new elemental partial to the graph and transpose_graph
-    def write_elemental(outvar, invar, val):
-        # _checkify_tensor(val)
-        if isinstance(invar, core.Var):
-            graph[invar][outvar] = val
-            transpose_graph[outvar][invar] = val
-
-    safe_map(write, jaxpr.invars, args)
-    safe_map(write, jaxpr.constvars, consts)
-
-    # NOTE: this is essentially the tracing part. Probably should write a proper
-    # tracing system with lift etc. for better compatibility with JAX
-    # Loop though elemental partials and create an abstract representation of
-    # the computational graph
-    for eqn in jaxpr.eqns:
-        # Treatment of intermediate variables that are also output variables
-        for outvar in eqn.outvars:
-            if isinstance(outvar, core.Var) and outvar not in var_id.keys():
-                var_id[outvar] = counter
-                counter += 1
-
-        for invar in eqn.invars:
-            if invar in jaxpr._outvars:
-                vertex = var_id[invar]
-                vo_vertices.add(vertex)
-                
-        invals = safe_map(read, eqn.invars)      
-        
-        if eqn.primitive not in elemental_rules:
-            raise NotImplementedError(
-                f"{eqn.primitive} does not have registered elemental partial."
-            )
-        cce = elemental_rules.get(eqn.primitive)
-        primal_outvals, elemental_outvals = cce(invals, **eqn.params)
-        if eqn.primitive.multiple_results:
-            safe_map(write, eqn.outvars, primal_outvals)
-        else:
-            safe_map(write, eqn.outvars, [primal_outvals])
-        invars = [invar for invar in eqn.invars if isinstance(invar, core.Var)]
-        # NOTE: Currently only able to treat one output variable
-
-        _write_elemental = partial(write_elemental, eqn.outvars[0])
-        if len(invars) == len(elemental_outvals):
-            safe_map(_write_elemental, invars, elemental_outvals)
-
-    return eqn.outvars, graph, transpose_graph, vo_vertices
-
-
-# TODO: this is a very ugly hack that treats pjit as a normal primitive with a stop_grad
-def pjit_elemental_rule(
-    primals,
-    jaxpr,
-    in_shardings,
-    out_shardings,
-    in_layouts,
-    out_layouts,
-    resource_env,
-    donated_invars,
-    name,
-    keep_unused,
-    inline,
-):
-    # TODO Jamie: How do we handle the gradients here?
-    # jaxpr_cce = cce_core.cce_jaxpr(jaxpr)
-    # print("pjit primals", primals)
-    # print("pjit zero", zero_elementals)
-    # print("pjit jaxpr", jaxpr)
-    # outs, elementals, subgraph, transpose_subgraph, vo_vertices = _trace_subjaxpr(jaxpr.jaxpr, primals, ())
-    # print("### pjit outs", outs)
-    # print("### pjit elementals", elementals)
-    # print("### pjit jaxpr", jaxpr)
-    outputs = jit_p.bind(
-        *primals,
-        jaxpr=jaxpr,
-        in_shardings=(*in_shardings,),
-        out_shardings=(*out_shardings,),
-        in_layouts=(*in_layouts,),
-        out_layouts=(*out_layouts,),
-        resource_env=resource_env,
-        donated_invars=(*donated_invars,),
-        name=name,
-        keep_unused=keep_unused,
-        inline=inline,
-    )
-    # print("pjit val_out:", outputs)
-    out_primals = outputs
-    return out_primals, []
-
-elemental_rules[jit_p] = pjit_elemental_rule
-
-
-# Should work for high-dimensional stuff
-def transpose_elemental_rule(primals, **params):
-    # This primitive is written such that it applies the transpose to the out_dims
-    # of the pre_tensor
-    val_out = lax.transpose_p.bind(*primals, **params)
+def _transpose_elementals(primals, val_out, **params):
     permutation = params["permutation"]
 
     def transpose_transform(pre, iota):
@@ -777,8 +75,8 @@ def transpose_elemental_rule(primals, **params):
 
         return _swap_back_axes(
             SparseTensor(new_out_dims, new_primal_dims, pre.val)
-        )  
-    
+        )
+
     def inverse_transpose_transform(post, iota):
         new_out_dims = post.out_dims
         new_primal_dims = []
@@ -792,27 +90,39 @@ def transpose_elemental_rule(primals, **params):
             if isinstance(new_primal_dims[-1], SparseDimension):
                 other_id = new_primal_dims[-1].other_id
                 new_out_dims[other_id].other_id = counter
-            counter += 1   
-        
+            counter += 1
+
         return _swap_back_axes(
             SparseTensor(new_out_dims, new_primal_dims, post.val)
         )
+
     transform = JacobianTransform(transpose_transform, inverse_transpose_transform)
-    return val_out, [SparseTensor([], [], None, [transform])]
+    return [SparseTensor([], [], None, [transform])]
+
+
+# Should work for high-dimensional stuff
+def transpose_elemental_rule(primals, **params):
+    val_out = lax.transpose_p.bind(*primals, **params)
+    return val_out, _transpose_elementals(primals, val_out, **params)
+
+
+def transpose_elemental_only(primal_out, primals, **params):
+    return _transpose_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.transpose_p] = transpose_elemental_rule
+elemental_only_rules[lax.transpose_p] = transpose_elemental_only
 
 
-def reshape_elemental_rule(primals, **params):
-    val_out = lax.reshape_p.bind(*primals, **params)
+# ---------- reshape ----------
 
+def _reshape_elementals(primals, val_out, **params):
     # TODO: dimensional collapse is not covered here!
     # Implement sparsity-aware version for significant speedup!
 
     def reshape_transform(pre, iota):
         # NOTE array is not correctly materialized sometimes!
-        full_val = pre.dense(iota) 
+        full_val = pre.dense(iota)
         new_shape = []
         new_out_dims = []
         new_primal_dims = []
@@ -849,18 +159,29 @@ def reshape_elemental_rule(primals, **params):
         return SparseTensor(new_out_dims, new_primal_dims, full_val)
 
     transform = JacobianTransform(reshape_transform, inverse_reshape_transform)
-    return val_out, [SparseTensor([], [], None, [transform])]
+    return [SparseTensor([], [], None, [transform])]
+
+
+def reshape_elemental_rule(primals, **params):
+    val_out = lax.reshape_p.bind(*primals, **params)
+    return val_out, _reshape_elementals(primals, val_out, **params)
+
+
+def reshape_elemental_only(primal_out, primals, **params):
+    return _reshape_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.reshape_p] = reshape_elemental_rule
+elemental_only_rules[lax.reshape_p] = reshape_elemental_only
 
 
-def slice_elemental_rule(primals, **params):
+# ---------- slice ----------
+
+def _slice_elementals(primals, val_out, **params):
     # The slice primitive is written in such a way that it just densifies the
     # Jacobian and then slices it. This is not efficient and there might be ways
     # to make this more efficient by checking if sparse dimensions are untouched
     # how this changes the Jacobian.
-    val_out = lax.slice_p.bind(*primals, **params)
 
     def slice_transform(pre, iota):
         start_indices = list(params["start_indices"])
@@ -914,14 +235,25 @@ def slice_elemental_rule(primals, **params):
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
     transform = JacobianTransform(slice_transform, inverse_slice_transform)
-    return val_out, [SparseTensor([], [], None, [transform])]
+    return [SparseTensor([], [], None, [transform])]
+
+
+def slice_elemental_rule(primals, **params):
+    val_out = lax.slice_p.bind(*primals, **params)
+    return val_out, _slice_elementals(primals, val_out, **params)
+
+
+def slice_elemental_only(primal_out, primals, **params):
+    return _slice_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.slice_p] = slice_elemental_rule
+elemental_only_rules[lax.slice_p] = slice_elemental_only
 
 
-def broadcast_elemental_rule(primals, **params):
-    val_out = lax.broadcast_in_dim_p.bind(*primals, **params)
+# ---------- broadcast_in_dim ----------
+
+def _broadcast_elementals(primals, val_out, **params):
     dims = sorted(params["broadcast_dimensions"])
     shape = params["shape"]
 
@@ -934,7 +266,7 @@ def broadcast_elemental_rule(primals, **params):
 
         insert_dims = [i for i, s in enumerate(shape) if i not in dims]
         for dim in insert_dims:
-            val_dim = sum(1 for d in new_out_dims[:dim+counter] 
+            val_dim = sum(1 for d in new_out_dims[:dim+counter]
                           if d.val_dim is not None)
             non_broadcast_dims.append(val_dim)
             new_out_dims.insert(dim, DenseDimension(dim + counter, 1, val_dim))
@@ -1053,16 +385,27 @@ def broadcast_elemental_rule(primals, **params):
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
     transform = JacobianTransform(broadcast_transform, inverse_broadcast_transform)
-    return val_out, [SparseTensor([], [], None, [transform])]
+    return [SparseTensor([], [], None, [transform])]
+
+
+def broadcast_elemental_rule(primals, **params):
+    val_out = lax.broadcast_in_dim_p.bind(*primals, **params)
+    return val_out, _broadcast_elementals(primals, val_out, **params)
+
+
+def broadcast_elemental_only(primal_out, primals, **params):
+    return _broadcast_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.broadcast_in_dim_p] = broadcast_elemental_rule
+elemental_only_rules[lax.broadcast_in_dim_p] = broadcast_elemental_only
 
 
-def squeeze_elemental_rule(primals, **params):
+# ---------- squeeze ----------
+
+def _squeeze_elementals(primals, val_out, **params):
     # NOTE: squeeze is basically just the inverse operation to broadcast_in_dim
     # since it just adds a DenseDimension of size 1
-    val_out = lax.squeeze_p.bind(*primals, **params)
 
     def squeeze_transform(pre, iota):
         dims = sorted(params["dimensions"])
@@ -1075,28 +418,28 @@ def squeeze_elemental_rule(primals, **params):
             idx = [j for j, d in enumerate(new_out_dims) if d.id == id][0]
             val_dim = new_out_dims[idx].val_dim
             squeeze_dims.append(val_dim)
-            
+
             if isinstance(new_out_dims[idx], SparseDimension):
                 def _check(d, id):
                     if isinstance(d, SparseDimension):
                         return d.other_id == id
                     else:
                         return False
-                other_idx = [j for j, d in enumerate(new_primal_dims) 
+                other_idx = [j for j, d in enumerate(new_primal_dims)
                              if _check(d, id)][0]
                 other_dim = new_primal_dims[other_idx]
                 new_primal_dims[other_idx] = DenseDimension(
                     other_dim.id, other_dim.size, None
                 )
-                
+
             del new_out_dims[idx]
             counter += 1
 
         out_ids = [d.id for d in new_out_dims]
-        primal_ids = [d.id for d in new_primal_dims]    
-        new_val_dims = [d.val_dim for d in new_out_dims 
+        primal_ids = [d.id for d in new_primal_dims]
+        new_val_dims = [d.val_dim for d in new_out_dims
                         if d.val_dim is not None]
-        new_val_dims += [d.val_dim for d in new_primal_dims 
+        new_val_dims += [d.val_dim for d in new_primal_dims
                          if isinstance(d, DenseDimension) and d.val_dim is not None]
 
         for d in new_out_dims:
@@ -1112,7 +455,7 @@ def squeeze_elemental_rule(primals, **params):
                 d.val_dim = new_val_dims.index(d.val_dim)
             if isinstance(d, SparseDimension):
                 d.other_id = out_ids.index(d.other_id)
-                    
+
         squeeze_dims = [d for d in squeeze_dims if d is not None]
         if len(squeeze_dims) > 0:
             new_val = jnp.squeeze(pre.val, axis=squeeze_dims)
@@ -1126,7 +469,7 @@ def squeeze_elemental_rule(primals, **params):
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
         for dim in new_dims:
             val_dim = sum(1 for d in new_out_dims if d.val_dim is not None)
-            val_dim += sum(1 for d in new_primal_dims[:dim] 
+            val_dim += sum(1 for d in new_primal_dims[:dim]
                            if d.val_dim is not None and isinstance(d, DenseDimension))
             new_primal_dims.insert(dim, DenseDimension(dim, 1, val_dim))
             for d in new_primal_dims[dim:]:
@@ -1143,19 +486,30 @@ def squeeze_elemental_rule(primals, **params):
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
     transform = JacobianTransform(squeeze_transform, inverse_squeeze_transform)
-    return val_out, [SparseTensor([], [], None, [transform])]
+    return [SparseTensor([], [], None, [transform])]
+
+
+def squeeze_elemental_rule(primals, **params):
+    val_out = lax.squeeze_p.bind(*primals, **params)
+    return val_out, _squeeze_elementals(primals, val_out, **params)
+
+
+def squeeze_elemental_only(primal_out, primals, **params):
+    return _squeeze_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.squeeze_p] = squeeze_elemental_rule
+elemental_only_rules[lax.squeeze_p] = squeeze_elemental_only
 
 
-def concatenate_elemental_rule(primals, **params):
+# ---------- concatenate ----------
+
+def _concatenate_elementals(primals, val_out, **params):
     # This gradient transformation is designed to take an post edge and
     # decompose it into the pre edges. This is done by densifying the post along
     # the respective axes and then use jnp.split to split the tensor.
     # TODO DynamicJaxprTracer is now a unhashable type, so we can no longer use
     # it as a key in the dict. We need to find another way of doing this.
-    val_out = lax.concatenate_p.bind(*primals, **params)
     dim = params["dimension"]
 
     offset = primals[0].shape[dim]
@@ -1193,12 +547,12 @@ def concatenate_elemental_rule(primals, **params):
                 # Materialize it: broadcast pre.val to the primal's slice size (zero-copy),
                 # then pad with zeros in a single lax.pad pass.
                 val_size = _idx - idx
-                new_val_dim = sum(1 for dd in new_out_dims[:dim] 
+                new_val_dim = sum(1 for dd in new_out_dims[:dim]
                                   if dd.val_dim is not None)
 
                 new_val = jnp.expand_dims(pre.val, axis=new_val_dim)
                 new_val = jnp.broadcast_to(
-                    new_val, 
+                    new_val,
                     (*pre.val.shape[:new_val_dim], val_size, *pre.val.shape[new_val_dim:])
                 )
 
@@ -1324,7 +678,7 @@ def concatenate_elemental_rule(primals, **params):
                 zeros = jnp.zeros(_shape, dtype=jnp.float32)
 
                 scatter_dims = lax.ScatterDimensionNumbers(
-                    [out_val_dim, primal_val_dim], [], [out_val_dim, primal_val_dim]
+                    (out_val_dim, primal_val_dim), (), (out_val_dim, primal_val_dim)
                 )
                 new_val = lax.scatter(
                     zeros,
@@ -1443,13 +797,13 @@ def concatenate_elemental_rule(primals, **params):
                     new_val = new_val * sub_iota
 
                     new_val = lax.slice_in_dim(
-                        new_val, *slices[primal], axis=primal_val_dim
+                        new_val, *slices[primal_idx], axis=primal_val_dim
                     )
                     d.size = new_val.shape[d.val_dim]
                     _d.size = new_val.shape[d.val_dim]
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
-    return val_out, [
+    return [
         SparseTensor(
             [],
             [],
@@ -1465,11 +819,22 @@ def concatenate_elemental_rule(primals, **params):
     ]
 
 
+def concatenate_elemental_rule(primals, **params):
+    val_out = lax.concatenate_p.bind(*primals, **params)
+    return val_out, _concatenate_elementals(primals, val_out, **params)
+
+
+def concatenate_elemental_only(primal_out, primals, **params):
+    return _concatenate_elementals(primals, primal_out, **params)
+
+
 elemental_rules[lax.concatenate_p] = concatenate_elemental_rule
+elemental_only_rules[lax.concatenate_p] = concatenate_elemental_only
 
 
-def convert_element_type_rule(primals, **params):
-    val_out = lax.convert_element_type_p.bind(*primals, **params)
+# ---------- convert_element_type ----------
+
+def _convert_element_type_elementals(primals, val_out, **params):
     new_dtype = params["new_dtype"]
 
     def convert_element_type_transform(pre, iota):
@@ -1483,10 +848,21 @@ def convert_element_type_rule(primals, **params):
         new_out_dims = copy.deepcopy(post.out_dims)
         new_primal_dims = copy.deepcopy(post.primal_dims)
         return SparseTensor(new_out_dims, new_primal_dims, new_post_val)
+
     transform = JacobianTransform(
         convert_element_type_transform, inverse_convert_element_type_transform
     )
-    return val_out, [SparseTensor([], [], None, [transform])]
+    return [SparseTensor([], [], None, [transform])]
+
+
+def convert_element_type_rule(primals, **params):
+    val_out = lax.convert_element_type_p.bind(*primals, **params)
+    return val_out, _convert_element_type_elementals(primals, val_out, **params)
+
+
+def convert_element_type_only(primal_out, primals, **params):
+    return _convert_element_type_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.convert_element_type_p] = convert_element_type_rule
+elemental_only_rules[lax.convert_element_type_p] = convert_element_type_only

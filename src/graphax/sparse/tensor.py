@@ -4,14 +4,11 @@ Sparse tensor algebra implementation
 import copy
 from dataclasses import dataclass
 from typing import Callable, Generator, Sequence, Union, Tuple
-import jax
 import jax.lax as lax
 import jax.numpy as jnp
 
-from jax._src.core import ShapedArray
-from jax.tree_util import register_pytree_node_class
 
-from chex import Array
+from jax import Array
 
 from .utils import eye_like_copy, eye_like
 
