@@ -20,22 +20,28 @@ EliminationOrder = Union[Sequence[int], str]
 ComputationalGraph = Dict[core.Var, Dict[core.Var, jnp.ndarray]]
 
 
+_UNSET = object()  # sentinel: distinguishes "thunk not yet run" from "thunk returned None"
+
+
 class LazyEdge:
     """Deferred SparseTensor — evaluated on first read.
 
     Both ``graph[u][v]`` and ``transpose_graph[v][u]`` store the *same*
     ``LazyEdge`` object for a given edge, so the underlying thunk fires at
     most once regardless of which direction reads it first.
+
+    If the thunk returns ``None`` (e.g. for stop_gradient inputs where there
+    is no Jacobian), ``value`` is ``None`` and callers must guard accordingly.
     """
     __slots__ = ("_thunk", "_value")
 
     def __init__(self, thunk):
         self._thunk = thunk
-        self._value = None  # cached after first evaluation
+        self._value = _UNSET  # cached after first evaluation
 
     @property
     def value(self):
-        if self._value is None:
+        if self._value is _UNSET:
             self._value = self._thunk()
         return self._value
 
@@ -210,9 +216,15 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
             continue  # dead or already-eliminated vertex
 
         for out_edge in graph[central_var].keys():
-            post_val = _force(graph[central_var][out_edge]).copy()
+            _post_raw = _force(graph[central_var][out_edge])
+            if _post_raw is None:
+                continue  # no Jacobian for this out-edge; skip
+            post_val = _post_raw.copy()
             for in_edge in transpose_graph[central_var].keys():
-                pre_val = _force(transpose_graph[central_var][in_edge]).copy()
+                _pre_raw = _force(transpose_graph[central_var][in_edge])
+                if _pre_raw is None:
+                    continue  # no Jacobian (e.g. stop_gradient blocks grad); skip
+                pre_val = _pre_raw.copy()
 
                 # TODO implement a process that discards unnecessary edges from the computation
 
@@ -456,16 +468,17 @@ def _build_graph(jaxpr: core.Jaxpr,
                 return _cache[0]
 
             for k, invar in enumerate(invars):
-                g = _get_elementals()
-                if k < len(g) and g[k] is not None:
-                    def _make_thunk(k=k, _get=_get_elementals):
-                        def thunk():
-                            res = _get()
-                            return res[k] if len(res) > 0 else None
-                        return thunk
-                    edge = LazyEdge(_make_thunk())
-                    graph[invar][outvar] = edge
-                    transpose_graph[outvar][invar] = edge
+                def _make_thunk(k=k, _get=_get_elementals):
+                    def thunk():
+                        res = _get()
+                        # Return None when no elemental exists for this invar
+                        # (e.g. stop_gradient, iota, device_put return []).
+                        # _eliminate_vertex guards against None values.
+                        return res[k] if k < len(res) else None
+                    return thunk
+                edge = LazyEdge(_make_thunk())
+                graph[invar][outvar] = edge
+                transpose_graph[outvar][invar] = edge
         else:
             # Fallback path for custom rules not yet split into elemental_only_rules.
             # Call cce once and store elementals directly — no double-dispatch.
@@ -612,7 +625,10 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
         for outvar in jaxpr.outvars:
             if graph.get(invar) is not None:
                 if graph.get(invar).get(outvar) is not None:
-                    tensor = _force(graph[invar][outvar]).copy()
+                    tensor = _force(graph[invar][outvar])
+                    if tensor is None:
+                        continue  # null edge (e.g. stop_gradient); treat as zero
+                    tensor = tensor.copy()
                     if len(tensor.pre_transforms) > 0:
                         for transform in tensor.pre_transforms[::-1]: # Do we need the [::-1] here?
                             tensor = transform.apply_inverse(tensor, iota)
@@ -620,15 +636,19 @@ def vertex_elimination_jaxpr(jaxpr: core.Jaxpr,
                         for transform in tensor.post_transforms:
                             tensor = transform.apply(tensor, iota)
                     graph[invar][outvar] = tensor
-    
-    # Collect outputs  
+
+    # Collect outputs
     if sparse_representation:
         jac_vals = [_force(graph[invar][outvar])
-                    if outvar in list(graph[invar].keys()) else None
+                    if outvar in list(graph[invar].keys())
+                       and _force(graph[invar][outvar]) is not None
+                    else None
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
     else:
         jac_vals = [_force(graph[invar][outvar]).dense(iota)
-                    if outvar in list(graph[invar].keys()) else zeros_like(outvar, invar)
+                    if outvar in list(graph[invar].keys())
+                       and _force(graph[invar][outvar]) is not None
+                    else zeros_like(outvar, invar)
                     for outvar in jaxpr.outvars for invar in jaxpr_invars]
         
     # Restructure Jacobians for more complicated pytrees

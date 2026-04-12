@@ -139,22 +139,24 @@ class SparseTensor:
             else:
                 return 1
 
-        eye_shape = [eye_dim_fn(d) for d in self.dims]
+        # Early returns that don't require materializing the identity tensor.
+        # These checks are resolved at trace time (shapes are static), so
+        # performing them before eye_like_copy avoids emitting dead
+        # broadcast_in_dim equations into the jaxpr.
+        if self.val is not None:
+            if self.val.shape == self.shape:
+                return self.val
+            if not self.out_dims and not self.primal_dims:
+                return self.val
 
+        eye_shape = [eye_dim_fn(d) for d in self.dims]
         eye = eye_like_copy(eye_shape, len(self.out_dims), iota)
-        # If tensor consists only out of Kronecker Delta's, we can just reshape
-        # the eye matrix to the shape of the tensor and return it
-        if self.val is None: 
+
+        # If tensor consists only of Kronecker deltas, return the eye directly.
+        if self.val is None:
             return eye
 
-        if self.val.shape == self.shape:
-            return self.val
-        
-        # Catching some corner cases
-        if not self.out_dims and not self.primal_dims:
-            return self.val
-        
-        shape = _get_fully_materialized_shape(self)   
+        shape = _get_fully_materialized_shape(self)
         val = self.val.reshape(shape) * eye
         
         # Get the tiling for DenseDimensions with `val_dim = None`, i.e. replicating

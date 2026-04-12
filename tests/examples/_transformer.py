@@ -45,8 +45,8 @@ def gelu(x):
 
 ### Multi-head self-attention
 def softmax_attn(q, k, v):
-    a = q @ k.T / jnp.sqrt(k.shape[0])
-    return jnn.softmax(a, axis=0) @ v
+    a = q @ k.T / jnp.sqrt(k.shape[1])
+    return jnn.softmax(a, axis=-1) @ v
 
 def _proj_head(W, X, num_heads: int = 8):
     return jnp.reshape(W @ X, (X.shape[-1], num_heads, -1)) 
@@ -74,11 +74,11 @@ def MLP(X, W1, b1, W2, b2):
 def variance(X, axis=0):
     return jnp.mean(jnp.square(X - jnp.mean(X, axis=axis)), axis=axis)
 
-@jax.vmap
-def layer_norm(X):  
-    mean = jnp.mean(X, axis=0)
-    var = variance(X, axis=0)
-    return (X - mean)/jnp.sqrt(var + 1e-7)
+@partial(jax.vmap, in_axes=1, out_axes=1)
+def layer_norm(x):
+    mean = jnp.mean(x)
+    var = jnp.mean(jnp.square(x - mean))
+    return (x - mean) / jnp.sqrt(var + 1e-7)
 
 
 ### Attention Block
@@ -86,9 +86,8 @@ def multihead_attention_block(X, WQKV, WO, W1, b1, W2, b2):
     out = layer_norm(X)
     out = efficient_multihead_softmax_attention(out, WQKV, WO)
     out = out + X
-    out = layer_norm(out)
-    out = MLP(out, W1, b1, W2, b2)
-    return out + X
+    out = out + MLP(layer_norm(out), W1, b1, W2, b2)
+    return out
 
 
 # Generate weights for attention blocks and MLP layers
