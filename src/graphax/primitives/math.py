@@ -9,7 +9,7 @@ from .base import defelemental, defelemental2
 Array = jax.Array
 
 
-defelemental(lax.neg_p, lambda x: -jnp.ones_like(x))
+defelemental(lax.neg_p, lambda x: -1.0)
 defelemental2(
     lax.abs_p, lambda out, primal: primal / out
 )  # NOTE: not differentiable here!
@@ -48,27 +48,22 @@ def with_type_promotion(fn: Callable) -> Callable:
     return promoted_fn
 
 
-# TODO this can be significantly optimized
-# Currently we are creating a new array of ones everytime. Not smart!
-@with_type_promotion
 def add_elemental_rule(x, y):
-    return (jnp.ones_like(y), jnp.ones_like(x))
+    return (1.0, 1.0)
 
 
-defelemental(lax.add_p, add_elemental_rule)
+defelemental(lax.add_p, with_type_promotion(add_elemental_rule))
 
 
-# TODO this can also be optimized significantly
-@with_type_promotion
 def sub_elemental_rule(x, y):
-    return (jnp.ones_like(y), -jnp.ones_like(x))
+    return (1.0, -1.0)
 
 
-defelemental(lax.sub_p, sub_elemental_rule)
+defelemental(lax.sub_p, with_type_promotion(sub_elemental_rule))
 
 
 @with_type_promotion
-def mul_elemental_rule(x, y):
+def mul_elemental_rule(x, y, **params):
     return (y, x)
 
 

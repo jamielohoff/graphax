@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import jax._src.core as core
 
 from ..sparse.tensor import (
-    DenseDimension,
-    SparseDimension,
+    DenseIndex,
+    SparseIndex,
     SparseTensor,
     _swap_back_axes,
 )
@@ -50,46 +50,60 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
 
     if primal_size == 0:
         # Broadcast singleton
-        out_dims = [DenseDimension(j, e, j) for j, e in enumerate(val_out.aval.shape)]
+        elemental_is_scalar = (
+            type(elemental) is float
+            or (hasattr(elemental, 'size') and elemental.size == 1)
+        )
+        if elemental_is_scalar:
+            if type(elemental) is not float:
+                elemental = jnp.squeeze(elemental)
+            out_dims = [DenseIndex(j, e, None) for j, e in enumerate(val_out.aval.shape)]
+        else:
+            out_dims = [DenseIndex(j, e, j) for j, e in enumerate(val_out.aval.shape)]
         return SparseTensor(out_dims, [], elemental)
 
     if len(primals) == 2 and get_shape(primal) != get_shape(val_out):
         # Broadcasting case
+        elemental_is_scalar = (
+            type(elemental) is float
+            or (hasattr(elemental, 'size') and elemental.size == 1)
+        )
+        if elemental_is_scalar and type(elemental) is not float:
+            elemental = jnp.squeeze(elemental)
         out_dims, primal_dims = [], []
         for j, (os, ps) in enumerate(zip(val_out.aval.shape, primal.aval.shape)):
             n_out, n_primal = len(out_dims), len(primal_dims)
             if ps != os:
-                val_dim = sum(1 for d in out_dims if d.val_dim is not None)
-                out_dims.append(DenseDimension(j, os, val_dim))
+                val_axis = None if elemental_is_scalar else sum(1 for d in out_dims if d.val_axis is not None)
+                out_dims.append(DenseIndex(j, os, val_axis))
                 primal_dims.append(
-                    DenseDimension(n_out + n_primal + 1, ps, None)
+                    DenseIndex(n_out + n_primal + 1, ps, None)
                 )
             else:
-                val_dim = sum(1 for d in out_dims if d.size is not None)
+                val_axis = None if elemental_is_scalar else sum(1 for d in out_dims if d.size is not None)
                 out_dims.append(
-                    SparseDimension(j, os, val_dim, n_out + n_primal + 1)
+                    SparseIndex(j, os, val_axis, n_out + n_primal + 1)
                 )
                 primal_dims.append(
-                    SparseDimension(n_out + n_primal + 1, os, val_dim, j)
+                    SparseIndex(n_out + n_primal + 1, os, val_axis, j)
                 )
             for d in primal_dims[:-1]:
                 d.id += 1
-                if isinstance(d, SparseDimension):
+                if isinstance(d, SparseIndex):
                     out_dims[d.other_id].other_id += 1
         return _swap_back_axes(SparseTensor(out_dims, primal_dims, elemental))
 
-    if len(primals) == 2 and (type(elemental) is float or elemental.size == 1):
+    if type(elemental) is float or (hasattr(elemental, 'size') and elemental.size == 1):
         if type(elemental) is not float:
-            # TODO dirty quick fix that needs to be properly addressed
             elemental = jnp.squeeze(elemental)
-        val_dim_fn = lambda _: None
+        val_axis_fn = lambda _: None
     else:
-        val_dim_fn = lambda j: j
+        val_axis_fn = lambda j: j
 
     shape = primal.aval.shape
-    out_dims = [SparseDimension(j, e, val_dim_fn(j), out_size + j)
+    out_dims = [SparseIndex(j, e, val_axis_fn(j), out_size + j)
                 for j, e in enumerate(shape)]
-    primal_dims = [SparseDimension(out_size + j, e, val_dim_fn(j), j)
+    primal_dims = [SparseIndex(out_size + j, e, val_axis_fn(j), j)
                    for j, e in enumerate(shape)]
     return SparseTensor(out_dims, primal_dims, elemental)
 

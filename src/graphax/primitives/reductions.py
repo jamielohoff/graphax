@@ -4,8 +4,8 @@ import jax.numpy as jnp
 
 from .base import elemental_rules, elemental_only_rules, get_ndim, get_shape
 from ..sparse.tensor import (
-    DenseDimension,
-    SparseDimension,
+    DenseIndex,
+    SparseIndex,
     SparseTensor,
     _swap_back_axes,
 )
@@ -15,11 +15,10 @@ from ..sparse.tensor import (
 
 def _select_elementals(primals, **params):
     size = primals[0].size
-    jacsize = (size, size)
     num_cases = len(primals) - 1
-    new_out_dims = [SparseDimension(0, 1, size, 1)]
-    new_primal_dims = [SparseDimension(1, 1, size, 0)]
-    jacval = jnp.zeros(jacsize)
+    new_out_dims = [SparseIndex(0, 1, size, 1)]
+    new_primal_dims = [SparseIndex(1, 1, size, 0)]
+    jacval = 0.0
     return [SparseTensor(new_out_dims, new_primal_dims, jacval) for _ in range(num_cases)]
 
 
@@ -44,7 +43,7 @@ def _reduce_sum_elementals(primals, val_out_ndim, **params):
     axes = params["axes"]
     if axes is None:
         axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0))
+        new_out_dims.append(DenseIndex(0, 1, 0))
     elif isinstance(axes, int):
         axes = (axes,)
 
@@ -55,13 +54,13 @@ def _reduce_sum_elementals(primals, val_out_ndim, **params):
         if i in axes:
             # idx = len(new_out_dims) + len(new_primal_dims)
             # idx = max(idx, 1) if val_out.ndim > 0 else idx
-            new_primal_dims.append(DenseDimension(l + i, size, count))
+            new_primal_dims.append(DenseIndex(l + i, size, count))
             shape.append(size)
             count += 1
         else:
             ll = len(new_out_dims)
-            new_out_dims.append(SparseDimension(ll, size, None, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, None, ll))
+            new_out_dims.append(SparseIndex(ll, size, None, l + i))
+            new_primal_dims.append(SparseIndex(l + i, size, None, ll))
 
     val = jnp.ones(shape, dtype=jnp.float32)
     return [SparseTensor(new_out_dims, new_primal_dims, val)]
@@ -90,7 +89,7 @@ def _reduce_max_elementals(primals, val_out, **params):
     new_out_dims, new_primal_dims, _shape = [], [], []
     if axes is None:
         axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0, True))
+        new_out_dims.append(DenseIndex(0, 1, 0, True))
     elif isinstance(axes, int):
         axes = (axes,)
 
@@ -100,12 +99,12 @@ def _reduce_max_elementals(primals, val_out, **params):
             shape.insert(i, 1)
             idx = len(new_out_dims) + len(new_primal_dims)
             idx = max(idx, 1) if val_out.ndim > 0 else idx
-            new_primal_dims.append(DenseDimension(idx, size, i))
+            new_primal_dims.append(DenseIndex(idx, size, i))
             _shape.append(size)
         else:
             ll = len(new_out_dims)
-            new_out_dims.append(SparseDimension(ll, size, i, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, i, ll))
+            new_out_dims.append(SparseIndex(ll, size, i, l + i))
+            new_primal_dims.append(SparseIndex(l + i, size, i, ll))
 
     _val_out = val_out.reshape(shape)
     new_val = jnp.where(primal == _val_out, 1, 0)
@@ -138,7 +137,7 @@ def _reduce_min_elementals(primals, val_out, **params):
     new_out_dims, new_primal_dims, _shape = [], [], []
     if axes is None:
         axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0, True))
+        new_out_dims.append(DenseIndex(0, 1, 0, True))
     elif isinstance(axes, int):
         axes = (axes,)
 
@@ -148,13 +147,13 @@ def _reduce_min_elementals(primals, val_out, **params):
         if i in axes:
             idx = len(new_out_dims) + len(new_primal_dims)
             idx = max(idx, 1) if val_out.ndim > 0 else idx
-            new_primal_dims.append(DenseDimension(idx, size, i))
+            new_primal_dims.append(DenseIndex(idx, size, i))
             _shape.append(size)
             count += 1
         else:
             ll = len(new_out_dims)
-            new_out_dims.append(SparseDimension(ll, size, i, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, i, ll))
+            new_out_dims.append(SparseIndex(ll, size, i, l + i))
+            new_primal_dims.append(SparseIndex(l + i, size, i, ll))
 
     new_val = jnp.where(primal == val_out, 1, 0)
     # NOTE: Normalization is important if the minimum is not unique
@@ -192,7 +191,7 @@ def reduce_elemental_rule(primals, agg, **params):
     new_out_dims, new_primal_dims, _shape = [], [], []
     if axes is None:
         axes = tuple(range(primal.ndim))
-        new_out_dims.append(DenseDimension(0, 1, 0))
+        new_out_dims.append(DenseIndex(0, 1, 0))
     elif isinstance(axes, int):
         axes = (axes,)
 
@@ -206,13 +205,13 @@ def reduce_elemental_rule(primals, agg, **params):
                 idx = len(new_out_dims) + len(new_primal_dims)
                 idx = max(idx, 1) if val_out.ndim > 0 else idx
 
-            new_primal_dims.append(DenseDimension(idx, size, i))
+            new_primal_dims.append(DenseIndex(idx, size, i))
             _shape.append(size)
         else:
             ll = len(new_out_dims)
             val = None if "sum" else i
-            new_out_dims.append(SparseDimension(ll, size, val, l + i))
-            new_primal_dims.append(SparseDimension(l + i, size, val, ll))
+            new_out_dims.append(SparseIndex(ll, size, val, l + i))
+            new_primal_dims.append(SparseIndex(l + i, size, val, ll))
 
     if agg == "sum":
         new_val = jnp.ones(_shape, dtype=jnp.float32)

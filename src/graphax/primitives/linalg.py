@@ -2,8 +2,8 @@ import jax.lax as lax
 
 from .base import elemental_rules, elemental_only_rules, get_shape
 from ..sparse.tensor import (
-    DenseDimension,
-    SparseDimension,
+    DenseIndex,
+    SparseIndex,
     SparseTensor,
     _swap_back_axes,
 )
@@ -16,7 +16,7 @@ def _dot_general_elementals(primals, out_shape, **params):
     # Which dimensions of the tensors are contracted
     dimension_numbers = params["dimension_numbers"][0]
     batch_dims = params["dimension_numbers"][1]
-    # NOTE: Batch dimensions are just treated as SparseDimensions.
+    # NOTE: Batch dimensions are just treated as SparseIndex.
 
     lhs_contracting_dims = dimension_numbers[0]
     rhs_contracting_dims = dimension_numbers[1]
@@ -39,34 +39,34 @@ def _dot_general_elementals(primals, out_shape, **params):
         if lid in lhs_contracting_dims:
             # Contracting dimension
             dim = rhs_contracting_dims[i]
-            lhs_primal_dims.append(DenseDimension(other_lid, rhs_shape[dim], dim))
+            lhs_primal_dims.append(DenseIndex(other_lid, rhs_shape[dim], dim))
             i += 1
         else:
             if lid in lhs_batch_dims:
-                # If it is a batch dimension, we need to treat it as a SparseDimension
-                # with a valid `val_dim`
+                # If it is a batch dimension, we need to treat it as a SparseIndex
+                # with a valid `val_axis`
                 dim = rhs_batch_dims[ii]
                 ii += 1
 
                 lhs_out_dims.insert(
                     batch_dim_counter,
-                    SparseDimension(batch_dim_counter, ld, dim, other_lid)
+                    SparseIndex(batch_dim_counter, ld, dim, other_lid)
                 )
                 lhs_primal_dims.append(
-                    SparseDimension(other_lid, ld, dim, batch_dim_counter)
+                    SparseIndex(other_lid, ld, dim, batch_dim_counter)
                 )
                 batch_dim_counter += 1
                 for d in lhs_out_dims[batch_dim_counter:]:
                     d.id += 1
-                    if isinstance(d, SparseDimension):
+                    if isinstance(d, SparseIndex):
                         _d = lhs_primal_dims[d.other_id - num_out_dims]
                         _d.other_id += 1
             else:
-                # Otherwise, we can just set `val_dim` to None
+                # Otherwise, we can just set `val_axis` to None
                 _lid = len(lhs_out_dims)
-                lhs_out_dims.append(SparseDimension(_lid, ld, None, other_lid))
-                lhs_primal_dims.append(SparseDimension(other_lid, ld, None, _lid))
-                rhs_out_dims.append(DenseDimension(len(rhs_out_dims), ld, lid))
+                lhs_out_dims.append(SparseIndex(_lid, ld, None, other_lid))
+                lhs_primal_dims.append(SparseIndex(other_lid, ld, None, _lid))
+                rhs_out_dims.append(DenseIndex(len(rhs_out_dims), ld, lid))
 
     j, jj = 0, 0
     batch_dim_counter = 0
@@ -75,33 +75,33 @@ def _dot_general_elementals(primals, out_shape, **params):
         if rid in rhs_contracting_dims:
             # Contracting dimension
             dim = lhs_contracting_dims[j]
-            rhs_primal_dims.append(DenseDimension(other_rid, lhs_shape[dim], dim))
+            rhs_primal_dims.append(DenseIndex(other_rid, lhs_shape[dim], dim))
             j += 1
         else:
             if rid in rhs_batch_dims:
                 # If it is a batch dimension, we need to treat it as a
-                # SparseDimension with a valid `val_dim`
+                # SparseIndex with a valid `val_axis`
                 dim = lhs_batch_dims[jj]
                 jj += 1
                 rhs_out_dims.insert(
                     batch_dim_counter,
-                    SparseDimension(batch_dim_counter, rd, dim, other_rid)
+                    SparseIndex(batch_dim_counter, rd, dim, other_rid)
                 )
                 rhs_primal_dims.append(
-                    SparseDimension(other_rid, rd, dim, batch_dim_counter)
+                    SparseIndex(other_rid, rd, dim, batch_dim_counter)
                 )
                 batch_dim_counter += 1
                 for d in rhs_out_dims[batch_dim_counter:]:
                     d.id += 1
-                    if isinstance(d, SparseDimension):
+                    if isinstance(d, SparseIndex):
                         _d = rhs_primal_dims[d.other_id - num_out_dims]
                         _d.other_id += 1
             else:
-                # Otherwise, we can just set `val_dim` to None
+                # Otherwise, we can just set `val_axis` to None
                 _rid = len(rhs_out_dims)
-                rhs_out_dims.append(SparseDimension(_rid, rd, None, other_rid))
-                rhs_primal_dims.append(SparseDimension(other_rid, rd, None, _rid))
-                lhs_out_dims.append(DenseDimension(len(lhs_out_dims), rd, rid))
+                rhs_out_dims.append(SparseIndex(_rid, rd, None, other_rid))
+                rhs_primal_dims.append(SparseIndex(other_rid, rd, None, _rid))
+                lhs_out_dims.append(DenseIndex(len(lhs_out_dims), rd, rid))
 
     lhs_tensor = SparseTensor(lhs_out_dims, lhs_primal_dims, rhs)
     rhs_tensor = SparseTensor(rhs_out_dims, rhs_primal_dims, lhs)
