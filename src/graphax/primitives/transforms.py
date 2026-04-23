@@ -333,34 +333,47 @@ def _broadcast_elementals(primals, val_out, **params):
         _rm_dims = []
         counter = 0
         for dim in rm_dims:
-            if new_primal_dims[dim-counter].val_dim is not None:
-                _rm_dims.append(new_primal_dims[dim-counter].val_dim)
-            if isinstance(new_primal_dims[dim-counter], DenseDimension):
-                has_smaller_dims = sum(1 for d in new_primal_dims[:dim+1] if d.val_dim is not None) > 0
-                old_val_dim = new_primal_dims[dim-counter].val_dim
-                del new_primal_dims[dim-counter]
-                for d in new_primal_dims[dim-counter:]:
+            idx = dim - counter
+            if idx < 0 or idx >= len(new_out_dims):
+                counter += 1
+                continue
+            if new_out_dims[idx].val_dim is not None:
+                _rm_dims.append(new_out_dims[idx].val_dim)
+            if isinstance(new_out_dims[idx], DenseDimension):
+                has_smaller_dims = sum(1 for d in new_out_dims[:dim+1] if d.val_dim is not None) > 0
+                old_val_dim = new_out_dims[idx].val_dim
+                n_out_current = len(new_out_dims)
+                del new_out_dims[idx]
+                for d in new_out_dims[idx:]:
                     d.id -= 1
                     if d.val_dim is not None and old_val_dim is not None:
                         d.val_dim -= 1
                     if isinstance(d, SparseDimension):
-                        _d = new_out_dims[d.other_id]
+                        _d = new_primal_dims[d.other_id - n_out_current]
+                        d.other_id -= 1
                         _d.other_id -= 1
-
+                for d in new_primal_dims:
+                    d.id -= 1
+                    if isinstance(d, DenseDimension):
+                        if d.val_dim is not None and old_val_dim is not None:
+                            d.val_dim -= 1
+                    else:
+                        _d = new_out_dims[d.other_id]
+                        if d.other_id < dim - counter:
+                            _d.other_id -= 1
+                counter += 1
             else:
-                id = new_primal_dims[dim - counter].id
-                other_id = new_primal_dims[dim - counter].other_id
-                old_dim = new_out_dims[other_id]
-                new_out_dims[other_id] = DenseDimension(old_dim.id, old_dim.size, None)
+                dim_id = new_out_dims[idx].id
+                other_id = new_out_dims[idx].other_id
+                n_out_current = len(new_out_dims)
+                old_dim = new_primal_dims[other_id - n_out_current]
+                new_primal_dims[other_id - n_out_current] = DenseDimension(old_dim.id, old_dim.size, None)
                 has_smaller_dims = (
-                    sum(
-                        [1 for d in new_primal_dims[: dim + 1] if d.val_dim is not None]
-                    )
-                    > 0
+                    sum(1 for d in new_out_dims[: dim + 1] if d.val_dim is not None) > 0
                 )
-                del new_primal_dims[dim]
+                del new_out_dims[idx]
                 for d in new_out_dims + new_primal_dims:
-                    if d.id > id:
+                    if d.id > dim_id:
                         d.id -= 1
                         if isinstance(d, SparseDimension):
                             _d = new_out_dims[d.other_id]
@@ -371,7 +384,7 @@ def _broadcast_elementals(primals, val_out, **params):
                         else:
                             if d.val_dim is not None and has_smaller_dims:
                                 d.val_dim -= 1
-            counter += 1
+                counter += 1
 
         new_out_dims = tuple(new_out_dims)
         new_primal_dims = tuple(new_primal_dims)
@@ -706,7 +719,10 @@ def _concatenate_elementals(primals, val_out, **params):
         d = None
         if len(new_primal_dims) > 0:
             d = new_primal_dims[dim]
-        if isinstance(d, DenseDimension):
+        if d is None:
+            # post is a pure transform with no primal dims; nothing to slice.
+            new_val = post.val
+        elif isinstance(d, DenseDimension):
             if d.val_dim is not None:
                 new_val = lax.slice_in_dim(
                     post.val, *slices[primal_idx], axis=d.val_dim
@@ -755,59 +771,17 @@ def _concatenate_elementals(primals, val_out, **params):
                 d.size = new_val.shape[d.val_dim]
                 _d.size = new_val.shape[d.val_dim]
             else:
-                # TODO: complete the implementation here at some point
-                raise NotImplementedError("Finish the implementation!")
-                _d = new_out_dims[d.other_id]
-                if d.val_dim is not None:
-                    size = slices[primal_idx][1] - slices[primal_idx][0]
-
-                    out_val_dim = sum(1 for d in new_out_dims[:d.other_id] if d.val_dim is not None)
-                    primal_val_dim = sum(1 for d in new_out_dims if d.val_dim is not None)
-                    primal_val_dim += sum(1 for d in new_primal_dims[:dim] if d.val_dim is not None and type(d) is DenseDimension)
-
-                    new_out_dims[d.other_id] = DenseDimension(_d.id, _d.size, out_val_dim)
-                    new_primal_dims[dim] = DenseDimension(_d.other_id, size, primal_val_dim)
-
-                    # TODO finish this!
-                    for d in new_out_dims[d.other_id :]:
-                        if type(d) is DenseDimension:
-                            if d.val_dim is not None:
-                                d.val_dim += 1
-
-                    # increase the val_dim of all following dimensions
-                    for d in new_primal_dims[dim + 1 :]:
-                        if type(d) is DenseDimension:
-                            if d.val_dim is not None:
-                                d.val_dim += 1
-
-                    # The following piece of code materialized the particular set
-                    # of sparse dimensions related to the concatenation dimension
-                    new_val = _materialize_dimensions(post, [d.id, d.other_id])
-
-                    if iota.shape[0] < d.size or iota.shape[1] < d.size:
-                        sub_iota = jnp.eye(d.size, dtype=jnp.float32)
-                    else:
-                        sub_iota = lax.slice(iota, [0, 0], [d.size, d.size])
-
-                    shape = [1 for _ in range(post.val.ndim)]
-                    shape.insert(out_val_dim, _d.size)
-                    shape.insert(primal_val_dim, size)
-                    sub_iota = sub_iota.reshape(shape)
-
-                    new_val = new_val * sub_iota
-
-                    new_val = lax.slice_in_dim(
-                        new_val, *slices[primal_idx], axis=primal_val_dim
-                    )
-                    d.size = new_val.shape[d.val_dim]
-                    _d.size = new_val.shape[d.val_dim]
+                # d is SparseDimension with val_dim=None:
+                # Both d and its partner _d are implicit Kronecker factors not stored in val.
+                # Just narrow sizes to this primal's slice; no val axis to manipulate.
+                size = slices[primal_idx][1] - slices[primal_idx][0]
+                d.size = size
+                _d.size = size
+                new_val = post.val
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
     return [
-        SparseTensor(
-            [],
-            [],
-            None,
+        SparseTensor([], [], None,
             [
                 JacobianTransform(
                     partial(concatenate_transform, p),
