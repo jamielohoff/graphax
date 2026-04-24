@@ -28,6 +28,9 @@ class DenseIndex:
 #   our tensor at the respective indices.
 #   Also we can have unmatching `size` and `val.shape[d.val_axis]` for SparseIndices
 #   if the size is 1. This is necessary to enable broadcasting operations.
+# NOTE: SparseIndex always have to occur in pairs where one lives in `primal_dims`
+#   while the other one lives in `out_dims`. `id` points to the position in st.dims
+#   while st.other_id points to the position of the partner in st.dims
 @dataclass
 class SparseIndex:
     id: int
@@ -56,12 +59,14 @@ class SparseTensor:
     # TODO: Document pre_transforms and post_transforms. What about addition?
     # NOTE: We always assume that the indices are ordered in ascending order
     
-    def __init__(self, 
-                 out_dims: Sequence[Index],
-                 primal_dims: Sequence[Index],
-                 val: Array,
-                 pre_transforms: Sequence[Callable] = None,
-                 post_transforms: Sequence[Callable] = None) -> None:
+    def __init__(
+        self, 
+        out_dims: Sequence[Index],
+        primal_dims: Sequence[Index],
+        val: Array,
+        pre_transforms: Sequence[Callable] = None,
+        post_transforms: Sequence[Callable] = None
+    ) -> None:
 
         if pre_transforms is None:
             pre_transforms = []
@@ -117,8 +122,6 @@ class SparseTensor:
     def __mul__(self, _tensor):
         return _mul(self, _tensor)
 
-    # TODO: add the case where `val_axis = None` for a `DenseIndex` by
-    #   replicating the tensor `d.size` times using `jnp.tile`.
     def dense(self, iota: Array) -> Array:
         """
         Materializes tensor to actual dense shape.
@@ -169,9 +172,9 @@ class SparseTensor:
 
         tiling = [tile_dim_fn(d) for d in self.dims]
         index_map = eye_like_copy(eye_shape, len(self.out_dims), iota)
-        return jnp.tile(index_map*val, tiling)
+        return _expand_to_shape(index_map*val, tiling) # jnp.tile(index_map*val, tiling)
         
-    def copy(self, val: Array = None):
+    def copy(self, val: Array = None) -> SparseTensor:
         """
         Function that copies the given sparse tensor object entirely except for
         the `val` property which can be replaced by a new value.
@@ -202,7 +205,7 @@ def sparse_tensor_zeros_like(st: SparseTensor) -> SparseTensor:
     return st.copy(jnp.zeros_like(st.val))
     
     
-def _assert_sparse_tensor_consistency(st: SparseTensor):
+def _assert_sparse_tensor_consistency(st: SparseTensor) -> None:
     """
     Function that validates the consistency of a `SparseTensor` object,
     i.e. checks if the `val` property has the correct shape and if the indices
@@ -216,18 +219,22 @@ def _assert_sparse_tensor_consistency(st: SparseTensor):
     """
     # Check if d.size matches val.shape[d.val_axis] for all d
     matching_sparse_sizes = all(
-        (d.val_axis < len(st.val.shape) and (d.size == st.val.shape[d.val_axis] or d.size == 1))
+        (d.val_axis < len(st.val.shape) \
+        and ((st.val.shape[d.val_axis] == d.size or st.val.shape[d.val_axis] == 1) \
+        or d.size == 1))
         if isinstance(d, SparseIndex) and d.val_axis is not None else True
         for d in st.dims
     )
 
     matching_dense_sizes = all(
-        (d.val_axis < len(st.val.shape) and d.size == st.val.shape[d.val_axis])
+        (d.val_axis < len(st.val.shape) \
+        and (st.val.shape[d.val_axis] == d.size or st.val.shape[d.val_axis] == 1))
         if isinstance(d, DenseIndex) and d.val_axis is not None else True
         for d in st.dims
     )
 
-    matching_sizes = matching_sparse_sizes or matching_dense_sizes
+    matching_sizes = matching_sparse_sizes and matching_dense_sizes
+    assert matching_sizes, f"SparseIndex or DenseIndex sizes in {st} do not match!"
         
     unique_out_dims = [d.val_axis for d in st.out_dims if d.val_axis is not None]
     unique_primal_dims = [d.val_axis for d in st.primal_dims if d.val_axis is not None]
@@ -236,11 +243,11 @@ def _assert_sparse_tensor_consistency(st: SparseTensor):
     is_uniqe_primal_dims = len(unique_primal_dims) == len(set(unique_primal_dims))
     has_uniqe_dims = is_uniqe_out_dims and is_uniqe_primal_dims
 
+    assert has_uniqe_dims, f"Duplicate dims in {st} detected!"
+
     # Check if IDs in out_dims and primal_dims match their index positions
-    matching_id = all(
-        od.id == i and pd.id == i + len(st.out_dims)
-        for i, (od, pd) in enumerate(zip(st.out_dims, st.primal_dims))
-    )
+    matching_ids = all(i == d.id for i, d in enumerate(st.dims))
+    assert matching_ids, f"`id` property of some `Index` does not match its position in {st}!"
 
     # Check sparse index pairing consistency
     matching_sparse_ids = all(
@@ -248,14 +255,15 @@ def _assert_sparse_tensor_consistency(st: SparseTensor):
         if isinstance(d, SparseIndex) else True
         for d in st.out_dims
     )
+    assert matching_sparse_ids, f"SparseIndex in {st} has non-matching `id` properties!"
 
-    assert (matching_sizes
-            and has_uniqe_dims
-            and matching_id
-            and matching_sparse_ids
-    ), f"{st} is not self-consistent!"
+    # Check if `val_axis` exceeds bounds
+    ndims = st.val.ndim if isinstance(st.val, Array) else None
+    val_axes_in_bounds = True
+    if ndims is not None:
+        val_axes_in_bounds = all(d.val_axis < ndims if d.val_axis is not None else True for d in st.dims)
 
-    # TODO: check if val is consistent with tensor structure?
+    assert val_axes_in_bounds, f"`val_axes` of {st} not in bounds!"
 
 
 def _get_fully_materialized_shape(st: SparseTensor) -> Sequence[int]:
@@ -327,10 +335,6 @@ def _is_pure_broadcast_mul(lhs: SparseTensor, rhs: SparseTensor) -> bool:
     """
     return all(isinstance(l, SparseIndex) or isinstance(r, SparseIndex)
                for l, r in zip(lhs.primal_dims, rhs.out_dims))
-
-    
-def _get_identity_scale(t: SparseTensor):
-    return 1.0 if t.val is None else t.val
 
 
 def _is_identity_tensor(t: SparseTensor) -> bool:
@@ -448,6 +452,7 @@ def _add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     _assert_sparse_tensor_consistency(res)
     return res
 
+
 def _get_new_val_axis(d: Index, st: SparseTensor) -> int:
     """
     Function that computes the new `val_axis` of a `SparseIndex` object
@@ -466,16 +471,18 @@ def _get_new_val_axis(d: Index, st: SparseTensor) -> int:
     else:
         dims = st.dims[:d.id]
 
-    other_val_axiss = [_d.val_axis for _d in dims if _d.val_axis is not None]
+    other_val_axes = [_d.val_axis for _d in dims if _d.val_axis is not None]
     
-    if other_val_axiss:
-        return max(other_val_axiss)
+    if other_val_axes:
+        return max(other_val_axes)
     else: 
         return None
 
 
-def _get_padding(lhs_out_dims: Sequence[Index], 
-                 rhs_primal_dims: Sequence[Index]) -> Tuple[Sequence[int], Sequence[int]]:
+def _get_padding(
+    lhs_out_dims: Sequence[Index], 
+    rhs_primal_dims: Sequence[Index]
+) -> Tuple[Sequence[int], Sequence[int]]:
     """
     Function that calculates how many indices have to be prepended/appended
     to the `val` property of a `SparseTensor` to make it compatible for broadcast
@@ -501,7 +508,7 @@ def _get_padding(lhs_out_dims: Sequence[Index],
     return lhs_pad, rhs_pad
 
 
-def _assert_broadcast_compatibility(lhs_val: Array, rhs_val: Array):
+def _assert_broadcast_compatibility(lhs_val: Array, rhs_val: Array) -> None:
     """
     Function that checks if two arrays are compatible for broadcast multiplication. 
     
@@ -520,8 +527,10 @@ def _assert_broadcast_compatibility(lhs_val: Array, rhs_val: Array):
     ), f"Shapes {lhs_val.shape} and {rhs_val.shape} not compatible for broadcast multiplication!"
 
 
-def _get_permutation_from_tensor(st: SparseTensor,
-                                 shape: Sequence[int] = None) -> Sequence[int]:
+def _get_permutation_from_tensor(
+    st: SparseTensor,
+    shape: Sequence[int] = None
+) -> Sequence[int]:
     """
     Function that calculates the permutation of the axes of the `val` property
     so as that `st.val.shape` matches `shape`. This is necessary to enable proper
@@ -615,7 +624,10 @@ def _swap_axes(st: SparseTensor) -> SparseTensor:
     return st
 
 
-def _pad_tensors(lhs: SparseTensor, rhs: SparseTensor):
+def _pad_tensors(
+    lhs: SparseTensor,
+    rhs: SparseTensor
+) -> Tuple[SparseTensor, SparseTensor]:
     """
     Function that pads the `val` properties of two `SparseTensor` objects for
     proper broadcast multiplication. It does the following three things:
@@ -786,7 +798,7 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
         if d.val_axis is not None and (isinstance(d, DenseIndex) or d.id < d.other_id):
             permutation[i] = d.val_axis
             i += 1
-     
+    print('perm', permutation)
     st.val = jnp.transpose(st.val, permutation)
     
     i = 0
@@ -804,14 +816,16 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
     return st
 
 
-def _get_output_tensor(lhs: SparseTensor, 
-                        rhs: SparseTensor,
-                        val: Array) -> SparseTensor:
+def _get_output_tensor(
+    lhs: SparseTensor, 
+    rhs: SparseTensor,
+    val: Array
+) -> SparseTensor:
     """Function that computes the `out_dims` and `primal_dims` properties
     of a `SparseTensor` object of a broadcast multiplication of two `SparseTensor`
     objects. This is separated from the actual multiplication and broadcasting
     of the `val` properties to make the code more readable. Also in several
-    corner cases we actually just need to reassign some `val_axiss` and not
+    corner cases we actually just need to reassign some `val_axes` and not
     perform any actual calculations. The approach here also takes care of this
     and saves multiplications by just storing the meta data of some trivial 
     multiplications.
@@ -1005,7 +1019,7 @@ def _replicate_along_axis(st: SparseTensor, ids: Sequence[int]) -> SparseTensor:
                     else:
                         tiling.append(1)
 
-    st.val = jnp.tile(st.val, tiling)
+    st.val = _expand_to_shape(st.val, tiling) # jnp.tile(st.val, tiling)
 
     return st
 
@@ -1056,20 +1070,26 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the dense dot-product multiplication of `lhs.val` and `rhs.val`.
     """
+    print(lhs, rhs)
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
     new_out_dims = lhs.out_dims
-    l = len(lhs.out_dims)
+    l = len(lhs.out_dims) 
+    num_existing_val_dims = sum(1 if od.val_axis is not None else 0 for od in lhs.out_dims)
+
     r = len(rhs.out_dims)
     
     new_primal_dims = []
     i = 0
     for d in rhs.primal_dims:
         if d.val_axis is not None:
-            new_primal_dims.append(DenseIndex(d.id-r+l, d.size, l+i))   
+            new_primal_dims.append(
+                DenseIndex(d.id-r+l, d.size, num_existing_val_dims+i)
+            )   
             i += 1
         else:
             new_primal_dims.append(DenseIndex(d.id-r+l, d.size, None))
+    print(new_primal_dims)
 
     # Handling contracting variables
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
@@ -1101,6 +1121,23 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
 
+def _realign_axes(st: SparseTensor, val_sequeeze_axes: Sequence[int]) -> None:
+    """
+    This function realigns `val_axis` property of all `Index` objects after a
+    SparseIndex with mismatching `size` and val.shape[val_axis] properties has
+    been deleted (the broadcasting case). Supports multiple squeeze axes at once. 
+
+    NOTE: This is an in-place operation.
+    """
+    
+    st.val = jnp.squeeze(st.val, axis=val_sequeeze_axes)
+    
+    for d in st.dims:
+        if d.val_axis is not None:
+            decrements = sum(1 for s in val_sequeeze_axes if s < d.val_axis)
+            d.val_axis -= decrements
+
+
 def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     This is the general case where we have dot-product multiplications as
@@ -1126,7 +1163,34 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     l, r = len(lhs.out_dims), len(rhs.out_dims)
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
-    
+
+    # We squeeze out any val_axis == 1 cases where size > 1
+    # for the SparseIndices and treat them as None,
+    # since they would vanish through the contraction anyways
+    # this makes treatment much easier
+    lsqueeze, rsqueeze = [], []
+    for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
+        if isinstance(ld, SparseIndex) \
+            and ld.val_axis is not None \
+            and lhs.val.shape[ld.val_axis] != ld.size:
+            lsqueeze.append(ld.val_axis)
+            ld.val_axis = None
+            lhs.out_dims[ld.other_id].val_axis = None
+
+        if isinstance(rd, SparseIndex) \
+            and rd.val_axis is not None \
+            and rhs.val.shape[rd.val_axis] != rd.size:
+            rsqueeze.append(rd.val_axis)
+            rd.val_axis = None
+            rhs.primal_dims[rd.other_id+r].val_axis = None
+
+    # We also need to adjust all the other axes pointers when squeezing out the 
+    # broadcast dims
+    if lsqueeze:
+        _realign_axes(lhs, lsqueeze)
+    if rsqueeze:
+        _realign_axes(rhs, rsqueeze)
+
     # We do contractions first    
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
         if isinstance(ld, DenseIndex) and isinstance(rd, DenseIndex):
@@ -1139,7 +1203,9 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                 rreplication_ids.append(rd.id)
             else:
                 lcontracting_axes.append(ld.val_axis)
-                rcontracting_axes.append(rd.val_axis)
+                rcontracting_axes.append(rd.val_axis)   
+
+    print('lhs', lhs)
     
     if lreplication_ids:
         lhs = _replicate_along_axis(lhs, lreplication_ids)
@@ -1159,11 +1225,13 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         if isinstance(ld, SparseIndex) or isinstance(rd, SparseIndex):
             # Here, we have a broadcasting over two tensors that are not just
             # Kronecker deltas
+            # TODO: We do not manage the case where one of the axes is broadcasting!
+            print(ld, rd)
             if ld.val_axis is not None and rd.val_axis is not None \
                 and lhs.val.shape[ld.val_axis] == ld.size \
                 and rhs.val.shape[rd.val_axis] == rd.size:
                     
-                lval_axis = ld.val_axis - sum([1 for lc in lcontracting_axes if lc < ld.val_axis])
+                lval_axis = ld.val_axis - sum(1 for lc in lcontracting_axes if lc < ld.val_axis)
                 pos.append(lval_axis)
                 
                 lbroadcasting_axes.append(ld.val_axis)
@@ -1191,10 +1259,10 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                         val_axis = ld.val_axis
                     elif rd.val_axis is not None:
                         val_axis = rd.val_axis \
-                                - sum([1 for rc in rcontracting_axes if rc < rd.val_axis]) \
+                                - sum(1 for rc in rcontracting_axes if rc < rd.val_axis) \
                                 + lhs.val.ndim \
-                                - sum([1 for lc in lcontracting_axes]) \
-                                - sum([1 for lb in lbroadcasting_axes])
+                                - sum(1 for lc in lcontracting_axes) \
+                                - sum(1 for lb in lbroadcasting_axes)
                     new_out_dims.insert(ld.id, DenseIndex(ld.other_id, ld.size, val_axis))
                 elif isinstance(ld, DenseIndex):
                     # rd sparse
@@ -1202,9 +1270,9 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     if rd.val_axis is not None:
                         # TODO This thing fails in many cases!
                         val_axis = rd.val_axis \
-                                - sum([1 for rc in rcontracting_axes if rc < rd.val_axis]) \
-                                + sum([1 for ld in lhs.primal_dims if ld.val_axis]) \
-                                - sum([1 for lc in lcontracting_axes])
+                                - sum(1 for rc in rcontracting_axes if rc < rd.val_axis) \
+                                + sum(1 for ld in lhs.primal_dims if ld.val_axis) \
+                                - sum(1 for lc in lcontracting_axes)
                     elif ld.val_axis is not None:
                         val_axis = ld.val_axis \
                                 - sum([1 for lc in lcontracting_axes if lc < ld.val_axis])
@@ -1216,9 +1284,9 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                         val_axis = ld.val_axis
                     elif rd.val_axis is not None:
                         val_axis = rd.val_axis \
-                                - sum([1 for rc in rcontracting_axes if rc < rd.val_axis]) \
-                                + lhs.val.ndim - sum([1 for lc in lcontracting_axes]) \
-                                - sum([1 for lb in lbroadcasting_axes])
+                                - sum(1 for rc in rcontracting_axes if rc < rd.val_axis) \
+                                + lhs.val.ndim - sum(1 for lc in lcontracting_axes) \
+                                - sum(1 for lb in lbroadcasting_axes)
                     new_out_dims.insert(ld.other_id, SparseIndex(ld.other_id, ld.size, val_axis, rd.other_id-r+l))
                     new_primal_dims.insert(rd.other_id-r, SparseIndex(rd.other_id-r+l, ld.size, val_axis, ld.other_id))
                     
@@ -1229,9 +1297,13 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     elif rhs.val is None:
         new_val = lhs.val
     else:      
+        print(lbroadcasting_axes, rbroadcasting_axes)
+        print(lcontracting_axes, rcontracting_axes)
         dim_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
         batch_indices = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse these guys here to handle the SparseIndices
         index_numbers = (dim_numbers, batch_indices)
+        print('lhs', lhs.val)
+        print('rhs', rhs.val)
         new_val = lax.dot_general(lhs.val, rhs.val, index_numbers)
 
         permutation = [None]*new_val.ndim
@@ -1244,6 +1316,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     j += 1
                 permutation[j] = i
         new_val = jnp.transpose(new_val, permutation)
+    print('new', new_val)
     
     # Take care of the old indices
     for ld in lhs.out_dims:
@@ -1270,6 +1343,7 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                             or rd.val_axis is not None)])
                 val_axis = rd.val_axis + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseIndex(rd.id-r+l, rd.size, val_axis))
+    print(new_val, new_out_dims, new_primal_dims)
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
 
 
@@ -1306,6 +1380,14 @@ def _materialize_axes(st: SparseTensor, dims: Sequence[int]) -> Array:
     return jnp.expand_dims(st.val, axis=_dims)
 
 
+def _expand_to_shape(val: Array, tiling: Sequence[int]) -> Array:
+    needs_expand = [i for i, f in enumerate(tiling) if f > 1]
+    if not needs_expand:
+        return val
+    final_shape = [s * f for s, f in zip(val.shape, tiling)]
+    return jnp.broadcast_to(val, final_shape)
+
+
 def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     """
     TODO write a function that does the addition of two SparseTensor objects
@@ -1328,6 +1410,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
     count = 0 
+
+    print(lhs, rhs)
                            
     # Check the indexality of the `out_dims` of both tensors
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
@@ -1425,21 +1509,24 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     _ldims = lhs.dims
     _rdims = rhs.dims
-    i = 0
     for ld, rd in zip(_ldims, _rdims):
+        print(ld, rd)
         if isinstance(ld, DenseIndex) \
             and ld.val_axis is None and rd.val_axis is not None:
-            ltiling[i] = ld.size
-            i+= 1
+            print(rd.val_axis)
+            ltiling[rd.val_axis] = ld.size
         elif isinstance(rd, DenseIndex) \
             and rd.val_axis is None and ld.val_axis is not None:
-            rtiling[i] = rd.size
-            i += 1
+            rtiling[ld.val_axis] = rd.size
     
-    if sum(ltiling) > len(ltiling):
-        lhs_val = jnp.tile(lhs_val, ltiling)
-    if sum(rtiling) > len(rtiling):
-        rhs_val = jnp.tile(rhs_val, rtiling)
+    lhs_val = _expand_to_shape(lhs_val, ltiling)
+    rhs_val = _expand_to_shape(rhs_val, rtiling)
+
+    # print(ltiling, rtiling)
+    # if sum(ltiling) > len(ltiling):
+    #     lhs_val = jnp.tile(lhs_val, ltiling)
+    # if sum(rtiling) > len(rtiling):
+    #     rhs_val = jnp.tile(rhs_val, rtiling)
         
     # We need to materialize sparse indices for addition
     if sum(_lshape) > len(_lshape):       
