@@ -296,7 +296,7 @@ class TransformerTest(unittest.TestCase):
     ### Testing transformer architecture
     def test_transformer(self):
         batchsize = 5
-        s = 2
+        s = 1
         num_heads = 8
         seq_len = s*10
         embedding_dim = s*48
@@ -338,38 +338,42 @@ class TransformerTest(unittest.TestCase):
 
         jaxpr = jax.make_jaxpr(transformer)(x, labels, *weights)
 
-        argnums = list(range(2, len(weights) + 2))
+        argnums = list(range(1, len(weights) + 2))
 
         jacve_jaxpr = jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, labels, *weights)
+        print('Cost analysis:')
+        print(len([eqn.primitive for eqn in jaxpr.eqns if eqn.primitive is jax.lax.dot_general_p]))
+        print(len([eqn.primitive for eqn in jaxpr.eqns if eqn.primitive is jax.lax.mul_p]))
         deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
+        costs = deriv_fn.lower(x, labels, *weights).compile().cost_analysis()
+        print('Tflops', costs['flops'] / 1e12)
+        print('GB', sum(val for key, val in costs.items() if "bytes accessed" in key) / 1e9)
         veres = deriv_fn(x, labels, *weights)
 
         jax_jaxpr = jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, labels, *weights)
+        print('Cost analysis')
+        print(len([eqn.primitive for eqn in jax_jaxpr.eqns if eqn.primitive is jax.lax.dot_general_p]))
+        print(len([eqn.primitive for eqn in jaxpr.eqns if eqn.primitive is jax.lax.mul_p]))
         jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
+        costs = jax_deriv_fn.lower(x, labels, *weights).compile().cost_analysis()
+        print('Tflops', costs['flops'] / 1e12)
+        print('GB', sum(val for key, val in costs.items() if "bytes accessed" in key) / 1e9)
         revres = jax_deriv_fn(x, labels, *weights)
 
         for i, (ve, rev) in enumerate(zip(veres, revres)):
             print(f"err{i+1}", jnp.abs(ve - rev).mean())
 
         st = time.time()
-        for i in range(5):
-            out = deriv_fn(x, labels, *weights)
-            jax.block_until_ready(out)
-        print("graphax time", time.time() - st)
-
-        st = time.time()
-        for i in range(5):
+        for i in range(10):
             out = jax_deriv_fn(x, labels, *weights)
             jax.block_until_ready(out)
         print("jax time", time.time() - st)
 
-        from graphax.sparse.utils import count_muls
-
-        num_muls = sum([count_muls(p) for p in jaxpr.jaxpr.eqns])
-        num_dots_jacve = sum([count_muls(p) for p in jacve_jaxpr.jaxpr.eqns])
-        num_dots_jax = sum([count_muls(p) for p in jax_jaxpr.jaxpr.eqns])
-
-        print("graphax muls", num_dots_jacve - num_muls, "jax muls", num_dots_jax - num_muls)
+        st = time.time()
+        for i in range(10):
+            out = deriv_fn(x, labels, *weights)
+            jax.block_until_ready(out)
+        print("graphax time", time.time() - st)
 
         self.assertTrue(tree_allclose(veres, revres))
 
