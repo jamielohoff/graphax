@@ -3,7 +3,7 @@ import unittest
 import jax.numpy as jnp
 import jax.random as jrand
 
-from graphax.sparse.tensor import SparseTensor, DenseDimension
+from graphax.sparse.tensor import SparseTensor, DenseIndex
 
 class TestDenseMul(unittest.TestCase):            
     def test_simple_matmul(self):
@@ -13,8 +13,8 @@ class TestDenseMul(unittest.TestCase):
         y = jrand.normal(ykey, (3, 2))
         res = x @ y
         
-        stx = SparseTensor([DenseDimension(0, 4, 0)], [DenseDimension(1, 3, 1)], x)
-        sty = SparseTensor([DenseDimension(0, 3, 0)], [DenseDimension(1, 2, 1)], y)
+        stx = SparseTensor([DenseIndex(0, 4, 0)], [DenseIndex(1, 3, 1)], x)
+        sty = SparseTensor([DenseIndex(0, 3, 0)], [DenseIndex(1, 2, 1)], y)
         stres = stx * sty
         
         self.assertTrue(jnp.allclose(res, stres.val))
@@ -26,10 +26,10 @@ class TestDenseMul(unittest.TestCase):
         y = jrand.normal(ykey, (5, 2, 2))
         res = jnp.einsum("ijk,klm->ijlm", x, y)
         
-        stx = SparseTensor([DenseDimension(0, 3, 0), DenseDimension(1, 4, 1), ], 
-                        [DenseDimension(2, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 5, 0)], 
-                        [DenseDimension(1, 2, 1), DenseDimension(2, 2, 2)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), DenseIndex(1, 4, 1), ], 
+                        [DenseIndex(2, 5, 2)], x)
+        sty = SparseTensor([DenseIndex(0, 5, 0)], 
+                        [DenseIndex(1, 2, 1), DenseIndex(2, 2, 2)], y)
         stres = stx * sty
         
         self.assertTrue(jnp.allclose(res, stres.val))
@@ -41,10 +41,10 @@ class TestDenseMul(unittest.TestCase):
         y = jrand.normal(ykey, (4, 5, 2))
         res = jnp.einsum("ijk,jkl->il", x, y)
         
-        stx = SparseTensor([DenseDimension(0, 3, 0)], 
-                        [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), DenseDimension(1, 5, 1)], 
-                        [DenseDimension(2, 2, 2)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0)], 
+                        [DenseIndex(1, 4, 1), DenseIndex(2, 5, 2)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), DenseIndex(1, 5, 1)], 
+                        [DenseIndex(2, 2, 2)], y)
         stres = stx * sty
         
         self.assertTrue(jnp.all(res == stres.val))
@@ -58,10 +58,10 @@ class TestDenseMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", x, y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 5, 2), DenseDimension(3, 6, 3)], x)
-        sty = SparseTensor([DenseDimension(0, 5, 0), DenseDimension(1, 6, 1)], 
-                        [DenseDimension(2, 2, 2), DenseDimension(3, 7, 3)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), DenseIndex(1, 4, 1)], 
+                        [DenseIndex(2, 5, 2), DenseIndex(3, 6, 3)], x)
+        sty = SparseTensor([DenseIndex(0, 5, 0), DenseIndex(1, 6, 1)], 
+                        [DenseIndex(2, 2, 2), DenseIndex(3, 7, 3)], y)
         stres = stx * sty
                 
         iota = jnp.eye(15)

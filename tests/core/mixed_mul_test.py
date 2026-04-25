@@ -3,7 +3,7 @@ import unittest
 import jax.numpy as jnp
 import jax.random as jrand
 
-from graphax.sparse.tensor import SparseTensor, SparseDimension, DenseDimension
+from graphax.sparse.tensor import SparseTensor, SparseIndex, DenseIndex
 
 class TestMixedMul(unittest.TestCase): 
     def test_simple_dense_sparse(self):
@@ -13,8 +13,8 @@ class TestMixedMul(unittest.TestCase):
         y = jrand.normal(ykey, (4,))
         res = x @ jnp.diag(y)
         
-        stx = SparseTensor([DenseDimension(0, 3, 0)], [DenseDimension(1, 4, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 4, 0, 1)], [SparseDimension(1, 4, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0)], [DenseIndex(1, 4, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 4, 0, 1)], [SparseIndex(1, 4, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(4)
@@ -27,8 +27,8 @@ class TestMixedMul(unittest.TestCase):
         y = jrand.normal(ykey, (4, 3))
         res = jnp.diag(x) @ y
         
-        stx = SparseTensor([SparseDimension(0, 4, 0, 1)], [SparseDimension(1, 4, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0)], [DenseDimension(1, 3, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 1)], [SparseIndex(1, 4, 0, 0)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0)], [DenseIndex(1, 3, 1)], y)
         stres = stx * sty
         
         iota = jnp.eye(4)
@@ -42,10 +42,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = _x @ _y
             
-        stx = SparseTensor([DenseDimension(0, 3, 0)], 
-                        [DenseDimension(1, 3, 1)], _x)
-        sty = SparseTensor([SparseDimension(0, 3, None, 1)], 
-                        [SparseDimension(1, 3, None, 0)], None)
+        stx = SparseTensor([DenseIndex(0, 3, 0)], 
+                        [DenseIndex(1, 3, 1)], _x)
+        sty = SparseTensor([SparseIndex(0, 3, None, 1)], 
+                        [SparseIndex(1, 3, None, 0)], None)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -59,10 +59,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = _x @ _y
             
-        stx = SparseTensor([SparseDimension(0, 3, None, 1)], 
-                        [SparseDimension(1, 3, None, 0)], None)
-        sty = SparseTensor([DenseDimension(0, 3, 1)], 
-                        [DenseDimension(1, 3, 0)], _y)
+        stx = SparseTensor([SparseIndex(0, 3, None, 1)], 
+                        [SparseIndex(1, 3, None, 0)], None)
+        sty = SparseTensor([DenseIndex(0, 3, 1)], 
+                        [DenseIndex(1, 3, 0)], _y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -82,10 +82,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,jk->ikj", d, y)
         res = jnp.einsum("ijk,klm->ijlm", _x, _y)
                 
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, 1, 2), ], 
-                        [SparseDimension(2, 5, 1, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 2)], 
-                        [DenseDimension(1, 2, 1), SparseDimension(2, 5, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, 1, 2), ], 
+                        [SparseIndex(2, 5, 1, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 2)], 
+                        [DenseIndex(1, 2, 1), SparseIndex(2, 5, 0, 0)], y)
         stres = stx * sty 
         
         iota = jnp.eye(5)
@@ -104,10 +104,10 @@ class TestMixedMul(unittest.TestCase):
         _y = y*d
         res = jnp.einsum("ijk,kl->ijl", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, 1, 2)], 
-                        [SparseDimension(2, 5, 1, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 1)], 
-                        [SparseDimension(1, 5, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, 1, 2)], 
+                        [SparseIndex(2, 5, 1, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 1)], 
+                        [SparseIndex(1, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -127,10 +127,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,jk->ijk", d, y)
         res = jnp.einsum("ij,jkl->ikl", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 5, 0, 1)], 
-                        [SparseDimension(1, 5, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 1)], 
-                        [SparseDimension(1, 5, 0, 0), DenseDimension(2, 2, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 5, 0, 1)], 
+                        [SparseIndex(1, 5, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 1)], 
+                        [SparseIndex(1, 5, 0, 0), DenseIndex(2, 2, 1)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -144,10 +144,10 @@ class TestMixedMul(unittest.TestCase):
         y = jrand.normal(ykey, (3, 4, 2))
         res = jnp.einsum("ijk,jkl->il", _x, y)
         
-        stx = SparseTensor([SparseDimension(0, 3, 0, 1)], 
-                        [SparseDimension(1, 3, 0, 0), DenseDimension(2, 4, 1)], x)
-        sty = SparseTensor([DenseDimension(0, 3, 0), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 2, 2)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 1)], 
+                        [SparseIndex(1, 3, 0, 0), DenseIndex(2, 4, 1)], x)
+        sty = SparseTensor([DenseIndex(0, 3, 0), DenseIndex(1, 4, 1)], 
+                        [DenseIndex(2, 2, 2)], y)
         stres = stx * sty
 
         self.assertTrue(jnp.allclose(res, stres.val))
@@ -160,10 +160,10 @@ class TestMixedMul(unittest.TestCase):
         y = jrand.normal(ykey, (4, 3, 2))
         res = jnp.einsum("ijk,jkl->il", _x, y)
         
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2)], 
-                        [DenseDimension(1, 4, 1), SparseDimension(2, 3, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), DenseDimension(1, 3, 1)], 
-                        [DenseDimension(2, 2, 2)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 2)], 
+                        [DenseIndex(1, 4, 1), SparseIndex(2, 3, 0, 0)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), DenseIndex(1, 3, 1)], 
+                        [DenseIndex(2, 2, 2)], y)
         stres = stx * sty
         
         self.assertTrue(jnp.allclose(res, stres.val))
@@ -177,10 +177,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,jk->ikj", jnp.eye(4), y)
         res = jnp.einsum("ijk,jkl->il", x, _y)
         
-        stx = SparseTensor([DenseDimension(0, 3, 0)], 
-                        [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
-        sty = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 5, 1)], 
-                        [SparseDimension(2, 4, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0)], 
+                        [DenseIndex(1, 4, 1), DenseIndex(2, 5, 2)], x)
+        sty = SparseTensor([SparseIndex(0, 4, 0, 2), DenseIndex(1, 5, 1)], 
+                        [SparseIndex(2, 4, 0, 0)], y)
         stres = stx * sty
         
         self.assertTrue(jnp.allclose(res, stres.val))
@@ -194,10 +194,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(5),)
         res = jnp.einsum("ijk,jkl->il", x, _y)
         
-        stx = SparseTensor([DenseDimension(0, 3, 0)], 
-                        [DenseDimension(1, 4, 1), DenseDimension(2, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 2)], 
-                        [SparseDimension(2, 5, 1, 1)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0)], 
+                        [DenseIndex(1, 4, 1), DenseIndex(2, 5, 2)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), SparseIndex(1, 5, 1, 2)], 
+                        [SparseIndex(2, 5, 1, 1)], y)
         stres = stx * sty
         
         self.assertTrue(jnp.allclose(res, stres.val))
@@ -212,10 +212,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,jk->ijk", y, jnp.eye(3))
         res = jnp.einsum("ijk,jkl->il", _x, _y)
         
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2)], 
-                        [DenseDimension(1, 4, 1), SparseDimension(2, 3, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 3, 1, 2)], 
-                        [SparseDimension(2, 3, 1, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 2)], 
+                        [DenseIndex(1, 4, 1), SparseIndex(2, 3, 0, 0)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), SparseIndex(1, 3, 1, 2)], 
+                        [SparseIndex(2, 3, 1, 1)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -231,10 +231,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,ik->ijk", y, jnp.eye(4))
         res = jnp.einsum("ijk,jkl->il", _x, _y)
         
-        stx = SparseTensor([SparseDimension(0, 4, 0, 1)], 
-                        [SparseDimension(1, 4, 0, 0), DenseDimension(2, 3, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1)], 
-                        [SparseDimension(2, 4, 0, 0)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 1)], 
+                        [SparseIndex(1, 4, 0, 0), DenseIndex(2, 3, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 4, 0, 2), DenseIndex(1, 3, 1)], 
+                        [SparseIndex(2, 4, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -253,10 +253,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ijk,jl->ijlk", y, d)
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
                 
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, None, 3)], 
-                        [DenseDimension(2, 5, 1), SparseDimension(3, 4, None, 1)], x)
-        sty = SparseTensor([DenseDimension(0, 5, 0), SparseDimension(1, 4, 1, 2)], 
-                        [SparseDimension(2, 4, 1, 1), DenseDimension(3, 2, 2)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 4, None, 3)], 
+                        [DenseIndex(2, 5, 1), SparseIndex(3, 4, None, 1)], x)
+        sty = SparseTensor([DenseIndex(0, 5, 0), SparseIndex(1, 4, 1, 2)], 
+                        [SparseIndex(2, 4, 1, 1), DenseIndex(3, 2, 2)], y)
         stres = stx * sty 
         
         iota = jnp.eye(5)
@@ -277,10 +277,10 @@ class TestMixedMul(unittest.TestCase):
         
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, 1, 3)], 
-                        [DenseDimension(2, 5, 2), SparseDimension(3, 4, 1, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 2), DenseDimension(1, 4, 1)], 
-                        [SparseDimension(2, 5, 0, 0), DenseDimension(3, 2, 2)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 4, 1, 3)], 
+                        [DenseIndex(2, 5, 2), SparseIndex(3, 4, 1, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 2), DenseIndex(1, 4, 1)], 
+                        [SparseIndex(2, 5, 0, 0), DenseIndex(3, 2, 2)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -301,10 +301,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 4, 0, 3), DenseDimension(1, 3, 1)], 
-                           [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                           [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 3), DenseIndex(1, 3, 1)], 
+                           [DenseIndex(2, 5, 2), SparseIndex(3, 4, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 3), DenseIndex(1, 4, 1)], 
+                           [DenseIndex(2, 2, 2), SparseIndex(3, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -325,10 +325,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1), ], 
-                        [SparseDimension(2, 4, 0, 0), DenseDimension(3, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 3), ], 
-                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 1, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 2), DenseIndex(1, 3, 1), ], 
+                        [SparseIndex(2, 4, 0, 0), DenseIndex(3, 5, 2)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), SparseIndex(1, 5, 1, 3), ], 
+                        [DenseIndex(2, 2, 2), SparseIndex(3, 5, 1, 1)], y)
         
         stres = stx * sty
         
@@ -350,10 +350,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 4, 0, 2), DenseDimension(1, 3, 1)], 
-                           [SparseDimension(2, 4, 0, 0), DenseDimension(3, 5, 2)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 5, 1, 3)], 
-                           [DenseDimension(2, 2, 2), SparseDimension(3, 5, 1, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 2), DenseIndex(1, 3, 1)], 
+                           [SparseIndex(2, 4, 0, 0), DenseIndex(3, 5, 2)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), SparseIndex(1, 5, 1, 3)], 
+                           [DenseIndex(2, 2, 2), SparseIndex(3, 5, 1, 1)], y)
         
         stres = stx * sty
         
@@ -375,10 +375,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, None, 3)], 
-                        [DenseDimension(2, 5, 1), SparseDimension(3, 4, None, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 4, None, 3)], 
+                        [DenseIndex(2, 5, 1), SparseIndex(3, 4, None, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 3), DenseIndex(1, 4, 1)], 
+                        [DenseIndex(2, 2, 2), SparseIndex(3, 5, 0, 0)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -399,10 +399,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, None, 3)], 
-                        [DenseDimension(2, 5, 1), SparseDimension(3, 4, None, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 4, None, 3)], 
+                        [DenseIndex(2, 5, 1), SparseIndex(3, 4, None, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 3), DenseIndex(1, 4, 1)], 
+                        [DenseIndex(2, 2, 2), SparseIndex(3, 5, 0, 0)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -421,10 +421,10 @@ class TestMixedMul(unittest.TestCase):
         _y = y*d
         res = jnp.einsum("ijk,kl->ijl", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, 1, 2)], 
-                        [SparseDimension(2, 5, 1, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 1)], 
-                        [SparseDimension(1, 5, 0, 0)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, 1, 2)], 
+                        [SparseIndex(2, 5, 1, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 1)], 
+                        [SparseIndex(1, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -444,10 +444,10 @@ class TestMixedMul(unittest.TestCase):
         _y = jnp.einsum("ij,jk->ijk", d, y)
         res = jnp.einsum("ij,jkl->ikl", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 5, 0, 1)], 
-                        [SparseDimension(1, 5, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 1)], 
-                        [SparseDimension(1, 5, 0, 0), DenseDimension(2, 2, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 5, 0, 1)], 
+                        [SparseIndex(1, 5, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 1)], 
+                        [SparseIndex(1, 5, 0, 0), DenseIndex(2, 2, 1)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -469,10 +469,10 @@ class TestMixedMul(unittest.TestCase):
         
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 4, 1, 3)], 
-                        [DenseDimension(2, 5, 2), SparseDimension(3, 4, 1, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 2), DenseDimension(1, 4, 1)], 
-                        [SparseDimension(2, 5, 0, 0), DenseDimension(3, 2, 2)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 4, 1, 3)], 
+                        [DenseIndex(2, 5, 2), SparseIndex(3, 4, 1, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 2), DenseIndex(1, 4, 1)], 
+                        [SparseIndex(2, 5, 0, 0), DenseIndex(3, 2, 2)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -493,10 +493,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 4, 0, 3), DenseDimension(1, 3, 1)], 
-                           [DenseDimension(2, 5, 2), SparseDimension(3, 4, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 3), DenseDimension(1, 4, 1)], 
-                           [DenseDimension(2, 2, 2), SparseDimension(3, 5, 0, 0)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 3), DenseIndex(1, 3, 1)], 
+                           [DenseIndex(2, 5, 2), SparseIndex(3, 4, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 3), DenseIndex(1, 4, 1)], 
+                           [DenseIndex(2, 2, 2), SparseIndex(3, 5, 0, 0)], y)
         stres = stx * sty
         
         iota = jnp.eye(5)
@@ -512,10 +512,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", x, y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), DenseDimension(1, 4, 1)], 
-                        [DenseDimension(2, 5, 2), DenseDimension(3, 6, 3)], x)
-        sty = SparseTensor([DenseDimension(0, 5, 0), DenseDimension(1, 6, 1)], 
-                        [DenseDimension(2, 2, 2), DenseDimension(3, 7, 3)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), DenseIndex(1, 4, 1)], 
+                        [DenseIndex(2, 5, 2), DenseIndex(3, 6, 3)], x)
+        sty = SparseTensor([DenseIndex(0, 5, 0), DenseIndex(1, 6, 1)], 
+                        [DenseIndex(2, 2, 2), DenseIndex(3, 7, 3)], y)
         stres = stx * sty
                 
         iota = jnp.eye(15)
@@ -537,10 +537,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, None, 2), DenseDimension(1, 4, 0)], 
-                        [SparseDimension(2, 3, None, 0), DenseDimension(3, 5, 1)], x)
-        sty = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, None, 3)], 
-                        [DenseDimension(2, 2, 1), SparseDimension(3, 5, None, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, None, 2), DenseIndex(1, 4, 0)], 
+                        [SparseIndex(2, 3, None, 0), DenseIndex(3, 5, 1)], x)
+        sty = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, None, 3)], 
+                        [DenseIndex(2, 2, 1), SparseIndex(3, 5, None, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -560,10 +560,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2), DenseDimension(1, 5, 1)], 
-                        [SparseDimension(2, 3, 0, 0), DenseDimension(3, 4, 2)], x)
-        sty = SparseTensor([SparseDimension(0, 3, None, 3), SparseDimension(1, 4, None, 2)], 
-                        [SparseDimension(2, 4, None, 1), SparseDimension(3, 3, None, 0)], None)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 2), DenseIndex(1, 5, 1)], 
+                        [SparseIndex(2, 3, 0, 0), DenseIndex(3, 4, 2)], x)
+        sty = SparseTensor([SparseIndex(0, 3, None, 3), SparseIndex(1, 4, None, 2)], 
+                        [SparseIndex(2, 4, None, 1), SparseIndex(3, 3, None, 0)], None)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -585,10 +585,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 3), SparseDimension(1, 4, 1, 2)], 
-                        [SparseDimension(2, 4, 1, 1), SparseDimension(3, 3, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 4, None, 2), DenseDimension(1, 3, 0)], 
-                        [SparseDimension(2, 4, None, 0), DenseDimension(3, 5, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 3), SparseIndex(1, 4, 1, 2)], 
+                        [SparseIndex(2, 4, 1, 1), SparseIndex(3, 3, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 4, None, 2), DenseIndex(1, 3, 0)], 
+                        [SparseIndex(2, 4, None, 0), DenseIndex(3, 5, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -610,10 +610,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 3), SparseDimension(1, 4, 1, 2)], 
-                        [SparseDimension(2, 4, 1, 1), SparseDimension(3, 3, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 3, None, 3)], 
-                        [DenseDimension(2, 5, 1), SparseDimension(3, 3, None, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 3), SparseIndex(1, 4, 1, 2)], 
+                        [SparseIndex(2, 4, 1, 1), SparseIndex(3, 3, 0, 0)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), SparseIndex(1, 3, None, 3)], 
+                        [DenseIndex(2, 5, 1), SparseIndex(3, 3, None, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -634,10 +634,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, None, 3)], 
-                        [DenseDimension(2, 4, 1), SparseDimension(3, 5, None, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 4, None, 2), DenseDimension(1, 5, 0)], 
-                        [SparseDimension(2, 4, None, 0), DenseDimension(3, 2, 1)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, None, 3)], 
+                        [DenseIndex(2, 4, 1), SparseIndex(3, 5, None, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 4, None, 2), DenseIndex(1, 5, 0)], 
+                        [SparseIndex(2, 4, None, 0), DenseIndex(3, 2, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -658,10 +658,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, None, 2), DenseDimension(1, 4, 0)], 
-                        [SparseDimension(2, 3, None, 0), DenseDimension(3, 5, 1)], x)
-        sty = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, None, 3)], 
-                        [DenseDimension(2, 2, 1), SparseDimension(3, 5, None, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, None, 2), DenseIndex(1, 4, 0)], 
+                        [SparseIndex(2, 3, None, 0), DenseIndex(3, 5, 1)], x)
+        sty = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, None, 3)], 
+                        [DenseIndex(2, 2, 1), SparseIndex(3, 5, None, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -681,10 +681,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2), DenseDimension(1, 5, 1)], 
-                        [SparseDimension(2, 3, 0, 0), DenseDimension(3, 4, 2)], x)
-        sty = SparseTensor([SparseDimension(0, 3, None, 3), SparseDimension(1, 4, None, 2)], 
-                        [SparseDimension(2, 4, None, 1), SparseDimension(3, 3, None, 0)], None)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 2), DenseIndex(1, 5, 1)], 
+                        [SparseIndex(2, 3, 0, 0), DenseIndex(3, 4, 2)], x)
+        sty = SparseTensor([SparseIndex(0, 3, None, 3), SparseIndex(1, 4, None, 2)], 
+                        [SparseIndex(2, 4, None, 1), SparseIndex(3, 3, None, 0)], None)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -707,10 +707,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 2), DenseDimension(1, 5, 1)], 
-                        [SparseDimension(2, 3, 0, 0), DenseDimension(3, 4, 2)], x)
-        sty = SparseTensor([SparseDimension(0, 3, 0, 3), SparseDimension(1, 4, None, 2)], 
-                        [SparseDimension(2, 4, None, 1), SparseDimension(3, 3, 0, 0)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 2), DenseIndex(1, 5, 1)], 
+                        [SparseIndex(2, 3, 0, 0), DenseIndex(3, 4, 2)], x)
+        sty = SparseTensor([SparseIndex(0, 3, 0, 3), SparseIndex(1, 4, None, 2)], 
+                        [SparseIndex(2, 4, None, 1), SparseIndex(3, 3, 0, 0)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -732,10 +732,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 3), SparseDimension(1, 4, 1, 2)], 
-                        [SparseDimension(2, 4, 1, 1), SparseDimension(3, 3, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 4, None, 2), DenseDimension(1, 3, 0)], 
-                        [SparseDimension(2, 4, None, 0), DenseDimension(3, 5, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 3), SparseIndex(1, 4, 1, 2)], 
+                        [SparseIndex(2, 4, 1, 1), SparseIndex(3, 3, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 4, None, 2), DenseIndex(1, 3, 0)], 
+                        [SparseIndex(2, 4, None, 0), DenseIndex(3, 5, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -758,10 +758,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([SparseDimension(0, 3, 0, 3), SparseDimension(1, 4, 1, 2)], 
-                        [SparseDimension(2, 4, 1, 1), SparseDimension(3, 3, 0, 0)], x)
-        sty = SparseTensor([DenseDimension(0, 4, 0), SparseDimension(1, 3, None, 3)], 
-                        [DenseDimension(2, 5, 1), SparseDimension(3, 3, None, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 3, 0, 3), SparseIndex(1, 4, 1, 2)], 
+                        [SparseIndex(2, 4, 1, 1), SparseIndex(3, 3, 0, 0)], x)
+        sty = SparseTensor([DenseIndex(0, 4, 0), SparseIndex(1, 3, None, 3)], 
+                        [DenseIndex(2, 5, 1), SparseIndex(3, 3, None, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -782,10 +782,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijkl,klmn->ijmn", _x, _y)
             
-        stx = SparseTensor([DenseDimension(0, 3, 0), SparseDimension(1, 5, None, 3)], 
-                        [DenseDimension(2, 4, 1), SparseDimension(3, 5, None, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 4, None, 2), DenseDimension(1, 5, 0)], 
-                        [SparseDimension(2, 4, None, 0), DenseDimension(3, 2, 1)], y)
+        stx = SparseTensor([DenseIndex(0, 3, 0), SparseIndex(1, 5, None, 3)], 
+                        [DenseIndex(2, 4, 1), SparseIndex(3, 5, None, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 4, None, 2), DenseIndex(1, 5, 0)], 
+                        [SparseIndex(2, 4, None, 0), DenseIndex(3, 2, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -804,10 +804,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijk,jklm->ilm", _x, _y)
         
-        stx = SparseTensor([SparseDimension(0, 4, 0, 2)], 
-                        [DenseDimension(1, 5, 1), SparseDimension(2, 4, 0, 0)], x)
-        sty = SparseTensor([SparseDimension(0, 5, 0, 2), DenseDimension(1, 4, 1)], 
-                        [SparseDimension(2, 5, 0, 0), DenseDimension(3, 3, 2)], y)
+        stx = SparseTensor([SparseIndex(0, 4, 0, 2)], 
+                        [DenseIndex(1, 5, 1), SparseIndex(2, 4, 0, 0)], x)
+        sty = SparseTensor([SparseIndex(0, 5, 0, 2), DenseIndex(1, 4, 1)], 
+                        [SparseIndex(2, 5, 0, 0), DenseIndex(3, 3, 2)], y)
         stres = stx * sty
                 
         iota = jnp.eye(5)
@@ -828,10 +828,10 @@ class TestMixedMul(unittest.TestCase):
 
         res = jnp.einsum("ijk,jklm->ilm", _x, _y)
         
-        stx = SparseTensor([SparseDimension(0, 2, 0, 1)], 
-                        [SparseDimension(1, 2, 0, 0), DenseDimension(2, 4, 1)], x)
-        sty = SparseTensor([SparseDimension(0, 2, 0, 2), SparseDimension(1, 4, 1, 3)], 
-                        [SparseDimension(2, 2, 0, 0), SparseDimension(3, 4, 1, 1)], y)
+        stx = SparseTensor([SparseIndex(0, 2, 0, 1)], 
+                        [SparseIndex(1, 2, 0, 0), DenseIndex(2, 4, 1)], x)
+        sty = SparseTensor([SparseIndex(0, 2, 0, 2), SparseIndex(1, 4, 1, 3)], 
+                        [SparseIndex(2, 2, 0, 0), SparseIndex(3, 4, 1, 1)], y)
         stres = stx * sty
                 
         iota = jnp.eye(6)

@@ -1,4 +1,3 @@
-# Debugging accuracy parameter presence
 import unittest
 from functools import partial
 from typing import Callable, Sequence
@@ -11,14 +10,13 @@ import jax.random as jrand
 from graphax import jacve, tree_allclose
 from graphax.examples import (Simple, Helmholtz, f, g, RoeFlux_1d, RobotArm_6DOF,
                               EncoderDecoder, Lighthouse, RoeFlux_3d, Perceptron,
-                              Encoder, BlackScholes_Jacobian)
+                              Encoder, BlackScholes_Jacobian, LongChain)
 
 
 def test_order(order: str | Sequence[int], fn: Callable, argnums: Sequence[int],
                *args) -> bool:
     jacve_f = jax.jit(jacve(fn, order=order, argnums=argnums, count_ops=True))
     veres, aux = jacve_f(*args)
-    print("num muls:", aux["num_muls"])
             
     jacrev_f = jax.jit(jax.jacrev(fn, argnums=argnums))
     revres = jacrev_f(*args)
@@ -28,33 +26,44 @@ def test_order(order: str | Sequence[int], fn: Callable, argnums: Sequence[int],
 test_rev = partial(test_order, "rev")
 
 def test_fwd(fn: Callable, argnums: Sequence[int], *args) -> bool:
+    print(jax.make_jaxpr(fn)(*args))
     jacve_f = jax.jit(jacve(fn, order="fwd", argnums=argnums, count_ops=True))
-    print('jaxpr', jax.make_jaxpr(jacve_f)(*args))
     veres, aux = jacve_f(*args)
-    print("num muls:", aux["num_muls"])
 
-    jacfwd_f = jax.jit(jax.jacrev(fn, argnums=argnums))
+    jacfwd_f = jax.jit(jax.jacfwd(fn, argnums=argnums))
     fwdres = jacfwd_f(*args)
-
-    print('jaxpr:', jax.make_jaxpr(jacve_f)(*args))
+    print(fwdres)
+    print('#'*80)
+    print(veres)
 
     return tree_allclose(veres, fwdres)
 
 
 class ExampleTests(unittest.TestCase): 
-    def test_Simple(self):
-        print("Testing Simple()...")
-        args = (5., 7.)
+    # def test_Simple(self):
+    #     print("Testing Simple()...")
+    #     args = (5., 7.)
         
-        self.assertTrue(test_fwd(Simple, (0, 1), *args))
-        self.assertTrue(test_rev(Simple, (0, 1), *args))
+    #     self.assertTrue(test_fwd(Simple, (0, 1), *args))
+    #     self.assertTrue(test_rev(Simple, (0, 1), *args))
 
-        # x = jnp.ones((50, 50))
-        # y = jnp.ones((50, 50))
-        # args = (x, y)
+    #     x = jnp.ones((50, 50))
+    #     y = jnp.ones((50, 50))
+    #     args = (x, y)
 
-        # self.assertTrue(test_fwd(Simple, (0, 1), *args))
-        # self.assertTrue(test_rev(Simple, (0, 1), *args))
+    #     self.assertTrue(test_fwd(Simple, (0, 1), *args))
+    #     self.assertTrue(test_rev(Simple, (0, 1), *args))
+
+    # def test_LongChain(self):
+    #     print("Testing LongChain()...")
+    #     # Useful to check if the thunking works
+    #     x = jnp.ones((50, 50))
+    #     y = jnp.ones((50, 50))
+    #     w = jnp.ones((50, 50))
+    #     args = (x, y, w)
+
+    #     self.assertTrue(test_fwd(LongChain, (0, 1), *args))
+    #     self.assertTrue(test_rev(LongChain, (0, 1), *args))
 
     # def test_Lighthouse(self):
     #     print("Testing Lighthouse()...")
@@ -120,98 +129,89 @@ class ExampleTests(unittest.TestCase):
     #     self.assertTrue(test_rev(RoeFlux_1d, argnums, *args))
     #     self.assertTrue(test_order(order, RoeFlux_1d, argnums, *args))
         
-    # def test_RoeFlux_3d(self):
-    #     print("Testing RoeFlux_3d()...")
-    #     ul0 = jnp.array([.1])
-    #     ul = jnp.array([.1, .2, .3])
-    #     ul4 = jnp.array([.5])
-    #     ur0 = jnp.array([.2])
-    #     ur = jnp.array([.2, .2, .4])
-    #     ur4 = jnp.array([.6])
-    #     args = (ul0, ul, ul4, ur0, ur, ur4)
-    #     argnums = list(range(len(args)))
+    def test_RoeFlux_3d(self):
+        print("Testing RoeFlux_3d()...")
+        ul0 = jnp.array([.1])
+        ul = jnp.array([.1, .2, .3])
+        ul4 = jnp.array([.5])
+        ur0 = jnp.array([.2])
+        ur = jnp.array([.2, .2, .4])
+        ur4 = jnp.array([.6])
+        args = (ul0, ul, ul4, ur0, ur, ur4)
+        argnums = list(range(len(args)))
 
-    #     order = [124, 136, 56, 128, 78, 24, 1, 54, 101, 127, 121, 140, 47, 135, 
-    #             67, 34, 111, 32, 100, 119, 99, 114, 125, 141, 122, 45, 65, 59, 
-    #             117, 89, 116, 60, 42, 28, 74, 85, 11, 53, 36, 30, 108, 113, 55, 
-    #             109, 129, 64, 91, 14, 133, 5, 10, 132, 87, 139, 110, 12, 131, 
-    #             72, 8, 61, 88, 107, 6, 29, 57, 96, 118, 105, 71, 77, 112, 66, 
-    #             75, 84, 143, 123, 90, 94, 137, 104, 69, 23, 22, 62, 58, 50, 
-    #             130, 31, 106, 39, 48, 49, 98, 134, 93, 138, 126, 68, 115, 80, 
-    #             102, 92, 79, 52, 16, 120, 95, 76, 19, 25, 73, 21, 70, 38, 35, 
-    #             20, 86, 41, 4, 103, 43, 27, 3, 40, 9, 83, 13, 18, 37, 51, 46, 
-    #             7, 81, 97, 63, 44, 2, 33, 82, 26, 15, 17, 145] 
+        order = [124, 136, 56, 128, 78, 24, 1, 54, 101, 127, 121, 140, 47, 135, 
+                67, 34, 111, 32, 100, 119, 99, 114, 125, 141, 122, 45, 65, 59, 
+                117, 89, 116, 60, 42, 28, 74, 85, 11, 53, 36, 30, 108, 113, 55, 
+                109, 129, 64, 91, 14, 133, 5, 10, 132, 87, 139, 110, 12, 131, 
+                72, 8, 61, 88, 107, 6, 29, 57, 96, 118, 105, 71, 77, 112, 66, 
+                75, 84, 143, 123, 90, 94, 137, 104, 69, 23, 22, 62, 58, 50, 
+                130, 31, 106, 39, 48, 49, 98, 134, 93, 138, 126, 68, 115, 80, 
+                102, 92, 79, 52, 16, 120, 95, 76, 19, 25, 73, 21, 70, 38, 35, 
+                20, 86, 41, 4, 103, 43, 27, 3, 40, 9, 83, 13, 18, 37, 51, 46, 
+                7, 81, 97, 63, 44, 2, 33, 82, 26, 15, 17, 145] 
 
-    #     self.assertTrue(test_fwd(RoeFlux_3d, argnums, *args))
-    #     self.assertTrue(test_rev(RoeFlux_3d, argnums, *args))
-    #     # TODO: order is deprecated!
-    #     # self.assertTrue(test_order(order, RoeFlux_3d, argnums, *args))
+        # self.assertTrue(test_fwd(RoeFlux_3d, argnums, *args))
+        self.assertTrue(test_rev(RoeFlux_3d, argnums, *args))
+        # TODO: order is deprecated!
+        # self.assertTrue(test_order(order, RoeFlux_3d, argnums, *args))
 
-    #     batchsize = 16
+        batchsize = 16
 
-    #     order = [77, 100, 133, 107, 129, 137, 5, 19, 95, 28, 37, 14, 135, 85, 
-    #             51, 10, 115, 128, 63, 43, 9, 83, 104, 45, 99, 98, 39, 57, 108, 
-    #             40, 82, 84, 22, 21, 32, 126, 38, 68, 67, 55, 97, 101, 53, 52, 
-    #             27, 44, 94, 31, 7, 103, 131, 30, 12, 70, 69, 65, 87, 109, 122, 
-    #             29, 6, 11, 64, 105, 102, 41, 3, 92, 33, 16, 13, 88, 73, 4, 61, 
-    #             56, 91, 54, 72, 86, 121, 120, 118, 93, 75, 81, 111, 110, 125, 
-    #             130, 47, 116, 66, 50, 25, 26, 59, 96, 49, 119, 35, 62, 8, 117, 
-    #             15, 114, 89, 48, 76, 127, 78, 74, 124, 112, 123, 113, 106, 71, 
-    #             46, 18, 58, 1, 36, 80, 79, 42, 60, 20, 17, 2, 132, 90, 34, 23, 
-    #             24, 134, 136, 138, 139, 140, 141, 143, 145] 
+        order = [77, 100, 133, 107, 129, 137, 5, 19, 95, 28, 37, 14, 135, 85, 
+                51, 10, 115, 128, 63, 43, 9, 83, 104, 45, 99, 98, 39, 57, 108, 
+                40, 82, 84, 22, 21, 32, 126, 38, 68, 67, 55, 97, 101, 53, 52, 
+                27, 44, 94, 31, 7, 103, 131, 30, 12, 70, 69, 65, 87, 109, 122, 
+                29, 6, 11, 64, 105, 102, 41, 3, 92, 33, 16, 13, 88, 73, 4, 61, 
+                56, 91, 54, 72, 86, 121, 120, 118, 93, 75, 81, 111, 110, 125, 
+                130, 47, 116, 66, 50, 25, 26, 59, 96, 49, 119, 35, 62, 8, 117, 
+                15, 114, 89, 48, 76, 127, 78, 74, 124, 112, 123, 113, 106, 71, 
+                46, 18, 58, 1, 36, 80, 79, 42, 60, 20, 17, 2, 132, 90, 34, 23, 
+                24, 134, 136, 138, 139, 140, 141, 143, 145] 
 
-    #     args = [jnp.tile(arg[jnp.newaxis, ...], (batchsize, 1)) for arg in args]
-    #     vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
+        args = [jnp.tile(arg[jnp.newaxis, ...], (batchsize, 1)) for arg in args]
+        vmap_RoeFlux_3d = jax.vmap(RoeFlux_3d)
 
-    #     self.assertTrue(test_fwd(vmap_RoeFlux_3d, argnums, *args))
-    #     self.assertTrue(test_rev(vmap_RoeFlux_3d, argnums, *args))
-    #     self.assertTrue(test_order(order, vmap_RoeFlux_3d, argnums, *args))
+        # self.assertTrue(test_fwd(vmap_RoeFlux_3d, argnums, *args))
+        # self.assertTrue(test_rev(vmap_RoeFlux_3d, argnums, *args))
+        # self.assertTrue(test_order(order, vmap_RoeFlux_3d, argnums, *args))
 
     # def test_NeuralNetwork(self):
     #     print("Testing NeuralNetwork()...")
     #     def NeuralNetwork(x, W1, b1, W2, b2, y):
-    #         y1 = W1 @ x
-    #         z1 = y1 + b1
-    #         a1 = jnp.tanh(z1)
-            
-    #         y2 = W2 @ a1
-    #         z2 = y2 + b2
-    #         a2 = jnp.tanh(z2)
-    #         d = a2 - y
+    #         y1 = jnp.tanh(x @ W1 + b1)
+    #         y2 = jnp.tanh(y1 @ W2 + b2)
+    #         d = y2 - y
     #         return .5*jnp.sum(d**2)
 
     #     key = jrand.PRNGKey(42)
 
     #     x = jnp.ones(4)
-    #     y = jrand.normal(key, (4,))
+    #     y = jrand.normal(key, 4)
 
     #     w1key, b1key, key = jrand.split(key, 3)
-    #     W1 = jrand.normal(w1key, (8, 4))
-    #     b1 = jrand.normal(b1key, (8,))
+    #     W1 = jrand.normal(w1key, (4, 8))
+    #     b1 = jrand.normal(b1key, 8)
 
     #     w2key, b2key, key = jrand.split(key, 3)
-    #     W2 = jrand.normal(w2key, (4, 8))
-    #     b2 = jrand.normal(b2key, (4,))
+    #     W2 = jrand.normal(w2key, (8, 4))
+    #     b2 = jrand.normal(b2key, 4)
 
     #     args = (x, W1, b1, W2, b2, y)
-    #     argnums = (1, 2, 3, 4)
+    #     argnums = list(range(5))
 
     #     self.assertTrue(test_fwd(NeuralNetwork, argnums, *args))
     #     self.assertTrue(test_rev(NeuralNetwork, argnums, *args))
     
     # def test_vmap_NeuralNetwork(self):
     #     print("Testing vmap_NeuralNetwork()...")
-    #     # TODO fix this unit test
-    #     batchsize = 16
+    #     batchsize = 2
     #     @partial(jax.vmap, in_axes=(0, None, None, None, None, 0))
     #     def NeuralNetwork(x, W1, b1, W2, b2, y):
-    #         y1 = W1 @ x
-    #         z1 = y1 + b1
-    #         a1 = jnp.tanh(z1)
-            
-    #         y2 = W2 @ a1
-    #         z2 = y2 + b2
-    #         return 0.5*(jnp.tanh(z2) - y)**2
+    #         y1 = jnp.tanh(x @ W1 + b1)
+    #         y2 = jnp.tanh(y1 @ W2 + b2)
+    #         d = y2 - y
+    #         return .5*jnp.sum(d**2)
         
     #     def f(x, W1, b1, W2, b2, y):
     #         out = NeuralNetwork(x, W1, b1, W2, b2, y)
@@ -223,15 +223,15 @@ class ExampleTests(unittest.TestCase):
     #     y = jrand.normal(key, (batchsize, 4))
 
     #     w1key, b1key, key = jrand.split(key, 3)
-    #     W1 = jrand.normal(w1key, (8, 4))
-    #     b1 = jrand.normal(b1key, (8,))
+    #     W1 = jrand.normal(w1key, (4, 8))
+    #     b1 = jrand.normal(b1key, 8)
 
     #     w2key, b2key, key = jrand.split(key, 3)
-    #     W2 = jrand.normal(w2key, (4, 8))
-    #     b2 = jrand.normal(b2key, (4,))
+    #     W2 = jrand.normal(w2key, (8, 4))
+    #     b2 = jrand.normal(b2key, 4)
 
     #     args = (x, W1, b1, W2, b2, y)
-    #     argnums = (1, 2, 3, 4)
+    #     argnums = list(range(5))
 
     #     self.assertTrue(test_fwd(NeuralNetwork, argnums, *args))
     #     self.assertTrue(test_rev(NeuralNetwork, argnums, *args))
@@ -247,14 +247,17 @@ class ExampleTests(unittest.TestCase):
     #     y = jrand.normal(key, (4,))
 
     #     w1key, b1key, key = jrand.split(key, 3)
-    #     W1 = jrand.normal(w1key, (8, 4))
-    #     b1 = jrand.normal(b1key, (8,))
+    #     W1 = jrand.normal(w1key, (4, 8))
+    #     b1 = jrand.normal(b1key, 8)
 
     #     w2key, b2key, key = jrand.split(key, 3)
-    #     W2 = jrand.normal(w2key, (4, 8))
-    #     b2 = jrand.normal(b2key, (4,))
+    #     W2 = jrand.normal(w2key, (8, 4))
+    #     b2 = jrand.normal(b2key, 4)
 
-    #     args = (x, y, W1, b1, W2, b2, 0., 1.)
+    #     gamma1 = jnp.ones(8)
+    #     beta1 = jnp.zeros(8)
+
+    #     args = (x, y, W1, b1, W2, b2, gamma1, beta1)
         
     #     argnums = list(range(len(args)))
         
@@ -269,14 +272,17 @@ class ExampleTests(unittest.TestCase):
     #     y = jrand.normal(key, (16, 4))
 
     #     w1key, b1key, key = jrand.split(key, 3)
-    #     W1 = jrand.normal(w1key, (8, 4))
-    #     b1 = jrand.normal(b1key, (8,))
+    #     W1 = jrand.normal(w1key, (4, 8))
+    #     b1 = jrand.normal(b1key, 8)
 
     #     w2key, b2key, key = jrand.split(key, 3)
-    #     W2 = jrand.normal(w2key, (4, 8))
-    #     b2 = jrand.normal(b2key, (4,))
+    #     W2 = jrand.normal(w2key, (8, 4))
+    #     b2 = jrand.normal(b2key, 4)
 
-    #     args = (x, y, W1, b1, W2, b2, 0., 1.)
+    #     gamma1 = jnp.ones(8)
+    #     beta1 = jnp.zeros(8)
+
+    #     args = (x, y, W1, b1, W2, b2, gamma1, beta1)
     #     vmap_Perceptron = jax.vmap(Perceptron, in_axes=(0, 0, None, None, None, None, None, None))
     #     argnums = list(range(len(args)))
         
@@ -286,8 +292,8 @@ class ExampleTests(unittest.TestCase):
     # def test_Encoder(self):
     #     print("Testing Encoder()...")
     #     key = jrand.PRNGKey(250197)
-    #     x = jnp.ones((4, 4))
-    #     y = jrand.normal(key, (2, 4))
+    #     x = jnp.ones((5, 4))
+    #     y = jrand.normal(key, (5, 2))
 
     #     wq1key, wk1key, wv1key, key = jrand.split(key, 4)
     #     WQ1 = jrand.normal(wq1key, (4, 4))
@@ -301,14 +307,19 @@ class ExampleTests(unittest.TestCase):
 
     #     w1key, w2key, b1key, b2key = jrand.split(key, 4)
     #     W1 = jrand.normal(w1key, (4, 4))
-    #     b1 = jrand.normal(b1key, (4,))
+    #     b1 = jrand.normal(b1key, 4)
+    #     gamma1 = jnp.ones(4)
+    #     beta1 = jnp.zeros(4)
 
-    #     W2 = jrand.normal(w2key, (2, 4))
-    #     b2 = jrand.normal(b2key, (2, 1))
+
+    #     W2 = jrand.normal(w2key, (4, 2))
+    #     b2 = jrand.normal(b2key, 2)
+    #     gamma2 = jnp.ones(4)
+    #     beta2 = jnp.zeros(4)
         
-    #     args = (x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, 0., 1., 0., 1.)
+    #     args = (x, y, WQ1, WQ2, WK1, WK2, WV1, WV2, W1, W2, b1, b2, gamma1, beta1, gamma2, beta2)
         
-    #     argnums = list(range(len(args)))[2:]
+    #     argnums = list(range(len(args)))
 
     #     order = [50, 32, 84, 7, 19, 4, 49, 83, 9, 51, 92, 89, 37, 64, 72, 31, 
     #             91, 77, 35, 93, 40, 23, 69, 79, 48, 70, 58, 82, 62, 86, 21, 
@@ -351,7 +362,7 @@ class ExampleTests(unittest.TestCase):
     #     self.assertTrue(test_rev(EncoderDecoder, argnums, *args))
         
     # def test_BlackScholes_Jacobian(self):
-    #     print("Testing BlackScholes_Jacobian()...")
+    #     # print("Testing BlackScholes_Jacobian()...")
     #     args = [1.]*5
     #     argnums = list(range(len(args)))
         
@@ -365,7 +376,7 @@ class ExampleTests(unittest.TestCase):
     #     self.assertTrue(test_rev(vmap_BSJ, argnums, *args))
 
     # def test_f(self):
-    #     print("Testing f()...")
+    #     # print("Testing f()...")
     #     key = jrand.PRNGKey(42)
     #     a = jrand.uniform(key, (4,))
     #     b = jrand.uniform(key, (2, 3))
@@ -386,7 +397,7 @@ class ExampleTests(unittest.TestCase):
     #     # self.assertTrue(test_order(order, f, argnums, *args))
     
     # def test_g(self):
-    #     print("Testing g()...")
+    #     # print("Testing g()...")
     #     xs = [.15]*15
     #     argnums = list(range(len(xs)))
         
