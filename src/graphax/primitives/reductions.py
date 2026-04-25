@@ -1,8 +1,15 @@
 
+import numpy as np
 import jax.lax as lax
 import jax.numpy as jnp
 
-from .base import elemental_rules, elemental_only_rules, get_ndim, get_shape
+from .base import (
+    NO_EDGE,
+    elemental_rules,
+    elemental_only_rules,
+    get_ndim,
+    get_shape,
+)
 from ..sparse.tensor import (
     DenseIndex,
     SparseIndex,
@@ -13,22 +20,44 @@ from ..sparse.tensor import (
 
 # ---------- select_n ----------
 
-def _select_elementals(primals, **params):
-    size = primals[0].size
-    num_cases = len(primals) - 1
-    new_out_dims = [SparseIndex(0, 1, size, 1)]
-    new_primal_dims = [SparseIndex(1, 1, size, 0)]
-    jacval = 0.0
-    return [SparseTensor(new_out_dims, new_primal_dims, jacval) for _ in range(num_cases)]
+def _select_elementals(primals, val_out, **params):
+    # select_n(which, *cases) picks element-wise from `cases` indexed by `which`.
+    # Jacobian wrt case_k is the identity masked by (which == k). `which` is
+    # integer-valued and non-differentiable: when it comes from a Var we emit
+    # NO_EDGE so the dispatcher keeps alignment but adds no edge; when it comes
+    # from a Literal the dispatcher already drops its slot, so we omit it here.
+    which, *cases = primals
+    out_shape = get_shape(val_out)
+    out_ndim = len(out_shape)
+    out_dtype = val_out.dtype
+
+    def _masked_identity(mask):
+        if out_ndim == 0:
+            return SparseTensor([], [], mask)
+        out_dims = [
+            SparseIndex(i, s, i, out_ndim + i) for i, s in enumerate(out_shape)
+        ]
+        primal_dims = [
+            SparseIndex(out_ndim + i, s, i, i) for i, s in enumerate(out_shape)
+        ]
+        return SparseTensor(out_dims, primal_dims, mask)
+
+    elementals = []
+    if not isinstance(which, (float, np.ndarray, np.float32)):
+        elementals.append(NO_EDGE)
+    for k, _ in enumerate(cases):
+        mask = (which == k).astype(out_dtype)
+        elementals.append(_masked_identity(mask))
+    return elementals
 
 
 def select_elemental_rule(primals, **params):
     val_out = lax.select_n_p.bind(*primals, **params)
-    return val_out, _select_elementals(primals, **params)
+    return val_out, _select_elementals(primals, val_out, **params)
 
 
 def select_elemental_only(primal_out, primals, **params):
-    return _select_elementals(primals, **params)
+    return _select_elementals(primals, primal_out, **params)
 
 
 elemental_rules[lax.select_n_p] = select_elemental_rule

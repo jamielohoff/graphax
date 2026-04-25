@@ -11,7 +11,7 @@ import jax._src.core as core
 
 from jax._src.pjit import jit_p
 
-from .primitives import elemental_rules, elemental_only_rules, multi_output_elemental_only_rules
+from .primitives import NO_EDGE, elemental_rules, elemental_only_rules, multi_output_elemental_only_rules
 from .sparse.tensor import get_num_muls, get_num_adds, _assert_sparse_tensor_consistency
 from .sparse.utils import zeros_like, get_largest_tensor
 
@@ -51,9 +51,14 @@ def _force(edge):
     return edge.value if isinstance(edge, LazyEdge) else edge
 
 
-def jacve(fun: Callable, order: EliminationOrder, argnums: Sequence[int] = (0,), 
-          has_aux: bool = False, count_ops: bool = False, 
-          sparse_representation: bool = False) -> Callable:
+def jacve(
+        fun: Callable,
+        order: EliminationOrder,
+        argnums: Sequence[int] = (0,), 
+        has_aux: bool = False,
+        count_ops: bool = False, 
+        sparse_representation: bool = False
+    ) -> Callable:
     """
     Jacobian `fun` with respect to the `argnums` using the vertex elimination method.
     The vertex elimination order can be specified as a sequence of integers or 
@@ -179,9 +184,14 @@ def append_pre_transforms(pre, out, iota):
     return out
         
     
-def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph, 
-                      transpose_graph: ComputationalGraph, iota: jnp.ndarray, 
-                      vo_vertices: Set[core.Var]) -> Tuple[int, int]:
+def _eliminate_vertex(
+        vertex: int,
+        jaxpr: core.Jaxpr,
+        graph: ComputationalGraph, 
+        transpose_graph: ComputationalGraph,
+        iota: jnp.ndarray, 
+        vo_vertices: Set[core.Var]
+    ) -> Tuple[int, int]:
     """
     Function that eliminates a vertex from the computational graph.
     everything that has a _val in its name is a `SparseTensor` object
@@ -233,9 +243,10 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
                 _pre_val = pre_val.copy()
                 _post_val = post_val.copy()
 
-                # print(in_edge.count, "->", central_var.count, "->", out_edge.count)
-                # print("Post:", _post_val)
-                # print("Pre:", _pre_val)
+                print(f"{in_edge}-->{central_var}-->{out_edge}")
+                print("post:", _post_val)
+                print("pre:", _pre_val)
+
 
                 if len(pre_val.post_transforms) > 0 and post_val.val is not None:
                     _post_val = unload_post_transforms(post_val, pre_val, iota)
@@ -251,9 +262,7 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
                 elif pre_val.val is not None:
                     edge_outval = _pre_val
                 else:
-                    edge_outval = _post_val
-
-                # print("Edge_outval:", edge_outval)
+                   edge_outval = _post_val
                 # Offload the remain Jacobian transforms to the output tensor
                 if len(post_val.post_transforms) > 0:
                     edge_outval = prepend_post_transforms(post_val, edge_outval, iota)
@@ -261,12 +270,12 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
                 if len(pre_val.pre_transforms) > 0:
                     edge_outval = append_pre_transforms(pre_val, edge_outval, iota)
 
+                _assert_sparse_tensor_consistency(edge_outval)
                 # If there is already an edge between the two vertices, add the new
                 # edge to the existing one
                 if graph.get(in_edge).get(out_edge) is not None:
                     _edge = _force(transpose_graph[out_edge][in_edge])
-                    # print("Edge_outval:", edge_outval)
-                    # print("Edge:", _edge)
+                    _assert_sparse_tensor_consistency(_edge)
 
                     # Offload the remaining Jacobian transforms to the output tensor
                     if len(edge_outval.post_transforms) > 0:
@@ -276,6 +285,8 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
                     if len(edge_outval.pre_transforms) > 0:
                         for transform in edge_outval.pre_transforms[::-1]: # Do we need the [::-1] here?
                             edge_outval = transform.apply_inverse(edge_outval, iota)
+
+                    _assert_sparse_tensor_consistency(edge_outval)
 
                     # Offload the remain Jacobian transforms to the output tensor
                     if len(_edge.post_transforms) > 0:
@@ -287,11 +298,17 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
                             _edge = transform.apply_inverse(_edge, iota)
 
                     _assert_sparse_tensor_consistency(edge_outval)
+
+                    # Check if the computed edge Jacobian shapes actually match
+                    # what we expect
+                    edge_shape = tuple(list(out_edge.aval.shape) \
+                                       + list(in_edge.aval.shape))
+                    assert edge_shape == edge_outval.shape, f'Computed edge shape {edge_outval.shape} does not match expected shape {edge_shape}!'
+                    assert edge_shape == _edge.shape, f'Existing edge shape {_edge.shape} does not match expected shape {edge_shape}!'
                     edge_outval += _edge
                     num_add += get_num_adds(edge_outval, _edge)
 
-                _assert_sparse_tensor_consistency(edge_outval)
-                # print("Edge_outval:", edge_outval)
+                print("Edge_outval:", edge_outval)
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
 
@@ -310,9 +327,11 @@ def _eliminate_vertex(vertex: int, jaxpr: core.Jaxpr, graph: ComputationalGraph,
     return num_mul, num_add
 
 
-def _checkify_order(order: EliminationOrder, 
-                    jaxpr: core.Jaxpr, 
-                    vo_vertices: Set[core.Var]) -> EliminationOrder:
+def _checkify_order(
+        order: EliminationOrder, 
+        jaxpr: core.Jaxpr, 
+        vo_vertices: Set[core.Var]
+    ) -> EliminationOrder:
     """
     Function that checks if the supplied elimination order is valid for the 
     given computational graph/jaxpr. In the case of an elimination order that
@@ -334,10 +353,10 @@ def _checkify_order(order: EliminationOrder,
         return any(
             ov not in jaxpr.outvars or ov in vo_vertices
             for ov in eqn.outvars
-            if type(ov) is core.Var
+            if isinstance(ov, core.Var)
         )
 
-    if type(order) is str:
+    if isinstance(order, str):
         if order == "forward" or order == "fwd":
             return [i for i, eqn in enumerate(jaxpr.eqns, start=1)
                     if _should_eliminate(eqn)]
@@ -357,9 +376,10 @@ def _checkify_order(order: EliminationOrder,
     return order
 
 
-def _build_graph(jaxpr: core.Jaxpr, 
-                args: Sequence[jnp.ndarray], 
-                consts: Sequence[core.Literal]
+def _build_graph(
+        jaxpr: core.Jaxpr, 
+        args: Sequence[jnp.ndarray], 
+        consts: Sequence[core.Literal]
     ) -> Tuple[ComputationalGraph, ComputationalGraph, Set[core.Var]]:
     """
     This function performs the `tracing` of the jaxpression into a computational
@@ -396,7 +416,7 @@ def _build_graph(jaxpr: core.Jaxpr,
 
     # Reads variable and corresponding traced shaped array
     def read(var):
-        if type(var) is core.Literal:
+        if isinstance(var, core.Literal):
             return var.val
         return env[var]
 
@@ -417,9 +437,6 @@ def _build_graph(jaxpr: core.Jaxpr,
             if invar in jaxpr._outvars:
                 vo_vertices.add(invar)
 
-        # print("eqn:", eqn)
-        # print("invars", eqn.invars)
-        # print("outvars", eqn.outvars)
         invals = safe_map(read, eqn.invars)
 
         if (eqn.primitive not in elemental_rules
@@ -428,7 +445,7 @@ def _build_graph(jaxpr: core.Jaxpr,
             raise NotImplementedError(f"{eqn.primitive} does not have registered elemental partial.")
 
         invals_snapshot = list(invals)
-        invars = [invar for invar in eqn.invars if type(invar) is core.Var]
+        invars = [invar for invar in eqn.invars if isinstance(invar, core.Var)]
 
         if eqn.primitive in multi_output_elemental_only_rules:
             # Multi-output path: primitive produces multiple output variables.
@@ -499,10 +516,12 @@ def _build_graph(jaxpr: core.Jaxpr,
     return env, graph, transpose_graph, vo_vertices
 
 
-def _prune_graph(graph: ComputationalGraph, 
-                transpose_graph: ComputationalGraph, 
-                jaxpr: core.Jaxpr, 
-                argnums: Sequence[int]) -> None:
+def _prune_graph(
+        graph: ComputationalGraph, 
+        transpose_graph: ComputationalGraph, 
+        jaxpr: core.Jaxpr, 
+        argnums: Sequence[int]
+    ) -> None:
     """
     Function that prunes a given computational graph based on the argnums we
     give it, i.e. for argnums that we do not differentiate for we can just ignore
@@ -511,58 +530,63 @@ def _prune_graph(graph: ComputationalGraph,
     input or no output edges. These typically arise from a lax.stop_grad operation
     somewhere in the function we want to differentiate. These dead vertices and
     all associated edges are deleted as well.
-
-    Args:
-        graph (ComputationalGraph): The computational graph representation of the
-                                    jaxpr.
-        transpose_graph (ComputationalGraph): The transpose computational graph
-                                            representation of the jaxpr.
-        jaxpr (core.Jaxpr): The jaxpr we want to differentiate.
-        argnums (Sequence[int]): The argument numbers we want to differentiate
-                                with respect to.
-
-    TODO: Implement some unit tests for pruning. Maybe disable it for now?
     """
+    argnums_set = set(argnums)
+    # Remove non-differentiated inputs from the graph.
+    # Only prune invars that are actual user arguments (indexed by argnums),
+    # not constvars which are stored separately in jaxpr.constvars.
     for i, invar in enumerate(jaxpr.invars):
-        if i not in argnums:
-            for out_edge in graph[invar].keys():
-                del transpose_graph[out_edge][invar]
-            del graph[invar]
+        if i not in argnums_set:
+            if invar in graph:
+                for out_edge in list(graph[invar].keys()):
+                    if invar in transpose_graph[out_edge]:
+                        del transpose_graph[out_edge][invar]
+                del graph[invar]
+            if invar in transpose_graph:
+                del transpose_graph[invar]
 
+    # Iteratively remove dead intermediate vertices (no incoming or outgoing edges).
+    # Uses .get() to avoid auto-creating entries via defaultdict.
     outvars_set = set(jaxpr.outvars)
-    already_deleted = set()
-    has_dead_vertices = True
-    while has_dead_vertices:
+    changed = True
+    while changed:
+        changed = False
         to_delete = []
         for eqn in jaxpr.eqns:
             for ov in eqn.outvars:
-                if (type(ov) is core.Var
+                if (isinstance(ov, core.Var)
                         and ov not in outvars_set
-                        and ov not in already_deleted):
-                    if len(graph[ov]) == 0 or len(transpose_graph[ov]) == 0:
+                        and (ov in graph or ov in transpose_graph)):
+                    if len(graph.get(ov, {})) == 0 or len(transpose_graph.get(ov, {})) == 0:
                         to_delete.append(ov)
 
         if to_delete:
             for ov in to_delete:
-                for in_edge in transpose_graph[ov].keys():
-                    del graph[in_edge][ov]
-                for out_edge in graph[ov].keys():
-                    del transpose_graph[out_edge][ov]
-                del graph[ov]
-                del transpose_graph[ov]
-            already_deleted.update(to_delete)
-        else:
-            has_dead_vertices = False
+                # Remove edges pointing to ov from graph
+                if ov in transpose_graph:
+                    for in_edge in list(transpose_graph[ov].keys()):
+                        if ov in graph.get(in_edge, {}):
+                            del graph[in_edge][ov]
+                # Remove edges from ov in transpose_graph
+                if ov in graph:
+                    for out_edge in list(graph[ov].keys()):
+                        if ov in transpose_graph.get(out_edge, {}):
+                            del transpose_graph[out_edge][ov]
+                # Remove the vertex itself
+                graph.pop(ov, None)
+                transpose_graph.pop(ov, None)
+                changed = True
 
 
-def vertex_elimination_jaxpr(jaxpr: core.Jaxpr, 
-                            order: Union[Sequence[int], str], 
-                            consts: Sequence[core.Literal], 
-                            *args, 
-                            has_aux: bool = False,
-                            argnums: Sequence[int] = (0,),
-                            count_ops: bool = False,
-                            sparse_representation: bool = False
+def vertex_elimination_jaxpr(
+        jaxpr: core.Jaxpr, 
+        order: Union[Sequence[int], str], 
+        consts: Sequence[core.Literal], 
+        *args, 
+        has_aux: bool = False,
+        argnums: Sequence[int] = (0,),
+        count_ops: bool = False,
+        sparse_representation: bool = False
     ) -> Sequence[Sequence[jnp.ndarray]]:    
     """
     Function that generates a new vertex elimination jaxpression based on the 
