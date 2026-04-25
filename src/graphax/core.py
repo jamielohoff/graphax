@@ -532,22 +532,38 @@ def _prune_graph(
     all associated edges are deleted as well.
     """
     argnums_set = set(argnums)
-    # Remove non-differentiated inputs from the graph.
+    # Identify non-differentiated input invars for pruning.
     # Only prune invars that are actual user arguments (indexed by argnums),
     # not constvars which are stored separately in jaxpr.constvars.
+    pruned_invars = set()
     for i, invar in enumerate(jaxpr.invars):
         if i not in argnums_set:
-            if invar in graph:
-                for out_edge in list(graph[invar].keys()):
-                    if invar in transpose_graph[out_edge]:
-                        del transpose_graph[out_edge][invar]
-                del graph[invar]
-            if invar in transpose_graph:
-                del transpose_graph[invar]
+            pruned_invars.add(invar)
+
+    # Remove pruned inputs from ALL vertices' edge dictionaries in both
+    # graph and transpose_graph to maintain the invariant:
+    #   graph[u][v] == transpose_graph[v][u]
+    # This must be done before vertex elimination, otherwise stale edges
+    # pointing to pruned inputs can cause KeyError or incorrect Jacobians.
+    for invar in pruned_invars:
+        # Remove edges from pruned invar -> other vertices in graph
+        graph.pop(invar, None)
+        # Remove edges from other vertices -> pruned invar in transpose_graph
+        transpose_graph.pop(invar, None)
+        # Remove references to the pruned invar from all other vertices' edges.
+        # Use .get() to avoid defaultdict auto-creation.
+        for outvar in list(transpose_graph.keys()):
+            if invar in transpose_graph.get(outvar, {}):
+                del transpose_graph[outvar][invar]
+        for inother in list(graph.keys()):
+            if invar in graph.get(inother, {}):
+                del graph[inother][invar]
 
     # Iteratively remove dead intermediate vertices (no incoming or outgoing edges).
-    # Uses .get() to avoid auto-creating entries via defaultdict.
+    # Use regular dict .get() to avoid defaultdict auto-creation.
+    # Track deleted vertices in a set to avoid re-checking.
     outvars_set = set(jaxpr.outvars)
+    deleted = set()
     changed = True
     while changed:
         changed = False
@@ -556,22 +572,20 @@ def _prune_graph(
             for ov in eqn.outvars:
                 if (isinstance(ov, core.Var)
                         and ov not in outvars_set
+                        and ov not in deleted
                         and (ov in graph or ov in transpose_graph)):
                     if len(graph.get(ov, {})) == 0 or len(transpose_graph.get(ov, {})) == 0:
                         to_delete.append(ov)
 
         if to_delete:
             for ov in to_delete:
+                deleted.add(ov)
                 # Remove edges pointing to ov from graph
-                if ov in transpose_graph:
-                    for in_edge in list(transpose_graph[ov].keys()):
-                        if ov in graph.get(in_edge, {}):
-                            del graph[in_edge][ov]
+                for in_edge in list(transpose_graph.get(ov, {}).keys()):
+                    graph[in_edge].pop(ov, None)
                 # Remove edges from ov in transpose_graph
-                if ov in graph:
-                    for out_edge in list(graph[ov].keys()):
-                        if ov in transpose_graph.get(out_edge, {}):
-                            del transpose_graph[out_edge][ov]
+                for out_edge in list(graph.get(ov, {}).keys()):
+                    transpose_graph[out_edge].pop(ov, None)
                 # Remove the vertex itself
                 graph.pop(ov, None)
                 transpose_graph.pop(ov, None)

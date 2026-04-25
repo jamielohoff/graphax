@@ -362,7 +362,7 @@ class ExampleTests(unittest.TestCase):
     #     self.assertTrue(test_rev(EncoderDecoder, argnums, *args))
         
     # def test_BlackScholes_Jacobian(self):
-    #     # print("Testing BlackScholes_Jacobian()...")
+    #     print("Testing BlackScholes_Jacobian()...")
     #     args = [1.]*5
     #     argnums = list(range(len(args)))
         
@@ -376,7 +376,7 @@ class ExampleTests(unittest.TestCase):
     #     self.assertTrue(test_rev(vmap_BSJ, argnums, *args))
 
     # def test_f(self):
-    #     # print("Testing f()...")
+    #     print("Testing f()...")
     #     key = jrand.PRNGKey(42)
     #     a = jrand.uniform(key, (4,))
     #     b = jrand.uniform(key, (2, 3))
@@ -397,7 +397,7 @@ class ExampleTests(unittest.TestCase):
     #     # self.assertTrue(test_order(order, f, argnums, *args))
     
     # def test_g(self):
-    #     # print("Testing g()...")
+    #     print("Testing g()...")
     #     xs = [.15]*15
     #     argnums = list(range(len(xs)))
         

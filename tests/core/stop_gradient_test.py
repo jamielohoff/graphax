@@ -38,8 +38,8 @@ class TestStopGradient(unittest.TestCase):
 
         # Explicitly check that gradient wrt x is zero
         self.assertTrue(jnp.all(veres[0] == 0.0))
-        # Check that gradient wrt y is x
-        self.assertTrue(jnp.all(veres[1] == x))
+        # Jacobian wrt y is diag(x): df_i/dy_j = x_i if i==j else 0
+        self.assertTrue(jnp.all(jnp.diag(veres[1]) == x))
 
     def test_stop_gradient_chain(self):
         """Verify stop_gradient works in a chain of operations."""
@@ -60,12 +60,12 @@ class TestStopGradient(unittest.TestCase):
 
         self.assertTrue(tree_allclose(veres, revres))
 
-        # grad wrt x should be 0
+        # Jacobian wrt x should be 0
         self.assertTrue(jnp.all(veres[0] == 0.0))
-        # grad wrt y should be x * z
-        self.assertTrue(jnp.all(veres[1] == x * z))
-        # grad wrt z should be x * y
-        self.assertTrue(jnp.all(veres[2] == x * y))
+        # Jacobian wrt y is diag(x * z)
+        self.assertTrue(jnp.all(jnp.diag(veres[1]) == x * z))
+        # Jacobian wrt z is diag(x * y)
+        self.assertTrue(jnp.all(jnp.diag(veres[2]) == x * y))
 
 
 if __name__ == "__main__":
