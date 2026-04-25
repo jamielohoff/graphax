@@ -226,7 +226,7 @@ def _slice_elementals(primals, val_out, **params):
 
         zeros = jnp.zeros(new_shape)
         dims = tuple(range(zeros.ndim))
-        scatter_dims = lax.ScatterIndexNumbers(dims, (), dims)
+        scatter_dims = lax.ScatterDimensionNumbers(dims, (), dims)
         _scatter_indices = jnp.array(start_indices, dtype=jnp.int32)
         scatter_indices = jnp.concatenate([scatter_zeros, _scatter_indices])
 
@@ -337,22 +337,22 @@ def _squeeze_elementals(primals, val_out, **params):
 
         out_ids = [d.id for d in new_out_dims]
         primal_ids = [d.id for d in new_primal_dims]
-        new_val_axiss = [d.val_axis for d in new_out_dims
+        new_val_axes = [d.val_axis for d in new_out_dims
                         if d.val_axis is not None]
-        new_val_axiss += [d.val_axis for d in new_primal_dims
+        new_val_axes += [d.val_axis for d in new_primal_dims
                          if isinstance(d, DenseIndex) and d.val_axis is not None]
 
         for d in new_out_dims:
             d.id = out_ids.index(d.id)
             if d.val_axis is not None:
-                d.val_axis = new_val_axiss.index(d.val_axis)
+                d.val_axis = new_val_axes.index(d.val_axis)
             if isinstance(d, SparseIndex):
                 d.other_id = len(new_out_dims) + primal_ids.index(d.other_id)
 
         for d in new_primal_dims:
             d.id = len(new_out_dims) + primal_ids.index(d.id)
             if d.val_axis is not None:
-                d.val_axis = new_val_axiss.index(d.val_axis)
+                d.val_axis = new_val_axes.index(d.val_axis)
             if isinstance(d, SparseIndex):
                 d.other_id = out_ids.index(d.other_id)
 
@@ -462,7 +462,7 @@ def _concatenate_elementals(primals, val_out, **params):
                     new_val, jnp.zeros((), dtype=new_val.dtype), pad_config
                 )
 
-                # Inserting a new axis shifts all subsequent val_axiss up by 1
+                # Inserting a new axis shifts all subsequent val_axes up by 1
                 for _dim in new_out_dims[dim + 1:]:
                     if _dim.val_axis is not None:
                         _dim.val_axis += 1
@@ -517,7 +517,7 @@ def _concatenate_elementals(primals, val_out, **params):
                 update_window_dims = tuple(range(len(_shape)))
                 scatter_dims_to_operand_dims = tuple(range(len(_shape)))
 
-                scatter_dims = lax.ScatterIndexNumbers(
+                scatter_dims = lax.ScatterDimensionNumbers(
                     update_window_dims, (), scatter_dims_to_operand_dims
                 )
                 new_val = lax.scatter(
@@ -577,7 +577,7 @@ def _concatenate_elementals(primals, val_out, **params):
                 _shape.insert(primal_val_axis, _d.size)
                 zeros = jnp.zeros(_shape, dtype=jnp.float32)
 
-                scatter_dims = lax.ScatterIndexNumbers(
+                scatter_dims = lax.ScatterDimensionNumbers(
                     (out_val_axis, primal_val_axis), (), (out_val_axis, primal_val_axis)
                 )
                 new_val = lax.scatter(

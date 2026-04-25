@@ -108,6 +108,13 @@ def make_parallel_jacobian(i, primals, val_out, elemental):
     return SparseTensor(out_dims, primal_dims, elemental)
 
 
+# Sentinel used inside an elementals list to indicate a non-differentiable
+# input slot (e.g. select_n's `which`, stop_gradient's input). The dispatcher
+# preserves alignment with the rule's filtered-primal positions but adds no
+# edge. Aliased to None for backward compatibility with existing rules.
+NO_EDGE = None
+
+
 elemental_rules = {}
 # Maps primitive -> (primal_out, primals, **params) -> list[SparseTensor]
 # Elemental computation only; primal_out is passed in so primitive.bind is

@@ -798,7 +798,7 @@ def _swap_back_axes(st: SparseTensor) -> SparseTensor:
         if d.val_axis is not None and (isinstance(d, DenseIndex) or d.id < d.other_id):
             permutation[i] = d.val_axis
             i += 1
-    print('perm', permutation)
+
     st.val = jnp.transpose(st.val, permutation)
     
     i = 0

@@ -1,4 +1,4 @@
-from .base import elemental_rules, elemental_only_rules, multi_output_elemental_only_rules
+from .base import NO_EDGE, elemental_rules, elemental_only_rules, multi_output_elemental_only_rules
 
 # Import submodules to trigger elemental rule registrations
 # transforms must come before structural because structural imports _slice_elementals from it
