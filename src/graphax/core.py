@@ -12,7 +12,7 @@ import jax._src.core as core
 from jax._src.pjit import jit_p
 
 from .primitives import NO_EDGE, elemental_rules, elemental_only_rules, multi_output_elemental_only_rules
-from .sparse.tensor import get_num_muls, get_num_adds, _assert_sparse_tensor_consistency
+from .sparse.tensor import _assert_sparse_tensor_consistency
 from .sparse.utils import zeros_like, get_largest_tensor
 
 
@@ -56,7 +56,6 @@ def jacve(
         order: EliminationOrder,
         argnums: Sequence[int] = (0,), 
         has_aux: bool = False,
-        count_ops: bool = False, 
         sparse_representation: bool = False
     ) -> Callable:
     """
@@ -80,8 +79,6 @@ def jacve(
         argnums (Sequence[int], optional): Argument numbers to differentiate 
                                             with respect to. Defaults to (0,).
         has_aux (bool): _description_
-        count_ops (bool, optional): Count the number of operations during the 
-                                    elimination process. Defaults to `False`.
         sparse_representation (bool, optional): Return the Jacobian in a sparse 
                                             representation. Defaults to `False`.
 
@@ -95,23 +92,17 @@ def jacve(
         flattened_args, in_tree = jtu.tree_flatten(args)
         closed_jaxpr = jax.make_jaxpr(fun)(*flattened_args, **kwargs)
 
-        out = vertex_elimination_jaxpr(closed_jaxpr.jaxpr, 
-                                        order, 
-                                        closed_jaxpr.literals, 
-                                        *args, 
-                                        has_aux=has_aux,
-                                        argnums=argnums,
-                                        count_ops=count_ops,
-                                        sparse_representation=sparse_representation)
+        out = vertex_elimination_jaxpr(
+            closed_jaxpr.jaxpr, 
+            order, 
+            closed_jaxpr.literals, 
+            *args, 
+            has_aux=has_aux,
+            argnums=argnums,
+            sparse_representation=sparse_representation
+        )
 
-        # TODO does not support aux and count_opt simultaneously
-        if count_ops: 
-            out, op_counts = out
-            out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
-            if len(closed_jaxpr.jaxpr.outvars) == 1 and len(closed_jaxpr.jaxpr.invars) > 1:
-                return out[0], op_counts
-            return jtu.tree_unflatten(out_tree, out), op_counts
-        elif has_aux:
+        if has_aux:
             primal_out, grads = out
             out_tree = jtu.tree_structure(tuple(closed_jaxpr.jaxpr.outvars))
             if len(closed_jaxpr.jaxpr.outvars) == 1 and len(closed_jaxpr.jaxpr.invars) > 1:
@@ -191,7 +182,7 @@ def _eliminate_vertex(
         transpose_graph: ComputationalGraph,
         iota: jnp.ndarray, 
         vo_vertices: Set[core.Var]
-    ) -> Tuple[int, int]:
+    ) -> None:
     """
     Function that eliminates a vertex from the computational graph.
     everything that has a _val in its name is a `SparseTensor` object
@@ -219,7 +210,6 @@ def _eliminate_vertex(
     Maybe have a impure function and add an additional argument instead?
     """
     eqn = jaxpr.eqns[vertex-1]
-    num_mul, num_add = 0, 0
 
     for central_var in eqn.outvars:
         if central_var not in graph:
@@ -257,7 +247,6 @@ def _eliminate_vertex(
                 # Multiply the two values of the edges if applicable
                 if pre_val.val is not None and post_val.val is not None:
                     edge_outval = _post_val * _pre_val
-                    num_mul += get_num_muls(_post_val, _pre_val)
 
                 elif pre_val.val is not None:
                     edge_outval = _pre_val
@@ -306,7 +295,6 @@ def _eliminate_vertex(
                     assert edge_shape == edge_outval.shape, f'Computed edge shape {edge_outval.shape} does not match expected shape {edge_shape}!'
                     assert edge_shape == _edge.shape, f'Existing edge shape {_edge.shape} does not match expected shape {edge_shape}!'
                     edge_outval += _edge
-                    num_add += get_num_adds(edge_outval, _edge)
 
                 # print("Edge_outval:", edge_outval)
                 graph[in_edge][out_edge] = edge_outval
@@ -323,8 +311,6 @@ def _eliminate_vertex(
         del graph[central_var]
         if central_var not in vo_vertices:
             del transpose_graph[central_var]
-
-    return num_mul, num_add
 
 
 def _checkify_order(
@@ -599,7 +585,6 @@ def vertex_elimination_jaxpr(
         *args, 
         has_aux: bool = False,
         argnums: Sequence[int] = (0,),
-        count_ops: bool = False,
         sparse_representation: bool = False
     ) -> Sequence[Sequence[jnp.ndarray]]:    
     """
@@ -626,8 +611,6 @@ def vertex_elimination_jaxpr(
         argnums (Sequence[int], optional): Argument numbers to differentiate
                                             with respect to. Defaults to (0,).
         has_aux (bool): _description_
-        count_ops (bool, optional): Count the number of operations during the
-                                    elimination process. Defaults to `False`.
         sparse_representation (bool, optional): Return the Jacobian in a sparse
                                             representation. Defaults to `False`.
 
@@ -647,15 +630,10 @@ def vertex_elimination_jaxpr(
     iota = _iota_shape(jaxpr, argnums)
         
     # Eliminate the vertices
-    num_muls, num_adds = 0, 0
     counts = []
     order = _checkify_order(order, jaxpr, vo_vertices)
     for vertex in order:
-        num_mul, num_add = _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices)
-        if count_ops:
-            counts.append((num_mul, num_add))
-            num_muls += num_mul
-            num_adds += num_add
+        _eliminate_vertex(vertex, jaxpr, graph, transpose_graph, iota, vo_vertices)
            
     # Offloading all remaining Jacobian transforms to the output variables 
     # before densification!    
@@ -695,14 +673,6 @@ def vertex_elimination_jaxpr(
         ratio = len(jac_vals)//n
         jac_vals = [tuple(jac_vals[i*n:i*n+n]) for i in range(0, ratio)]
         
-    if count_ops:
-        # TODO: this needs to be reworked, aux should contain the primal values
-        # so that we can compute stuff like loss_and_grad
-        order_counts = [(int(o), int(c[0])) for o, c in zip(order, counts)]
-        aux = {"num_muls": num_muls, 
-                "num_adds": num_adds, 
-                "order_counts": order_counts}
-        return jac_vals, aux
     if has_aux:
         return [env[var] for var in jaxpr.outvars], jac_vals
 
