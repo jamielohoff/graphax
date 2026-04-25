@@ -1,5 +1,5 @@
 from .easy import (Simple, Lighthouse, Hole, KerrSenn_metric, Helmholtz, 
-                   FreeEnergy, CloudSchemes_step)
+                   FreeEnergy, CloudSchemes_step, LongChain)
 from .randoms import f, g
 from .neuromorphic import LIF_SNN, ADALIF_SNN
 from .differential_kinematics import RobotArm_6DOF

@@ -91,3 +91,17 @@ def CloudSchemes_step(a1, a2, e1, e2, delta, gamma, bc, br, d1, d2, chi):
     
     return dqc, dqr, dqv
 
+
+def LongChain(x, y, w):
+    z = x * y
+    c1 = jnp.cos(z)
+    c2 = jnp.tanh(c1)
+    c3 = jnp.sin(c2)
+    c4 = jnp.log(c3)
+    c5 = 3*jnp.exp(3*c4)
+    c6 = jnp.cosh(c5)
+    c7 = c6 @ w
+    c8 = 5 + c7
+    c9 = jnp.log(c8)
+    return jnp.pow(c9, 8)
+
