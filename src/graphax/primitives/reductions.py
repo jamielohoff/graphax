@@ -35,16 +35,14 @@ def _select_elementals(primals, val_out, **params):
         if out_ndim == 0:
             return SparseTensor([], [], mask)
         out_dims = [
-            SparseIndex(i, s, i, out_ndim + i) for i, s in enumerate(out_shape)
+            SparseIndex(i, s, None, out_ndim + i) for i, s in enumerate(out_shape)
         ]
         primal_dims = [
-            SparseIndex(out_ndim + i, s, i, i) for i, s in enumerate(out_shape)
+            SparseIndex(out_ndim + i, s, None, i) for i, s in enumerate(out_shape)
         ]
         return SparseTensor(out_dims, primal_dims, mask)
 
-    elementals = []
-    if not isinstance(which, (float, np.ndarray, np.float32)):
-        elementals.append(NO_EDGE)
+    elementals = [NO_EDGE]
     for k, _ in enumerate(cases):
         mask = (which == k).astype(out_dtype)
         elementals.append(_masked_identity(mask))

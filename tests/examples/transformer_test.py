@@ -10,11 +10,20 @@ from jax.tree_util import tree_map
 
 from graphax import jacve, tree_allclose
 
-from _transformer import (make_weights, glorot,
-                        make_positional_encoding, softmax_ce_loss, gelu,
+from _transformer import (make_weights, glorot, silu,
+                        make_positional_encoding, softmax_ce_loss,
                         multihead_attention_block, MLP,
                         efficient_multihead_softmax_attention)
 
+
+def softmax_attention(X, WQ, WK, WV):
+    q = X @ WQ  # (dk, seq_len)
+    k = X @ WK
+    v = X @ WV
+    dk = float(q.shape[0])
+    attn_scores = q @ k.T / jnp.sqrt(dk)  # (seq_len, seq_len)
+    attn_weights = jnn.softmax(attn_scores, axis=-1)
+    return attn_weights @ v # (dk, seq_len)
 
 class TransformerTest(unittest.TestCase):
     ### Testing basic softmax
@@ -78,21 +87,14 @@ class TransformerTest(unittest.TestCase):
     ### Test softmax attention
     def test_softmax_self_attention_fwd(self):
         print("Testing softmax self attention with forward-mode AD...")
-        def softmax_attention(X, WQ, WK, WV):
-            q = WQ @ X  # (dk, seq_len)
-            k = WK @ X
-            v = WV @ X
-            dk = float(q.shape[0])
-            a = q.T @ k / jnp.sqrt(dk)  # (seq_len, seq_len)
-            return v @ jnn.softmax(a, axis=-1)  # (dk, seq_len)
 
         key = jrand.PRNGKey(42)
         xkey, qkey, kkey, vkey = jrand.split(key, 4)
         s = 10
-        x = glorot(xkey, (s, 2*s))
-        WQ = glorot(qkey, (s, s))
-        WK = glorot(kkey, (s, s))
-        WV = glorot(vkey, (s, s))
+        x = glorot(xkey, (16, s))
+        WQ = glorot(qkey, (s, 2*s))
+        WK = glorot(kkey, (s, 2*s))
+        WV = glorot(vkey, (s, 2*s))
 
         print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
 
@@ -113,19 +115,12 @@ class TransformerTest(unittest.TestCase):
         embedding_dim = 64
         dk = 64
 
-        def softmax_attention(X, WQ, WK, WV):
-            q = WQ @ X  # (dk, seq_len)
-            k = WK @ X
-            v = WV @ X
-            a = q.T @ k / jnp.sqrt(float(dk))  # (seq_len, seq_len)
-            return v @ jnn.softmax(a, axis=-1)  # (dk, seq_len)
-
         key = jrand.PRNGKey(42)
         xkey, qkey, kkey, vkey = jrand.split(key, 4)
-        x = jrand.normal(xkey, (embedding_dim, seq_len))
-        WQ = glorot(qkey, (dk, embedding_dim))
-        WK = glorot(kkey, (dk, embedding_dim))
-        WV = glorot(vkey, (dk, embedding_dim))
+        x = jrand.normal(xkey, (seq_len, embedding_dim))
+        WQ = glorot(qkey, (embedding_dim, dk))
+        WK = glorot(kkey, (embedding_dim, dk))
+        WV = glorot(vkey, (embedding_dim, dk))
 
         print(jax.make_jaxpr(softmax_attention)(x, WQ, WK, WV))
 
@@ -144,16 +139,16 @@ class TransformerTest(unittest.TestCase):
     def test_MLP(self):
         print("Testing MLP...")
         seq_len = 20
-        embedding_dim = 15
+        embedding_dim = 16
 
         key = jrand.PRNGKey(42)
         W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (10, embedding_dim))
-        b1 = jnp.zeros((10,), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 10))
-        b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        W1 = glorot(W1key, (embedding_dim, 4*embedding_dim))
+        b1 = jnp.zeros(4*embedding_dim)
+        W2 = glorot(W2key, (4*embedding_dim, embedding_dim))
+        b2 = jnp.zeros(embedding_dim)
 
-        x = jrand.normal(key, (embedding_dim, seq_len))
+        x = jrand.normal(key, (seq_len, embedding_dim))
 
         print(jax.make_jaxpr(MLP)(x, W1, b1, W2, b2))
 
@@ -170,16 +165,17 @@ class TransformerTest(unittest.TestCase):
     ### Testing multi-headed softmax attention
     def test_multihead_attention(self):
         print("Testing multi-head self-attention...")
-        num_heads = 1
-        seq_len = 32
+        batch_size = 3
+        num_heads = 4
+        seq_len = 10
         embedding_dim = 32
-        dk = 32 // num_heads
+        dk = 32
 
         key = jrand.PRNGKey(42)
-        x = jrand.normal(key, (embedding_dim, seq_len))
+        x = jrand.normal(key, (batch_size, seq_len, embedding_dim))
         qkvkey, okey, key = jrand.split(key, 3)
-        WQKV = glorot(qkvkey, (3*dk*num_heads, embedding_dim))
-        WO = glorot(okey, (embedding_dim, dk*num_heads))
+        WQKV = glorot(qkvkey, (embedding_dim, 3*dk*num_heads))
+        WO = glorot(okey, (dk*num_heads, embedding_dim))
 
         print(jax.make_jaxpr(efficient_multihead_softmax_attention)(x, WQKV, WO))
 
@@ -196,23 +192,24 @@ class TransformerTest(unittest.TestCase):
 
     def test_multihead_attention_block(self):
         print("Testing multi-head attention block...")
+        batch_size = 5
         num_heads = 4
-        seq_len = 16
+        seq_len = 10
         embedding_dim = 16
-        dk = 32 // num_heads
+        head_dim = 12
 
         key = jrand.PRNGKey(42)
         qkvkey, okey, key = jrand.split(key, 3)
-        WQKV = glorot(qkvkey, (3*dk*num_heads, embedding_dim))
-        WO = glorot(okey, (embedding_dim, dk*num_heads))
+        WQKV = glorot(qkvkey, (embedding_dim, 3*head_dim*num_heads))
+        WO = glorot(okey, (head_dim*num_heads, embedding_dim))
 
         W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (64, embedding_dim))
-        b1 = jnp.zeros((64,), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 64))
-        b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        W1 = glorot(W1key, (embedding_dim, 4*embedding_dim))
+        b1 = jnp.zeros(4*embedding_dim)
+        W2 = glorot(W2key, (4*embedding_dim, embedding_dim))
+        b2 = jnp.zeros(embedding_dim)
 
-        x = jrand.normal(key, (embedding_dim, seq_len))
+        x = jrand.normal(key, (batch_size, seq_len, embedding_dim))
         weights = (WQKV, WO, W1, b1, W2, b2)
 
         print(jax.make_jaxpr(multihead_attention_block)(x, *weights))
@@ -230,6 +227,7 @@ class TransformerTest(unittest.TestCase):
         self.assertTrue(tree_allclose(veres, revres))
 
     def test_multihead_attention_2_blocks(self):
+        batch_size = 3
         num_heads = 4
         seq_len = 10
         embedding_dim = 32
@@ -244,27 +242,27 @@ class TransformerTest(unittest.TestCase):
 
         key = jrand.PRNGKey(42)
         qkvkey, okey, key = jrand.split(key, 3)
-        WQKV1 = glorot(qkvkey, (3*dk*num_heads, embedding_dim))
-        WO1 = glorot(okey, (embedding_dim, dk*num_heads))
+        WQKV1 = glorot(qkvkey, (embedding_dim, 3*dk*num_heads))
+        WO1 = glorot(okey, (dk*num_heads, embedding_dim))
 
         qkvkey, okey, key = jrand.split(key, 3)
-        WQKV2 = glorot(qkvkey, (3*dk*num_heads, embedding_dim))
-        WO2 = glorot(okey, (embedding_dim, dk*num_heads))
+        WQKV2 = glorot(qkvkey, (embedding_dim, 3*dk*num_heads))
+        WO2 = glorot(okey, (dk*num_heads, embedding_dim))
 
         W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (64, embedding_dim))
-        b1 = jnp.zeros((64,), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 64))
-        b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        W1 = glorot(W1key, (embedding_dim, 4*embedding_dim))
+        b1 = jnp.zeros(4*embedding_dim)
+        W2 = glorot(W2key, (4*embedding_dim, embedding_dim))
+        b2 = jnp.zeros(embedding_dim)
 
         W3key, W4key, key = jrand.split(key, 3)
-        W3 = glorot(W3key, (64, embedding_dim))
-        b3 = jnp.zeros((64,), dtype=jnp.float32)
-        W4 = glorot(W4key, (embedding_dim, 64))
-        b4 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        W3 = glorot(W3key, (embedding_dim, 4*embedding_dim))
+        b3 = jnp.zeros(4*embedding_dim)
+        W4 = glorot(W4key, (4*embedding_dim, embedding_dim))
+        b4 = jnp.zeros(embedding_dim)
 
         weights = (WQKV1, WO1, W1, b1, W2, b2, WQKV2, WO2, W3, b3, W4, b4)
-        x = jrand.normal(key, (embedding_dim, seq_len))
+        x = jrand.normal(key, (batch_size, seq_len, embedding_dim))
 
         print(jax.make_jaxpr(multiple_blocks)(x, *weights))
 
@@ -294,159 +292,86 @@ class TransformerTest(unittest.TestCase):
 
         self.assertTrue(tree_allclose(veres, revres))
 
-    def test_vmap_multihead_attention_2_blocks(self):
-        batchsize = 4
-        s = 1
-        num_heads = 4
-        seq_len = s*16
+
+    ### Testing transformer architecture
+    def test_transformer(self):
+        batchsize = 5
+        s = 2
+        num_heads = 8
+        seq_len = s*10
         embedding_dim = s*48
         dk = s*32 // num_heads
 
-        @partial(jax.vmap, in_axes=(0,) + (None,) * 13)
+        positional_encoding = make_positional_encoding(seq_len+1, embedding_dim)
+
         def multiple_blocks(x, CT, WQKV1, WO1, W1, b1, W2, b2,
-                            WQKV2, WO2, W3, b3, W4, b4):
+                                    WQKV2, WO2, W3, b3, W4, b4,
+                                    WQKV3, WO3, W5, b5, W6, b6,
+                                    W7, b7, W8, b8):
             x = jnp.concatenate((CT, x), axis=1)
+            x = positional_encoding(x)
             x = multihead_attention_block(x, WQKV1, WO1, W1, b1, W2, b2)
             x = multihead_attention_block(x, WQKV2, WO2, W3, b3, W4, b4)
-            return x[:, 0]
+            x = multihead_attention_block(x, WQKV3, WO3, W5, b5, W6, b6)
+            x = x[:, 0]
+            return silu(x @ W7+ b7) @ W8 + b8
 
-        def transformer(x, *weights):
-            return multiple_blocks(x, *weights).sum()
+        def transformer(x, labels, *weights):
+            out = multiple_blocks(x, *weights)
+            return softmax_ce_loss(out, labels).sum()
 
         key = jrand.PRNGKey(42)
-        qkvkey, okey, key = jrand.split(key, 3)
-        WQKV1 = glorot(qkvkey, (3*dk*num_heads, embedding_dim))
-        WO1 = glorot(okey, (embedding_dim, dk*num_heads))
+        W5key, W6key, key = jrand.split(key, 3)
+        W7 = glorot(W5key, (embedding_dim, 128))
+        b7 = jnp.zeros(128)
+        W8 = glorot(W6key, (128, 10))
+        b8 = jnp.zeros(10)
 
-        qkvkey, okey, key = jrand.split(key, 3)
-        WQKV2 = glorot(qkvkey, (3*dk*num_heads, embedding_dim))
-        WO2 = glorot(okey, (embedding_dim, dk*num_heads))
+        CT = jrand.normal(key, (1, 1, embedding_dim))
+        CT = jnp.broadcast_to(CT, (batchsize, 1, embedding_dim))
 
-        W1key, W2key, key = jrand.split(key, 3)
-        W1 = glorot(W1key, (512, embedding_dim))
-        b1 = jnp.zeros((512,), dtype=jnp.float32)
-        W2 = glorot(W2key, (embedding_dim, 512))
-        b2 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        block_weights = make_weights(key, 3, dk, num_heads, embedding_dim)
+        weights = tuple([CT] + block_weights + [W7, b7, W8, b8])
 
-        W3key, W4key, key = jrand.split(key, 3)
-        W3 = glorot(W3key, (512, embedding_dim))
-        b3 = jnp.zeros((512,), dtype=jnp.float32)
-        W4 = glorot(W4key, (embedding_dim, 512))
-        b4 = jnp.zeros((embedding_dim,), dtype=jnp.float32)
+        x = jrand.normal(key, (batchsize, seq_len, embedding_dim))
+        labels = jrand.normal(key, (batchsize, 10))
 
-        CT = jrand.normal(key, (embedding_dim, 1))
+        jaxpr = jax.make_jaxpr(transformer)(x, labels, *weights)
 
-        weights = (CT, WQKV1, WO1, W1, b1, W2, b2, WQKV2, WO2, W3, b3, W4, b4)
-        x = jrand.normal(key, (batchsize, embedding_dim, seq_len))
+        argnums = list(range(2, len(weights) + 2))
 
-        print(jax.make_jaxpr(transformer)(x, *weights))
-
-        argnums = list(range(1, len(weights) + 1))
-
+        jacve_jaxpr = jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, labels, *weights)
         deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
-        veres = deriv_fn(x, *weights)
+        veres = deriv_fn(x, labels, *weights)
 
-        print(jax.make_jaxpr(deriv_fn)(x, *weights))
-
+        jax_jaxpr = jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, labels, *weights)
         jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
-        revres = jax_deriv_fn(x, *weights)
-
-        print(jax.make_jaxpr(jax_deriv_fn)(x, *weights))
+        revres = jax_deriv_fn(x, labels, *weights)
 
         for i, (ve, rev) in enumerate(zip(veres, revres)):
             print(f"err{i+1}", jnp.abs(ve - rev).mean())
 
-        out = jax_deriv_fn(x, *weights)
         st = time.time()
-        for i in range(50):
-            out = jax_deriv_fn(x, *weights)
-        print("jax time", time.time() - st)
-
-        out = deriv_fn(x, *weights)
-        st = time.time()
-        for i in range(50):
-            out = deriv_fn(x, *weights)
+        for i in range(5):
+            out = deriv_fn(x, labels, *weights)
+            jax.block_until_ready(out)
         print("graphax time", time.time() - st)
 
+        st = time.time()
+        for i in range(5):
+            out = jax_deriv_fn(x, labels, *weights)
+            jax.block_until_ready(out)
+        print("jax time", time.time() - st)
+
+        from graphax.sparse.utils import count_muls
+
+        num_muls = sum([count_muls(p) for p in jaxpr.jaxpr.eqns])
+        num_dots_jacve = sum([count_muls(p) for p in jacve_jaxpr.jaxpr.eqns])
+        num_dots_jax = sum([count_muls(p) for p in jax_jaxpr.jaxpr.eqns])
+
+        print("graphax muls", num_dots_jacve - num_muls, "jax muls", num_dots_jax - num_muls)
+
         self.assertTrue(tree_allclose(veres, revres))
-
-    ### Testing transformer architecture
-    # def test_vmap_transformer(self):
-    #     batchsize = 8
-    #     s = 1
-    #     num_heads = 8
-    #     seq_len = s*16
-    #     embedding_dim = s*48
-    #     dk = s*32 // num_heads
-
-    #     positional_encoding = make_positional_encoding(seq_len+1, embedding_dim)
-
-    #     @partial(jax.vmap, in_axes=(0,) + (None,) * 23)
-    #     def multiple_blocks(x, CT, WQKV1, WO1, W1, b1, W2, b2,
-    #                                 WQKV2, WO2, W3, b3, W4, b4,
-    #                                 WQKV3, WO3, W5, b5, W6, b6,
-    #                                 W7, b7, W8, b8):
-    #         x = jnp.concatenate((CT, x), axis=1)
-    #         x = positional_encoding(x)
-    #         x = multihead_attention_block(x, WQKV1, WO1, W1, b1, W2, b2)
-    #         x = multihead_attention_block(x, WQKV2, WO2, W3, b3, W4, b4)
-    #         x = multihead_attention_block(x, WQKV3, WO3, W5, b5, W6, b6)
-    #         x = x[:, 0]
-    #         return W8 @ gelu(W7 @ x + b7) + b8
-
-    #     def transformer(x, labels, *weights):
-    #         out = multiple_blocks(x, *weights)
-    #         return softmax_ce_loss(out, labels).sum()
-
-    #     key = jrand.PRNGKey(42)
-    #     W5key, W6key, key = jrand.split(key, 3)
-    #     W7 = glorot(W5key, (32, embedding_dim))
-    #     b7 = jnp.zeros(32, dtype=jnp.float32)
-    #     W8 = glorot(W6key, (10, 32))
-    #     b8 = jnp.zeros(10, dtype=jnp.float32)
-
-    #     CT = jrand.normal(key, (embedding_dim, 1))
-
-    #     block_weights = make_weights(key, 3, dk, num_heads, embedding_dim)
-    #     weights = tuple([CT] + block_weights + [W7, b7, W8, b8])
-
-    #     x = jrand.normal(key, (batchsize, embedding_dim, seq_len))
-    #     labels = jrand.normal(key, (batchsize, 10))
-
-    #     jaxpr = jax.make_jaxpr(transformer)(x, labels, *weights)
-
-    #     argnums = list(range(2, len(weights) + 2))
-
-    #     jacve_jaxpr = jax.make_jaxpr(jacve(transformer, order="rev", argnums=argnums))(x, labels, *weights)
-    #     deriv_fn = jax.jit(jacve(transformer, order="rev", argnums=argnums))
-    #     veres = deriv_fn(x, labels, *weights)
-
-    #     jax_jaxpr = jax.make_jaxpr(jax.jacrev(transformer, argnums=argnums))(x, labels, *weights)
-    #     jax_deriv_fn = jax.jit(jax.jacrev(transformer, argnums=argnums))
-    #     revres = jax_deriv_fn(x, labels, *weights)
-
-    #     for i, (ve, rev) in enumerate(zip(veres, revres)):
-    #         print(f"err{i+1}", jnp.abs(ve - rev).mean())
-
-    #     st = time.time()
-    #     for i in range(50):
-    #         out = jax_deriv_fn(x, labels, *weights)
-    #     print("jax time", time.time() - st)
-
-    #     st = time.time()
-    #     for i in range(50):
-    #         out = deriv_fn(x, labels, *weights)
-    #     print("graphax time", time.time() - st)
-
-    #     from graphax.sparse.utils import count_muls
-
-    #     num_muls = sum([count_muls(p) for p in jaxpr.jaxpr.eqns])
-    #     num_dots_jacve = sum([count_muls(p) for p in jacve_jaxpr.jaxpr.eqns])
-    #     num_dots_jax = sum([count_muls(p) for p in jax_jaxpr.jaxpr.eqns])
-
-    #     print("graphax muls", num_dots_jacve - num_muls, "jax muls", num_dots_jax - num_muls)
-
-    #     self.assertTrue(tree_allclose(veres, revres))
 
 
 if __name__ == '__main__':

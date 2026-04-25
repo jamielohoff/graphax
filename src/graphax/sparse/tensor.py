@@ -1070,7 +1070,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
         SparseTensor: SparseTensor object with `val` property resulting from
                         the dense dot-product multiplication of `lhs.val` and `rhs.val`.
     """
-    print(lhs, rhs)
     lcontracting_axes, rcontracting_axes = [], []
     lreplication_ids, rreplication_ids = [], []
     new_out_dims = lhs.out_dims
@@ -1089,7 +1088,6 @@ def _pure_dot_product_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             i += 1
         else:
             new_primal_dims.append(DenseIndex(d.id-r+l, d.size, None))
-    print(new_primal_dims)
 
     # Handling contracting variables
     for ld, rd in zip(lhs.primal_dims, rhs.out_dims):
@@ -1204,8 +1202,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             else:
                 lcontracting_axes.append(ld.val_axis)
                 rcontracting_axes.append(rd.val_axis)   
-
-    print('lhs', lhs)
     
     if lreplication_ids:
         lhs = _replicate_along_axis(lhs, lreplication_ids)
@@ -1226,7 +1222,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
             # Here, we have a broadcasting over two tensors that are not just
             # Kronecker deltas
             # TODO: We do not manage the case where one of the axes is broadcasting!
-            print(ld, rd)
             if ld.val_axis is not None and rd.val_axis is not None \
                 and lhs.val.shape[ld.val_axis] == ld.size \
                 and rhs.val.shape[rd.val_axis] == rd.size:
@@ -1297,13 +1292,9 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     elif rhs.val is None:
         new_val = lhs.val
     else:      
-        print(lbroadcasting_axes, rbroadcasting_axes)
-        print(lcontracting_axes, rcontracting_axes)
         dim_numbers = (tuple(lcontracting_axes), tuple(rcontracting_axes))
         batch_indices = (tuple(lbroadcasting_axes), tuple(rbroadcasting_axes)) # we abuse these guys here to handle the SparseIndices
         index_numbers = (dim_numbers, batch_indices)
-        print('lhs', lhs.val)
-        print('rhs', rhs.val)
         new_val = lax.dot_general(lhs.val, rhs.val, index_numbers)
 
         permutation = [None]*new_val.ndim
@@ -1316,7 +1307,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                     j += 1
                 permutation[j] = i
         new_val = jnp.transpose(new_val, permutation)
-    print('new', new_val)
     
     # Take care of the old indices
     for ld in lhs.out_dims:
@@ -1343,7 +1333,6 @@ def _mixed_mul(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
                                             or rd.val_axis is not None)])
                 val_axis = rd.val_axis + num_old_lhs_out_dims + num_sparse_dims - num_old_rhs_out_dims
             new_primal_dims.insert(rd.id-r, DenseIndex(rd.id-r+l, rd.size, val_axis))
-    print(new_val, new_out_dims, new_primal_dims)
     return _swap_back_axes(SparseTensor(new_out_dims, new_primal_dims, new_val))
 
 
@@ -1410,8 +1399,6 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     new_out_dims, new_primal_dims = [], []
     _lshape, _rshape = [], [] 
     count = 0 
-
-    print(lhs, rhs)
                            
     # Check the indexality of the `out_dims` of both tensors
     for ld, rd in zip(lhs.out_dims, rhs.out_dims):
@@ -1510,10 +1497,8 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     _ldims = lhs.dims
     _rdims = rhs.dims
     for ld, rd in zip(_ldims, _rdims):
-        print(ld, rd)
         if isinstance(ld, DenseIndex) \
             and ld.val_axis is None and rd.val_axis is not None:
-            print(rd.val_axis)
             ltiling[rd.val_axis] = ld.size
         elif isinstance(rd, DenseIndex) \
             and rd.val_axis is None and ld.val_axis is not None:
@@ -1521,12 +1506,6 @@ def _sparse_add(lhs: SparseTensor, rhs: SparseTensor) -> SparseTensor:
     
     lhs_val = _expand_to_shape(lhs_val, ltiling)
     rhs_val = _expand_to_shape(rhs_val, rtiling)
-
-    # print(ltiling, rtiling)
-    # if sum(ltiling) > len(ltiling):
-    #     lhs_val = jnp.tile(lhs_val, ltiling)
-    # if sum(rtiling) > len(rtiling):
-    #     rhs_val = jnp.tile(rhs_val, rtiling)
         
     # We need to materialize sparse indices for addition
     if sum(_lshape) > len(_lshape):       

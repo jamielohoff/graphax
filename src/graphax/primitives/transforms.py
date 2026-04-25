@@ -418,14 +418,13 @@ def _concatenate_elementals(primals, val_out, **params):
         slices[i] = [offset, offset + val.shape[dim]]
         offset += val.shape[dim]
 
-    def concatenate_transform(primal, pre, iota):
+    def concatenate_transform(primal_idx, pre, iota):
         new_out_dims = list(copy.deepcopy(pre.out_dims))
         new_primal_dims = list(copy.deepcopy(pre.primal_dims))
         l = len(pre.out_dims)
 
         d = new_out_dims[dim]
         dim_id = d.id
-        primal_idx = [idx for idx, p in enumerate(primals) if p is primal][0]
         idx, _idx = slices[primal_idx]
 
         if isinstance(d, DenseIndex):
@@ -598,10 +597,9 @@ def _concatenate_elementals(primals, val_out, **params):
 
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
-    def inverse_concatenate_transform(primal, post, iota):
+    def inverse_concatenate_transform(primal_idx, post, iota):
         new_out_dims = list(copy.deepcopy(post.out_dims))
         new_primal_dims = list(copy.deepcopy(post.primal_dims))
-        primal_idx = next(idx for idx, p in enumerate(primals) if p is primal)
 
         d = None
         if len(new_primal_dims) > 0:
@@ -659,25 +657,101 @@ def _concatenate_elementals(primals, val_out, **params):
                 _d.size = new_val.shape[d.val_axis]
             else:
                 # d is SparseIndex with val_axis=None:
-                # Both d and its partner _d are implicit Kronecker factors not stored in val.
-                # Just narrow sizes to this primal's slice; no val axis to manipulate.
-                size = slices[primal_idx][1] - slices[primal_idx][0]
-                d.size = size
-                _d.size = size
-                new_val = post.val
+                # Both d and its partner _d are implicit Kronecker factors not stored
+                # in val. Slicing the primal axis at [s, e] yields columns [s:e] of
+                # the implicit identity, which in general is not a square Kronecker
+                # block (e.g. for a single-element slot of a multi-element output).
+                # We must materialize: build the full identity slice as new val and
+                # convert both indices to DenseIndex.
+                s, e = slices[primal_idx]
+                size = e - s
+
+                # Position to insert the new out val_axis: among existing val-axis-
+                # bearing dims, before the partner _d's position in out_dims.
+                out_val_axis = sum(1 for dd in new_out_dims[:d.other_id]
+                                   if dd.val_axis is not None)
+                # Position to insert the new primal val_axis: after all out val-axes
+                # (including the one we are inserting) plus DenseIndex primal val-axes
+                # before our position.
+                primal_val_axis = sum(1 for dd in new_out_dims if dd.val_axis is not None) + 1
+                primal_val_axis += sum(1 for dd in new_primal_dims[:dim]
+                                       if isinstance(dd, DenseIndex) and dd.val_axis is not None)
+
+                # Shift val_axes of all existing val-axis-bearing dims for the two
+                # axis insertions (out then primal).
+                def _shift(idx_dim):
+                    if idx_dim.val_axis is None:
+                        return
+                    if idx_dim.val_axis >= out_val_axis:
+                        idx_dim.val_axis += 1
+                    if idx_dim.val_axis >= primal_val_axis:
+                        idx_dim.val_axis += 1
+                for _dim in new_out_dims:
+                    _shift(_dim)
+                for _dim in new_primal_dims:
+                    if isinstance(_dim, DenseIndex):
+                        _shift(_dim)
+
+                # Build the column slice of identity: shape (_d.size, size).
+                if iota.shape[0] < _d.size or iota.shape[1] < _d.size:
+                    sub_iota = jnp.eye(_d.size, dtype=jnp.float32)
+                else:
+                    sub_iota = lax.slice(iota, [0, 0], [_d.size, _d.size])
+                sub_iota = lax.slice_in_dim(sub_iota, s, e, axis=1)
+
+                base_val = post.val if post.val is not None \
+                    else jnp.array(1.0, dtype=jnp.float32)
+                new_val = jnp.expand_dims(base_val, axis=out_val_axis)
+                new_val = jnp.expand_dims(new_val, axis=primal_val_axis)
+
+                iota_shape = [1] * new_val.ndim
+                iota_shape[out_val_axis] = _d.size
+                iota_shape[primal_val_axis] = size
+                new_val = new_val * sub_iota.reshape(iota_shape)
+
+                new_out_dims[d.other_id] = DenseIndex(_d.id, _d.size, out_val_axis)
+                new_primal_dims[dim] = DenseIndex(d.id, size, primal_val_axis)
         return SparseTensor(new_out_dims, new_primal_dims, new_val)
 
-    return [
-        SparseTensor([], [], None,
-            [
-                JacobianTransform(
-                    partial(concatenate_transform, p),
-                    partial(inverse_concatenate_transform, p),
-                )
-            ],
-        )
-        for p in primals
-    ]
+    # Group primal slot indices by primal identity. When the same primal feeds
+    # multiple slots of one concatenate (e.g. concat([pl, pl, pl])), the
+    # graph stores a single edge per (invar, outvar) pair, so the elemental
+    # for that invar must represent the sum of all slot contributions.
+    groups = {}
+    for i, p in enumerate(primals):
+        groups.setdefault(id(p), []).append(i)
+
+    def _make_elemental(slot_indices):
+        if len(slot_indices) == 1:
+            (i,) = slot_indices
+            transform = JacobianTransform(
+                partial(concatenate_transform, i),
+                partial(inverse_concatenate_transform, i),
+            )
+        else:
+            def combined_fwd(pre, iota, _slots=tuple(slot_indices)):
+                acc = None
+                for i in _slots:
+                    r = concatenate_transform(i, pre, iota)
+                    acc = r if acc is None else acc + r
+                return acc
+
+            def combined_inv(post, iota, _slots=tuple(slot_indices)):
+                acc = None
+                for i in _slots:
+                    r = inverse_concatenate_transform(i, post, iota)
+                    acc = r if acc is None else acc + r
+                return acc
+
+            transform = JacobianTransform(combined_fwd, combined_inv)
+        return SparseTensor([], [], None, [transform])
+
+    elementals_per_slot = [None] * len(primals)
+    for slot_indices in groups.values():
+        elemental = _make_elemental(slot_indices)
+        for i in slot_indices:
+            elementals_per_slot[i] = elemental
+    return elementals_per_slot
 
 
 def concatenate_elemental_rule(primals, **params):

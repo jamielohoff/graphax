@@ -243,9 +243,9 @@ def _eliminate_vertex(
                 _pre_val = pre_val.copy()
                 _post_val = post_val.copy()
 
-                print(f"{in_edge}-->{central_var}-->{out_edge}")
-                print("post:", _post_val)
-                print("pre:", _pre_val)
+                # print(f"{in_edge}-->{central_var}-->{out_edge}")
+                # print("post:", _post_val)
+                # print("pre:", _pre_val)
 
 
                 if len(pre_val.post_transforms) > 0 and post_val.val is not None:
@@ -308,7 +308,7 @@ def _eliminate_vertex(
                     edge_outval += _edge
                     num_add += get_num_adds(edge_outval, _edge)
 
-                print("Edge_outval:", edge_outval)
+                # print("Edge_outval:", edge_outval)
                 graph[in_edge][out_edge] = edge_outval
                 transpose_graph[out_edge][in_edge] = edge_outval
 

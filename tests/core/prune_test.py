@@ -42,9 +42,6 @@ class TestPruneGraph(unittest.TestCase):
         expected = jax.jacfwd(f, argnums=(1,))(x, y)[0]
         self.assertTrue(tree_allclose(result, expected))
 
-    # Note: argnums=() is not supported by jacve (_iota_shape fails on empty list)
-    # so we skip that edge case here.
-
     def test_prune_all_argnums(self):
         """Differentiate w.r.t. all args — nothing pruned."""
         def f(x, y):
